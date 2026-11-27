@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
+	"github.com/modelplan/modelplan/cli/internal/logindex"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/rows"
 	"github.com/modelplan/modelplan/cli/internal/speed"
@@ -15,12 +16,22 @@ import (
 
 // This observer lives in the existing app-server, not in the UI or an extra child. It runs every
 // two seconds, so it opens session logs and ModelPlan's own cache only, never a credential file.
-func appActivity(cache string) func(context.Context, consent.Admission, time.Time) []rows.ActivityInput {
+func appActivity(cache string) func(context.Context, consent.Admission, logindex.Ticket, time.Time) []rows.ActivityInput {
+	return appActivityClock(cache, time.Now, nil)
+}
+
+// appActivityClock takes the monotonic clock that paces discovery, so the idle-work gates can
+// step the production observer through its discovery interval without waiting.
+// The inventory is the app-server's shared history inventory; nil keeps a private one.
+func appActivityClock(cache string, elapsed func() time.Time, inventory *logindex.Inventory) func(context.Context, consent.Admission, logindex.Ticket, time.Time) []rows.ActivityInput {
 	observer := speed.NewActivityObserver()
-	var logsIndex speed.ActivityLogIndex
-	return func(ctx context.Context, a consent.Admission, now time.Time) []rows.ActivityInput {
+	if inventory == nil {
+		inventory = &logindex.Inventory{}
+	}
+	logsIndex := speed.ActivityLogIndex{Inventory: inventory}
+	// ticket is the withdrawal ticket the caller took before it captured a (macrev2-1261-2).
+	return func(ctx context.Context, a consent.Admission, ticket logindex.Ticket, now time.Time) []rows.ActivityInput {
 		if speed.Off() {
-			logsIndex = speed.ActivityLogIndex{}
 			observer.Observe(ctx, nil, nil, now)
 			return nil
 		}
@@ -46,7 +57,7 @@ func appActivity(cache string) func(context.Context, consent.Admission, time.Tim
 				zcode = filepath.Join(home, ".zcode")
 			}
 		}
-		logs := logsIndex.Logs(claude, codex, zcode, a.Fence(), now, time.Now())
+		logs := logsIndex.LogsWith(claude, codex, zcode, a.Fence(), now, elapsed(), ticket)
 		bindings := []speed.ActivityBinding{}
 		if len(logs) > 0 {
 			bindings = speed.ExistingActivityBindings(cache, a)

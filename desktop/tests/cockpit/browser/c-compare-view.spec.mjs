@@ -52,7 +52,8 @@ test('CKP-MFD compare: a fader trial opens the comparison with the two share bar
  // fit beside the hint, so the one guaranteed link is a bare ↗ named by its tooltip.
  await expect(screen.locator('.cmp-foot .cmp-links a')).toHaveCount(1);
  await expect(screen.locator('.cmp-foot .cmp-links a')).toHaveAttribute('title','Compare on the website');
- await expect(page.locator('.mfd-ok.mfd-vk .vk-back')).toHaveText('‹ Overview');
+ // D405 (with D387): no back key on the bottom strip; it keeps only this view's own action (fast).
+ await expect(page.locator('.mfd-ok.mfd-vk .vk-back')).toHaveCount(0);
  await expect(page.locator('.mfd-ok.mfd-vk .vk-fast')).toHaveCount(1);
  await expect(page.locator('.mfd-pk')).toHaveClass(/dark/);await expect(page.locator('.mfd-pk .pk.on')).toHaveCount(0);
  // The fader shows the trial: ghost cap and blue "Try XHigh" on its card (WP-08: the lamp shows sessions only, CKP-FAD-55).
@@ -70,7 +71,7 @@ test('CKP-MFD compare: the effort keys move the trial, one trial at a time, and 
  await second.locator('.fd-travel').focus();await page.keyboard.press('ArrowUp');
  await expect(page.locator('.mfd-title')).toHaveText('Effort · Astra 6');
  await expect(page.locator('.fd-ch.trying')).toHaveCount(1);
- await page.locator('.mfd-vk .vk-back').click();
+ await page.locator('.mfd-pk .pk').first().click();
  await expect(page.locator('.mfd-page')).toHaveClass(/pg-overview/);await expect(page.locator('.mfd-pk .pk.on')).toHaveCount(1);
  await expect(page.locator('.fd-ch.trying')).toHaveCount(0);
  // Esc returns too, and pressing the LCD again toggles the card.
@@ -98,8 +99,9 @@ test('CKP-FAD-18 the comparison carries one quiet trial note, only while a trial
  }
 });
 
-test('CKP-FAD-18 tall keeps the full note; compact keeps the chart and collapses the note to an info mark with the full text',async({page})=>{
- for(const tier of ['compact','tall'])for(const [locale,text] of [['en','Trial only — your tool settings stay unchanged'],['zh-CN','试算，不会改工具设置']]){
+// D444: one layout, so the full note always shows and the info mark (the retired compact form) stays hidden.
+test('CKP-FAD-18 the full note shows; the info mark keeps the full text as its name and stays hidden',async({page})=>{
+ for(const tier of ['tall'])for(const [locale,text] of [['en','Trial only — your tool settings stay unchanged'],['zh-CN','试算，不会改工具设置']]){
   await open(page,locale,false,null,tier);
   await sol(page).locator('.fd-travel').focus();await page.keyboard.press('ArrowUp');
   const note=page.locator('.mfd-page.pg-compare .cmp-trial-note'),mark=page.locator('.mfd-page.pg-compare .cmp-trial-i');
@@ -107,20 +109,7 @@ test('CKP-FAD-18 tall keeps the full note; compact keeps the chart and collapses
   expect(await page.locator('.mfd-page').evaluate(e=>e.scrollWidth<=e.clientWidth+.5),tier+' '+locale).toBe(true);
   const inside=await page.evaluate(()=>{const p=document.querySelector('.mfd-page').getBoundingClientRect(),ok=sel=>{const r=document.querySelector(sel).getBoundingClientRect();return r.top>=p.top-.5&&r.bottom<=p.bottom+.5&&r.left>=p.left-.5&&r.right<=p.right+.5;};return {table:ok('.cmp-bars-row'),mark:ok('.cmp-trial-i')||getComputedStyle(document.querySelector('.cmp-trial-i')).display==='none'};});
   expect(inside,tier+' '+locale).toEqual({table:true,mark:true});
-  if(tier==='tall'){await expect(note).toBeVisible();await expect(mark).toBeHidden();}
-  else{
-   await expect(note).toBeHidden();await expect(mark).toBeVisible();
-   // The chart survives, with the trial marker; the mark is keyboard-focusable and shows the full text as a tooltip.
-   const chart=page.locator('.mfd-page.pg-compare svg.cmp-chart');
-   await expect(chart).toHaveCount(1);
-   // The trial is marked by its column: the pale-blue haze with its border and the top label (Try, or Current · Try when equal).
-   await expect(chart.locator('.pc-band-trial')).toHaveCount(1);
-   const label=chart.locator('.pc-col-l[data-role="trial"], .pc-col-l[data-role="both"]');
-   await expect(label).toHaveCount(1);
-   await expect(label).toHaveText(locale==='en'?/^(Try|Current · Try)/:/^(试|当前·试)/);
-   await mark.focus();await expect(mark).toBeFocused();
-   expect(await mark.evaluate(e=>getComputedStyle(e,'::after').content)).toBe('"'+text+'"');
-  }
+  await expect(note).toBeVisible();await expect(mark).toBeHidden();
  }
 });
 
@@ -137,19 +126,19 @@ test('CKP-MFD compare: Chinese labels match the study',async({page})=>{
  await sol(page).locator('.fd-travel').focus();await page.keyboard.press('ArrowUp');
  await expect(page.locator('.mfd-title')).toHaveText('档位 · Sol 6.1');
  await expect(page.locator('.cmp-foot .cmp-links a')).toHaveText(['在网站上对比 ↗','怎么算的 ↗']);
- await expect(page.locator('.mfd-vk .vk-back')).toHaveText('‹ 返回 总览');
+ await expect(page.locator('.mfd-vk')).not.toContainText('返回');
 });
 
-test('CKP-MFD compare: the back key is named "Back …" for assistive tech, and a HUD row opens the Effort page instead',async({page})=>{
+test('CKP-MFD compare: no back key on the bottom strip (D405/D387), and a HUD row opens the Effort page instead',async({page})=>{
  await open(page);
  await sol(page).locator('.fd-travel').focus();await page.keyboard.press('ArrowUp');
- await expect(page.locator('.mfd-vk .vk-back')).toHaveAttribute('aria-label',/^Back /);
+ await expect(page.locator('.mfd-vk .vk-back')).toHaveCount(0);
  await page.locator('.hud-list .hp').first().click();
  await expect(page.locator('.mfd-page')).toHaveClass(/pg-tune/);
  await expect(page.locator('.fd-ch.trying')).toHaveCount(0);
- // A page key closes the view the HUD opened (study closeMfdView('page')): no stale "‹ back" line on the next page.
+ // D400: the HUD opens the 模型 page as its key does; the Overview key leaves it: no stale "‹ back" line or switch on the overview.
  await page.locator('[data-mfd="page:overview"]').click();
- await expect(page.locator('.mfd-page .mfd-back')).toHaveCount(0);
+ await expect(page.locator('.mfd-page')).toHaveClass(/pg-overview/);await expect(page.locator('.mfd-page .mfd-back')).toHaveCount(0);await expect(page.getByRole('tablist')).toHaveCount(0);
 });
 
 test('CKP-MFD compare: the title stays whole when the current effort is unknown',async({page})=>{
@@ -175,7 +164,7 @@ test('CKP-FAD-11 fast key: a published speed tier lights the LCD lamp and the Of
  await open(page,'en',true);
  const fader=name=>page.locator('.fd-ch:not(.empty)').filter({hasText:name}).first();
  const trial=async name=>{const f=fader(name);await f.locator('.fd-travel').focus();await page.keyboard.press('ArrowUp');await expect(page.locator('.mfd-page.pg-compare')).toBeVisible();return f;};
- const back=()=>page.locator('.mfd-vk .vk-back').click();
+ const back=()=>page.locator('.mfd-pk .pk').first().click();
  const key=page.locator('.mfd-vk button.vk-fast');
  // Overview: a model with a tier shows the fast lamp on its LCD (off until a fast session or trial), one without shows none.
  await expect(fader('Sol').locator('.fd-indicator')).toHaveAttribute('data-fast-mode','off');
@@ -279,7 +268,7 @@ test('CKP-FAD-24 fast symbol: ⚡ beside the lamp shows the real fast mode (whit
  await page.locator('.mfd-vk button.vk-fast').click();
  await expect(solFader.locator('.fd-fast')).toHaveAttribute('data-fast-state','on');
  // a model with no fast mode (Astra) shows none
- await page.locator('.mfd-vk .vk-back').click();
+ await page.locator('.mfd-pk .pk').first().click();
  await expect(page.locator('.fd-ch:not(.empty)').filter({hasText:'Astra'}).first().locator('.fd-fast')).toHaveCount(0);
 });
 test('CKP-FAD-24 fast symbol: a trial that turns fast on shows a solid blue ⚡; standard mode shows none',async({page})=>{
@@ -407,7 +396,7 @@ test(`CKP-MFD-33 column labels (${locale}): Current on the current column, Try o
  expect(await colLabels(page)).toEqual([{role:'both',text:words.b,effort:'High'}]);
  expect(await collisions(page)).toEqual([]);
 });
-for(const tier of ['tall','compact'])
+for(const tier of ['tall'])
 test(`CKP-MFD-33 column labels do not collide with the gridline or ▲ value labels (${tier}, fast overflow)`,async({page})=>{
  await open(page,'en',true,null,tier);
  await page.locator('[data-bank="1"]').click();
@@ -421,7 +410,7 @@ test(`CKP-MFD-33 column labels do not collide with the gridline or ▲ value lab
 
 // Owner 11-12: a labelled column that is also the recommended effort carries a gold " ★"; a recommended column that is neither current nor trial has no label and no background.
 for(const [locale,w] of [['en',{c:'Current',t:'Try',b:'Current · Try'}],['zh-CN',{c:'当前',t:'试',b:'当前·试'}]])
-for(const tier of ['tall','compact'])
+for(const tier of ['tall'])
 test(`CKP-MFD-33 column label ★ (${locale}, ${tier}): appended when the labelled column is the recommended effort`,async({page})=>{
  const sol=()=>page.locator('.fd-ch:not(.empty)').filter({hasText:'Sol'}).first().locator('.fd-strip').click();
  const labels=()=>page.locator('.mfd-page svg.cmp-chart').evaluate(svg=>[...svg.querySelectorAll('.pc-col-l')].map(e=>({role:e.dataset.role,text:e.textContent,effort:e.dataset.effort,star:getComputedStyle(e.querySelector('.pc-col-star')||e).fill})));

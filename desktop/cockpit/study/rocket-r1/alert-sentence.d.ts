@@ -7,10 +7,10 @@ export interface AlertSentence {
 }
 export type AlertSentenceInput=
  | {readonly kind:'quota';readonly subscription:Both;readonly window:Both;readonly remaining:number;readonly runOutMinutes:number|null;readonly resetMinutes:number|null}
- | {readonly kind:'unreadable';readonly subscription:Both;readonly cause:string|null}
+ | {readonly kind:'unreadable';readonly subscription:Both;readonly cause:string|null;readonly tool?:string|null}
  | {readonly kind:'unreadableMany';readonly count:number};
 export function alertDuration(minutes:number):string;
-export function unreadableCause(code:string):Both|null;
+export function unreadableCause(code:string,tool?:string|null):Both|null;
 export function isUnreadable(code:string|null|undefined):boolean;
 export function alertSentence(input:AlertSentenceInput):AlertSentence;
 export function openSettingsAction():Both;

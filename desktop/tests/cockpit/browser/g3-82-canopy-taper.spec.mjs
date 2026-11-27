@@ -5,26 +5,27 @@ import {visualFixture} from '../visual-fixture.mjs';
 import {inflateSync} from 'node:zlib';
 
 // G3-82 (owner, build 14c): a raised light band stood on the top centre of the porthole and a bright line ran down its
-// sides. The owner-approved canopy (#801, 2026-11-09 v10: tall A3 as generated, compact A1, the current strip) has glass
+// sides. The owner-approved canopy (#801, 2026-11-09 v10: tall A3 as generated, the current strip; D444 retired compact A1) has glass
 // up to the top of its art box, but the porthole still stopped at the port's padding box (12 px lower, 26 px in), so
 // the desktop showed through the window there. This measures what the page actually paints (transparent screenshot,
 // alpha), at 1x and at the 2x the owner's Mac draws:
 // - nothing inside the silhouette is see-through (no desktop through the canopy, frame or walls);
 // - open shapes: the outline is within 1% of the 636 px hull (6.4 px) of the approved v10 render, row by row from the
-//   canopy's top (A3 tall, A1 compact; read from the owner-approved side-by-side images, 2x, in px from the first
+//   canopy's top (A3 tall; read from the owner-approved side-by-side images, 2x, in px from the first
 //   painted row);
 // - below the canopy the hull only widens.
 const TOL=6.4;
+// D451/D452: the canopy art is now the owner's own (grey set). The reference is re-derived from its solid-outline-890-2x.png
+// alpha (>= 128) the same way the old table reproduces from the v10 art: the row width in CSS px (device width / 2) at
+// first-painted-row + y for each y below. (The old art's solid outline gives the previous 240.5 ... 392.5 ... 621 values
+// to within 1 px, which is how the method was checked.) Rows from 260 down are the walls, unchanged.
 const APPROVED={
- tall:[[4,240.5],[6,281.5],[8,316],[10,345.5],[14,392.5],[20,448.5],[30,516],[40,554.5],[60,586.5],[80,599],[100,605.5],[120,611],
-  [140,616],[160,621],[180,624.5],[200,621],[220,620],[240,620],[260,620.5],[300,620.5],[400,620.5],[560,636],[700,636]],
- compact:[[4,409.5],[6,482],[8,531.5],[10,559.5],[14,582.5],[20,595],[30,607],[40,615.5],[48,620],[100,620.5],[200,620.5],[400,636]],
+ tall:[[4,266],[6,314],[8,351.5],[10,382.5],[14,432],[20,484.5],[30,539],[40,564],[60,584],[80,593],[100,600],[120,608],
+  [140,614],[160,618],[180,620],[200,620],[220,620],[240,620],[260,620.5],[300,620.5],[400,620.5],[560,636],[700,636]],
 };
 const shapes=[
  {tier:'tall',closed:false,canvas:951,root:905,cap:244,approved:APPROVED.tall},
- {tier:'compact',closed:false,canvas:681,root:635,cap:56,approved:APPROVED.compact},
  {tier:'tall',closed:true,canvas:951,root:691,cap:30},
- {tier:'compact',closed:true,canvas:681,root:609,cap:30},
 ];
 async function open(page,s){
  await page.setViewportSize({width:636,height:s.canvas});

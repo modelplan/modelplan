@@ -315,3 +315,86 @@ func TestZCodeProviderReplacementWithPreservedMetadataInvalidatesQuotaAndActivit
 		t.Fatalf("replacement quota and binding were not established by the scheduled read: %d requests", calls.Load())
 	}
 }
+
+func TestZCodeMembershipSurvivesPersistedFailedAndEmptyReads(t *testing.T) {
+	isolateHome(t)
+	cache := t.TempDir()
+	if err := SetManualKey(cache, "zai", fakeZaiKey, "global"); err != nil {
+		t.Fatal(err)
+	}
+	paths := func() Paths { return ProductionPathsWithAdmission(cache, "1.0.0", consent.Capture()) }
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer "+fakeZaiKey {
+			t.Error("unexpected credential source")
+		}
+		switch calls.Add(1) {
+		case 1:
+			fmt.Fprint(w, zaiOKBody)
+		case 2:
+			w.WriteHeader(http.StatusUnauthorized)
+		case 3:
+			fmt.Fprint(w, `{"success":true,"code":200,"data":{"limits":[]}}`)
+		default:
+			t.Error("unexpected extra network request")
+		}
+	}))
+	defer server.Close()
+	useClient(t, server, "api.z.ai")
+	if ReadPermitted(paths(), now).ZaiSubscriptionEstablished {
+		t.Fatal("an entered key did not establish any quota yet")
+	}
+	for i, at := range []time.Time{now, now.Add(NativeEvery), now.Add(NativeEvery + nativeRetryAfter)} {
+		if err := ExecuteScopeRefresh(context.Background(), paths(), consent.ScopeZaiAccountUsageAPIKey, at); err != nil {
+			t.Fatal(err)
+		}
+		report := ReadPermitted(paths(), at)
+		if !report.ZaiSubscriptionEstablished || ((i == 0) != (zcodeAccount(report) != nil)) {
+			t.Fatalf("attempt %d: membership=%t, has quota=%t", i+1, report.ZaiSubscriptionEstablished, zcodeAccount(report) != nil)
+		}
+	}
+	if calls.Load() != 3 {
+		t.Fatalf("want exactly three scheduled reads, got %d", calls.Load())
+	}
+}
+
+func TestZCodeMembershipRequiresWindowUsableWhenObserved(t *testing.T) {
+	isolateHome(t)
+	cache := t.TempDir()
+	if err := SetManualKey(cache, "zai", fakeZaiKey, "global"); err != nil {
+		t.Fatal(err)
+	}
+	paths := func() Paths { return ProductionPathsWithAdmission(cache, "1.0.0", consent.Capture()) }
+	next := now.Add(NativeEvery)
+	expires := next.Add(time.Hour)
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reset := now.Add(-time.Minute)
+		if calls.Add(1) == 2 {
+			reset = expires
+		}
+		fmt.Fprintf(w, `{"success":true,"code":200,"data":{"limits":[{"type":"TOKENS_LIMIT","unit":3,"number":5,"percentage":25,"nextResetTime":%d}]}}`, reset.UnixMilli())
+	}))
+	defer server.Close()
+	useClient(t, server, "api.z.ai")
+	read := func(at time.Time) {
+		t.Helper()
+		if err := ExecuteScopeRefresh(context.Background(), paths(), consent.ScopeZaiAccountUsageAPIKey, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	read(now)
+	first := ReadPermitted(paths(), now)
+	if first.ZaiSubscriptionEstablished || zcodeAccount(first) != nil || len(loadNative(cache).ZaiMembership) != 0 {
+		t.Error("the first response had only expired windows and must not establish membership")
+	}
+	read(next)
+	fresh := ReadPermitted(paths(), next)
+	if !fresh.ZaiSubscriptionEstablished || zcodeAccount(fresh) == nil || len(loadNative(cache).ZaiMembership) != 1 {
+		t.Fatal("a usable reading must establish membership")
+	}
+	expired := ReadPermitted(paths(), expires)
+	if !expired.ZaiSubscriptionEstablished || zcodeAccount(expired) != nil || calls.Load() != 2 {
+		t.Fatalf("expected the established membership without quota or another request, got %d requests", calls.Load())
+	}
+}

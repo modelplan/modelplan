@@ -14,12 +14,11 @@ import XCTest
 @MainActor final class CockpitActivationClickTests: XCTestCase {
   private let screen = CockpitScreen(frame: CGRect(x: 0, y: 0, width: 1512, height: 982), visibleFrame: CGRect(x: 0, y: 0, width: 1512, height: 949))
 
-  /// The band is the canvas above the closed slab: 228 page px on the full profile, 40 on compact, times the scale.
+  /// The band is the canvas above the closed slab: 228 page px (the one layout, D444), times the scale.
   func testThePortholeBandIsTheCanvasAboveTheClosedSlab() throws {
     let icon = CGRect(x: 1100, y: 949, width: 28, height: 24)
     let layout = try XCTUnwrap(CockpitShellLayout.fit(usable: screen.visibleFrame, anchor: icon, shutterClosed: false, screenWidth: screen.frame.width))
-    let top: CGFloat = layout.profile == .full ? 228 : 40
-    XCTAssertEqual(layout.portholeActivationBand, (top * layout.scale).rounded(.down))
+    XCTAssertEqual(layout.portholeActivationBand, (228 * layout.scale).rounded(.down))
     XCTAssertGreaterThan(layout.portholeActivationBand, 0)
   }
 

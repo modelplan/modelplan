@@ -10,8 +10,12 @@ export class ProviderError extends Error {
 }
 // OpenAI: insufficient_quota and the billing limits. Zhipu (string codes): 1113 balance or resource package exhausted,
 // 1304 daily call limit, 1308 usage limit reached, 1310 weekly/monthly limit.
-const QUOTA_CODES = new Set(["insufficient_quota", "billing_hard_limit_reached", "billing_hard_limit", "billing_not_active", "1113", "1304", "1308", "1310"]);
+const QUOTA_CODES = new Set(["insufficient_quota", "billing_hard_limit_reached", "billing_hard_limit", "billing_not_active", "credit_balance_exhausted", "credit_balance_too_low", "insufficient_credits", "insufficient_balance", "quota_exceeded", "1113", "1304", "1308", "1310"]);
 export const isQuotaCode = (code) => QUOTA_CODES.has(String(code ?? ""));
+// A credit, billing or quota failure by any signal: a known code, HTTP 402 (payment required), or a message that names
+// the credit balance or quota (an unlisted code must not leave a PR unreviewed while the other provider can answer).
+const QUOTA_MESSAGE = /credit balance|insufficient (credit|fund|balance|quota)|exceeded your current quota|billing (hard )?limit|out of credits?|balance (is )?(too low|exhausted)/i;
+export const isQuotaFailure = ({ status, code, message } = {}) => isQuotaCode(code) || Number(status) === 402 || QUOTA_MESSAGE.test(String(message ?? ""));
 
 const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
 
@@ -25,7 +29,7 @@ async function requestJson(fetchImpl, url, init, { retries = 5, waitMs = 8000, l
     const j = await r.json().catch(() => null);
     const code = j?.error?.code ?? j?.error?.type ?? "";
     if (r.ok) return j;
-    if (isQuotaCode(code)) throw new ProviderError("quota", `${label}: HTTP ${r.status} ${code}`);
+    if (isQuotaFailure({ status: r.status, code, message: j?.error?.message })) throw new ProviderError("quota", `${label}: HTTP ${r.status} ${code}`);
     if ((r.status === 429 || r.status >= 500) && attempt < retries) { await sleep(waitMs * (attempt + 1)); continue; }
     // Only the status and the error code are reported; error bodies never echo the key, but nothing else is needed.
     const err = new ProviderError(r.status === 429 ? "quota" : "other", `${label}: HTTP ${r.status} ${code}${r.status === 429 ? " (sustained)" : ""}`);
@@ -55,7 +59,7 @@ export function openaiProvider({ key, model, effort, url = "https://api.openai.c
       }
       if (res?.status !== "completed") {
         const code = res?.error?.code ?? "";
-        throw new ProviderError(isQuotaCode(code) ? "quota" : "other", `openai: response ${res?.status ?? "missing"} ${code || res?.incomplete_details?.reason || ""}`.trim());
+        throw new ProviderError(isQuotaFailure({ code, message: res?.error?.message }) ? "quota" : "other", `openai: response ${res?.status ?? "missing"} ${code || res?.incomplete_details?.reason || ""}`.trim());
       }
       const text = (res.output ?? []).filter((o) => o.type === "message").flatMap((o) => o.content ?? []).filter((c) => c.type === "output_text").map((c) => c.text).join("");
       const u = res.usage ?? {};

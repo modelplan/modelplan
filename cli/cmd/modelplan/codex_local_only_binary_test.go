@@ -134,6 +134,7 @@ func TestCodexLocalOnlyAdmissionRealBinary(t *testing.T) {
 	}
 	assertNoCodexValues := func(client *queryBinary, label string) {
 		t.Helper()
+		// A consent change never ends the session: the denial holds on the same session.
 		response := client.call("rows/subscribe", map[string]any{})
 		var snapshot wire.Envelope[wire.RowsSnapshot]
 		if err := json.Unmarshal(response["result"], &snapshot); err != nil {
