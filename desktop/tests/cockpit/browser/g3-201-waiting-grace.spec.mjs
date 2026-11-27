@@ -34,6 +34,16 @@ test('a quick first display never shows the waiting line, even after the hidden 
  expect(await c.receive(c.send('display',{data:sample()}))).toBe(true);
  await expect(line(page)).toHaveCount(0);
 });
+test('visible, then a clear, then a quick display: no line is ever painted',async({page})=>{
+ const c=await load(page),gen=g=>({generation:String(g),viewRevision:String(g-38)});
+ expect(await visibility(c,true)).toBe(true);
+ expect(await c.receive(c.send('clear',gen(42)))).toBe(true);
+ await frames(page,0);
+ expect(await opacity(page)).toBe(0);
+ expect(await at(page,100)).toBe(0);
+ expect(await c.receive(c.send('display',{...gen(42),data:sample()}))).toBe(true);
+ await expect(line(page)).toHaveCount(0);
+});
 test('a slow first display shows the waiting line after the grace, counted from the show',async({page})=>{
  const c=await load(page);
  expect(await visibility(c,false)).toBe(true);await frames(page,900);
@@ -58,10 +68,10 @@ test('a cleared page hidden and shown again waits the same grace, a quick displa
  expect(await c.receive(c.send('display',{...gen(43),data:empty()}))).toBe(true);
  await expect(page.locator('.ec-empty-open')).toBeVisible();
  expect(await opacity(page)).toBe(1);
- // A clear on a page that is already shown has no show race: the line is visible at once and runs no animation (CKP-MOT: nothing runs behind a gate).
+ // A clear on a page that is already shown restarts the grace too: transparent until it passes.
  expect(await c.receive(c.send('clear',gen(44)))).toBe(true);
- expect(await opacity(page)).toBe(1);
- expect(await line(page).first().evaluate(e=>e.getAnimations().length)).toBe(0);
+ expect(await opacity(page)).toBe(0);
+ await graceThenShown(page);
  // Hidden and shown again, the cleared line waits the grace like the waiting line.
  expect(await visibility(c,false,gen(44))).toBe(true);
  expect(await visibility(c,true,gen(44))).toBe(true);
