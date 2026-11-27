@@ -52,7 +52,7 @@ type CockpitDetails struct {
 	Forecasts []CockpitForecast `json:"forecasts,omitempty" schema:"maxItems=128" null:"forbidden"`
 	// RecentSessions is present only for a client that negotiated cockpitSessionsV1: the sessions this
 	// device last observed within the past seven days, newest first. LastObservedAt is a last sighting,
-	// never an end time; there are no titles or token counts.
+	// never an end time. A title, total tokens and ≈cost appear when known (D470).
 	RecentSessions []CockpitRecentSession `json:"recentSessions,omitempty" schema:"maxItems=200" null:"forbidden"`
 	// Peaks is present only for a client that negotiated cockpitPeaksV1: for each declared plan row, its current
 	// or next published time-of-day window with a raised rate within 24 hours. EndsAt is null when the window does
@@ -82,6 +82,15 @@ type CockpitRecentSession struct {
 	// sends it; a reader treats an absent state as before (a null label reads as no project).
 	ProjectState   CockpitProjectState `json:"projectState,omitempty" null:"forbidden"`
 	LastObservedAt time.Time           `json:"lastObservedAt"`
+	// ProjectKind is where the session's work lives (D470); absent for a session recorded before kinds were kept.
+	ProjectKind CockpitProjectKind `json:"projectKind,omitempty" null:"forbidden"`
+	// Title is the tool's own generated or user-set title (never the first message), only while project labels are on.
+	Title *string `json:"title,omitempty" null:"forbidden" schema:"minLength=1,maxLength=96"`
+	// TotalTokens is the session's total tokens over its recorded days (input, output, cache; D470), and CostUsd its
+	// ≈cost. Both are absent while unknown, never zero. ModelApprox marks a dated fallback model.
+	TotalTokens *int64   `json:"totalTokens,omitempty" null:"forbidden" schema:"minimum=0"`
+	CostUsd     *float64 `json:"costUsd,omitempty" null:"forbidden"`
+	ModelApprox bool     `json:"modelApprox,omitempty" null:"forbidden"`
 }
 
 // CockpitForecast is the engine's outlook for one current window. RunsOutAt is
@@ -246,6 +255,10 @@ type CockpitSession struct {
 	// StartedAt is the start of the session's first recorded turn; the strip's elapsed time counts from it
 	// (CKP-STRIP-16, owner D277). Absent when the producer has no start for the session.
 	StartedAt *time.Time `json:"startedAt,omitempty" null:"forbidden"`
+	// Title is the tool's own generated or user-set title, only while project labels are on (D470).
+	Title *string `json:"title,omitempty" null:"forbidden" schema:"minLength=1,maxLength=96"`
+	// ProjectKind is where the session's work lives (D470); absent for a session recorded before kinds were kept.
+	ProjectKind CockpitProjectKind `json:"projectKind,omitempty" null:"forbidden"`
 	// ObservedTotalTokens is the session's total tokens over its recorded days: input, cache reads, cache writes and
 	// output, each counted once (CKP-STRIP-16, TOK-50). Absent while the session has no recorded turn or any part
 	// of a day is unknown; output alone is never sent in its place.

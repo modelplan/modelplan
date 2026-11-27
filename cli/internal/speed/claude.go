@@ -69,6 +69,8 @@ type claudeParser struct {
 	// cleared: the tool's clear boundary. A turn from before it is never counted, so none of its
 	// request ids is recorded either.
 	cleared time.Time
+	// The transcript's own title entries (D470 3): a user-set one wins over the generated one.
+	customTitle, aiTitle string
 }
 
 // idleDone: a turn whose last reply ended it and nothing followed for this long is finished, even
@@ -86,7 +88,42 @@ var (
 	ccAssistant = []byte(`"type":"assistant"`)
 )
 
-func (p *claudeParser) line(off, end int64, b []byte) { p.lineDoc(off, end, b, nil) }
+func (p *claudeParser) line(off, end int64, b []byte) {
+	p.noteTitle(b)
+	p.lineDoc(off, end, b, nil)
+}
+
+var (
+	ccCustomTitle = []byte(`"type":"custom-title"`)
+	ccAITitle     = []byte(`"type":"ai-title"`)
+)
+
+// noteTitle reads a title entry: {"type":"custom-title","customTitle":…} or {"type":"ai-title","aiTitle":…}.
+func (p *claudeParser) noteTitle(b []byte) {
+	custom := bytes.Contains(b, ccCustomTitle)
+	if !custom && !bytes.Contains(b, ccAITitle) || len(b) > 16<<10 {
+		return
+	}
+	var e struct {
+		Custom string `json:"customTitle"`
+		AI     string `json:"aiTitle"`
+	}
+	if json.Unmarshal(b, &e) != nil {
+		return
+	}
+	if t := cleanTitle(e.Custom); custom && t != "" {
+		p.customTitle = t
+	} else if t := cleanTitle(e.AI); !custom && t != "" {
+		p.aiTitle = t
+	}
+}
+
+func (p *claudeParser) title() string {
+	if p.customTitle != "" {
+		return p.customTitle
+	}
+	return p.aiTitle
+}
 
 // lineDoc is line with the line's reduced form (claudeDoc) already made, or nil to make it here.
 func (p *claudeParser) lineDoc(off, end int64, b, doc []byte) {
@@ -201,6 +238,13 @@ func ccAsTurn(t *ccTurn) turn {
 }
 
 func (p *claudeParser) finish() ([]turn, int64) {
+	defer func() {
+		if t := p.title(); t != "" {
+			for i := range p.done {
+				p.done[i].np.Title = t
+			}
+		}
+	}()
 	p.probe = p.liveProbe()
 	if t := p.cur; t != nil {
 		if !t.ended && p.now.Sub(later(t.last, t.at)) > idleDrop {

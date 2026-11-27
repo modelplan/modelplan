@@ -297,5 +297,143 @@
     }
    ]
   }
+ },
+ "usage": {
+  "measure": "total-tokens",
+  "today": {
+   "tokens": {
+    "total": 0,
+    "input": 0,
+    "output": 0,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "complete": true
+   },
+   "costUsd": null,
+   "costState": "unpriced",
+   "sessionCount": 0,
+   "projectCount": 0,
+   "projects": [],
+   "sessions": [],
+   "otherProjects": {
+    "count": 0,
+    "tokens": {
+     "total": 0,
+     "input": 0,
+     "output": 0,
+     "cacheRead": 0,
+     "cacheWrite": 0,
+     "complete": true
+    },
+    "share": 0,
+    "costUsd": null,
+    "costState": "unpriced"
+   },
+   "otherSessions": {
+    "count": 0,
+    "tokens": {
+     "total": 0,
+     "input": 0,
+     "output": 0,
+     "cacheRead": 0,
+     "cacheWrite": 0,
+     "complete": true
+    },
+    "share": 0,
+    "costUsd": null,
+    "costState": "unpriced"
+   },
+   "backgroundReview": null
+  },
+  "recent7d": {
+   "tokens": {
+    "total": 0,
+    "input": 0,
+    "output": 0,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "complete": true
+   },
+   "costUsd": null,
+   "costState": "unpriced",
+   "sessionCount": 0,
+   "projectCount": 0,
+   "projects": [],
+   "sessions": [],
+   "otherProjects": {
+    "count": 0,
+    "tokens": {
+     "total": 0,
+     "input": 0,
+     "output": 0,
+     "cacheRead": 0,
+     "cacheWrite": 0,
+     "complete": true
+    },
+    "share": 0,
+    "costUsd": null,
+    "costState": "unpriced"
+   },
+   "otherSessions": {
+    "count": 0,
+    "tokens": {
+     "total": 0,
+     "input": 0,
+     "output": 0,
+     "cacheRead": 0,
+     "cacheWrite": 0,
+     "complete": true
+    },
+    "share": 0,
+    "costUsd": null,
+    "costState": "unpriced"
+   },
+   "backgroundReview": null
+  },
+  "recent30d": {
+   "tokens": {
+    "total": 0,
+    "input": 0,
+    "output": 0,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "complete": true
+   },
+   "costUsd": null,
+   "costState": "unpriced",
+   "sessionCount": 0,
+   "projectCount": 0,
+   "projects": [],
+   "sessions": [],
+   "otherProjects": {
+    "count": 0,
+    "tokens": {
+     "total": 0,
+     "input": 0,
+     "output": 0,
+     "cacheRead": 0,
+     "cacheWrite": 0,
+     "complete": true
+    },
+    "share": 0,
+    "costUsd": null,
+    "costState": "unpriced"
+   },
+   "otherSessions": {
+    "count": 0,
+    "tokens": {
+     "total": 0,
+     "input": 0,
+     "output": 0,
+     "cacheRead": 0,
+     "cacheWrite": 0,
+     "complete": true
+    },
+    "share": 0,
+    "costUsd": null,
+    "costState": "unpriced"
+   },
+   "backgroundReview": null
+  }
  }
 }

@@ -124,3 +124,57 @@ func TestCockpitRecentSessionsNeedTheNegotiatedCapability(t *testing.T) {
 		t.Fatalf("negotiated, the admitted recorded session crosses: %+v, %v", got.RecentSessions, err)
 	}
 }
+
+// macrevb-1299-9: a Codex session under no named model is exported as the dated fallback model with the
+// approximation flag; an observed model never carries the flag.
+func TestCockpitRecentSessionsMarkTheDatedFallbackModel(t *testing.T) {
+	now := time.Date(2026, 11, 26, 12, 0, 0, 0, time.UTC)
+	fallback := speed.FallbackModel("2026-11-26")
+	models := []digest.Model{{ID: "public-model", HarnessIDs: map[string][]string{"codex": {"synthetic-alias"}}}, {ID: fallback}}
+	sessions := []speed.PerfSession{
+		{Ref: "1111111111111111", Source: "codex", LastAt: now.Add(-time.Hour), Days: []speed.SessionDay{{Day: "2026-11-26", Model: "synthetic-alias", EffortStatus: "unreported"}}},
+		{Ref: "2222222222222222", Source: "codex", LastAt: now.Add(-2 * time.Hour)},
+		{Ref: "3333333333333333", Source: "codex", LastAt: now.Add(-3 * time.Hour), Days: []speed.SessionDay{{Day: "2026-11-26", Model: "codex-auto-review", EffortStatus: "unreported"}}},
+	}
+	allowed := map[string]bool{consent.ScopeCodexLocalHistory: true}
+	scopes := map[string]string{"codex": consent.ScopeCodexLocalHistory}
+	got := cockpitRecentSessions(sessions, allowed, scopes, nil, true, models, now)
+	if len(got) != 3 {
+		t.Fatalf("%+v", got)
+	}
+	if got[0].Model != "public-model" || got[0].ModelApprox {
+		t.Fatalf("an observed model: %+v", got[0])
+	}
+	for _, s := range got[1:] {
+		if s.Model != fallback || !s.ModelApprox {
+			t.Fatalf("no named model: %+v, want %s approximated", s, fallback)
+		}
+	}
+	// A fallback the publication does not list stays unknown, never flagged.
+	if got := cockpitRecentSessions(sessions[1:2], allowed, scopes, nil, true, models[:1], now); got[0].Model != "unknown" || got[0].ModelApprox {
+		t.Fatalf("an unlisted fallback: %+v", got[0])
+	}
+}
+
+// macrevb-1299-4: a session still recorded under the older project rule is published in the usage rankings with
+// a valid kind and without the older rule's grouping.
+func TestCockpitUsageOlderRuleSessionHasAPublishedKind(t *testing.T) {
+	now := time.Date(2026, 11, 26, 12, 0, 0, 0, time.UTC)
+	total := int64(100)
+	d := speed.SessionDay{Day: "2026-11-26", Model: "synthetic-alias", EffortStatus: "unreported", ObservedRequests: 1, ObservedOutputTokens: 10,
+		Kinds: &speed.TokenKinds{TotalTokens: &total}}
+	v := speed.PerfView{OK: true, Recording: true, Now: now, Ledger: speed.PerfLedger{Sessions: []speed.PerfSession{
+		{Ref: "1111111111111111", Key: "k1", Source: "codex", ProjectRef: "old-guess", ProjectLabel: "old-label", ProjectRule: 1, LastAt: now, FirstAt: now, Days: []speed.SessionDay{d}},
+	}}}
+	u := cockpitUsage(v, map[string]bool{"codex": true}, true, nil, nil)
+	for _, p := range u.Today.Projects {
+		if p.Kind != wire.ProjectKindNone || p.Label != nil {
+			t.Fatalf("project row: %+v", p)
+		}
+	}
+	for _, s := range u.Today.Sessions {
+		if s.ProjectKind != wire.ProjectKindNone || s.ProjectRef != nil || s.ProjectLabel != nil {
+			t.Fatalf("session row: %+v", s)
+		}
+	}
+}

@@ -1,0 +1,17 @@
+{
+  "runs": 1,
+  "tokens": {
+    "total": 1,
+    "input": 1,
+    "output": 1,
+    "cacheRead": 1,
+    "cacheWrite": 1,
+    "complete": false
+  },
+  "share": 0.425,
+  "costUsd": 42.5,
+  "costState": "priced",
+  "model": "synthetic",
+  "modelApprox": false,
+  "lastObservedAt": "2026-10-29T12:00:00.123456789Z"
+}

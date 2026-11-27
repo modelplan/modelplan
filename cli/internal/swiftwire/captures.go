@@ -9,6 +9,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/rows"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -23,7 +24,7 @@ func captureRoots() []captureRoot {
 		reflect.TypeFor[wire.Request](), reflect.TypeFor[wire.ErrorContext](), reflect.TypeFor[wire.RPCError](), reflect.TypeFor[wire.Failure](),
 		reflect.TypeFor[wire.InitializeParams](), reflect.TypeFor[wire.InitializeResult](), reflect.TypeFor[wire.Empty](), reflect.TypeFor[wire.CancelParams](),
 		reflect.TypeFor[wire.RowsSnapshot](), reflect.TypeFor[wire.ConsentScope](), reflect.TypeFor[wire.ConsentFacts](), reflect.TypeFor[wire.ConsentGrantParams](), reflect.TypeFor[wire.ConsentReceipt](),
-		reflect.TypeFor[wire.CredentialRequest](), reflect.TypeFor[wire.CredentialResult](), reflect.TypeFor[wire.RefreshRequestParams](), reflect.TypeFor[wire.RefreshMember](), reflect.TypeFor[wire.MemberRefreshResult](), reflect.TypeFor[wire.RefreshScheduled](), reflect.TypeFor[wire.PluginInstallParams](), reflect.TypeFor[wire.PluginInstallResult](), reflect.TypeFor[wire.ReaderKeyParams](), reflect.TypeFor[wire.ReaderKeyResult](), reflect.TypeFor[wire.HistoryImportStartParams](), reflect.TypeFor[wire.HistoryImportSource](), reflect.TypeFor[wire.HistoryImportCoverage](), reflect.TypeFor[wire.HistoryImportStatus](), reflect.TypeFor[wire.PublicationResult](), reflect.TypeFor[wire.PublicationUnits](), reflect.TypeFor[wire.PublicationCapability](), reflect.TypeFor[wire.CockpitQueryParams](), reflect.TypeFor[wire.CockpitData](), reflect.TypeFor[wire.CockpitSubscription](), reflect.TypeFor[wire.CockpitAccount](), reflect.TypeFor[wire.CockpitDetails](), reflect.TypeFor[wire.CockpitPublication](), reflect.TypeFor[wire.CockpitPublicationModel](), reflect.TypeFor[wire.CockpitPublicationEffort](), reflect.TypeFor[wire.CockpitPlanModels](), reflect.TypeFor[wire.CockpitSpeedTier](), reflect.TypeFor[wire.CockpitSpeedEligibility](), reflect.TypeFor[wire.CockpitSpeedTierModel](), reflect.TypeFor[wire.CockpitSpeedRatio](), reflect.TypeFor[wire.CockpitSpeedBilling](), reflect.TypeFor[wire.CockpitSubscriptionDetails](), reflect.TypeFor[wire.CockpitResetCount](), reflect.TypeFor[wire.CockpitCredits](), reflect.TypeFor[wire.CockpitToday](), reflect.TypeFor[wire.CockpitSession](), reflect.TypeFor[wire.CockpitRecentSession](), reflect.TypeFor[wire.CockpitPeak](), reflect.TypeFor[wire.CockpitAlert](), reflect.TypeFor[wire.CockpitForecast](), reflect.TypeFor[wire.CockpitHistory](), reflect.TypeFor[wire.CockpitSubscriptionHistory](), reflect.TypeFor[wire.CockpitSourceHistory](), reflect.TypeFor[wire.CockpitHistorySums](), reflect.TypeFor[wire.CockpitCycleGroup](), reflect.TypeFor[wire.CockpitCycle](), reflect.TypeFor[wire.CockpitCycleShare](), reflect.TypeFor[wire.CockpitSourceBucket](), reflect.TypeFor[wire.CockpitCost](), reflect.TypeFor[wire.CockpitCostBucket](), reflect.TypeFor[wire.CockpitCostModels](), reflect.TypeFor[wire.CockpitModelCost](), reflect.TypeFor[wire.CockpitProjectRanking](), reflect.TypeFor[wire.CockpitRankedProject](), reflect.TypeFor[wire.CockpitEntityRanking](), reflect.TypeFor[wire.CockpitEntityWindow](), reflect.TypeFor[wire.CockpitRankedEntity](),
+		reflect.TypeFor[wire.CredentialRequest](), reflect.TypeFor[wire.CredentialResult](), reflect.TypeFor[wire.RefreshRequestParams](), reflect.TypeFor[wire.RefreshMember](), reflect.TypeFor[wire.MemberRefreshResult](), reflect.TypeFor[wire.RefreshScheduled](), reflect.TypeFor[wire.PluginInstallParams](), reflect.TypeFor[wire.PluginInstallResult](), reflect.TypeFor[wire.ReaderKeyParams](), reflect.TypeFor[wire.ReaderKeyResult](), reflect.TypeFor[wire.HistoryImportStartParams](), reflect.TypeFor[wire.HistoryImportSource](), reflect.TypeFor[wire.HistoryImportCoverage](), reflect.TypeFor[wire.HistoryImportStatus](), reflect.TypeFor[wire.PublicationResult](), reflect.TypeFor[wire.PublicationUnits](), reflect.TypeFor[wire.PublicationCapability](), reflect.TypeFor[wire.CockpitQueryParams](), reflect.TypeFor[wire.CockpitData](), reflect.TypeFor[wire.CockpitSubscription](), reflect.TypeFor[wire.CockpitAccount](), reflect.TypeFor[wire.CockpitDetails](), reflect.TypeFor[wire.CockpitPublication](), reflect.TypeFor[wire.CockpitPublicationModel](), reflect.TypeFor[wire.CockpitPublicationEffort](), reflect.TypeFor[wire.CockpitPlanModels](), reflect.TypeFor[wire.CockpitSpeedTier](), reflect.TypeFor[wire.CockpitSpeedEligibility](), reflect.TypeFor[wire.CockpitSpeedTierModel](), reflect.TypeFor[wire.CockpitSpeedRatio](), reflect.TypeFor[wire.CockpitSpeedBilling](), reflect.TypeFor[wire.CockpitSubscriptionDetails](), reflect.TypeFor[wire.CockpitResetCount](), reflect.TypeFor[wire.CockpitCredits](), reflect.TypeFor[wire.CockpitToday](), reflect.TypeFor[wire.CockpitSession](), reflect.TypeFor[wire.CockpitRecentSession](), reflect.TypeFor[wire.CockpitPeak](), reflect.TypeFor[wire.CockpitAlert](), reflect.TypeFor[wire.CockpitForecast](), reflect.TypeFor[wire.CockpitHistory](), reflect.TypeFor[wire.CockpitSubscriptionHistory](), reflect.TypeFor[wire.CockpitSourceHistory](), reflect.TypeFor[wire.CockpitHistorySums](), reflect.TypeFor[wire.CockpitCycleGroup](), reflect.TypeFor[wire.CockpitCycle](), reflect.TypeFor[wire.CockpitCycleShare](), reflect.TypeFor[wire.CockpitSourceBucket](), reflect.TypeFor[wire.CockpitCost](), reflect.TypeFor[wire.CockpitCostBucket](), reflect.TypeFor[wire.CockpitCostModels](), reflect.TypeFor[wire.CockpitModelCost](), reflect.TypeFor[wire.CockpitProjectRanking](), reflect.TypeFor[wire.CockpitRankedProject](), reflect.TypeFor[wire.CockpitEntityRanking](), reflect.TypeFor[wire.CockpitEntityWindow](), reflect.TypeFor[wire.CockpitRankedEntity](), reflect.TypeFor[wire.CockpitUsage](), reflect.TypeFor[wire.CockpitUsageWindow](), reflect.TypeFor[wire.CockpitUsageTokens](), reflect.TypeFor[wire.CockpitUsageProject](), reflect.TypeFor[wire.CockpitUsageSession](), reflect.TypeFor[wire.CockpitUsageOther](), reflect.TypeFor[wire.CockpitBackgroundReview](),
 		reflect.TypeFor[wire.HistoryQueryParams](), reflect.TypeFor[wire.HistoryItem](), reflect.TypeFor[wire.HistoryPage](), reflect.TypeFor[wire.Diagnostics](), reflect.TypeFor[wire.RefreshDecision](), reflect.TypeFor[wire.ScopeDiag](), reflect.TypeFor[wire.Health](),
 		reflect.TypeFor[rows.Text](), reflect.TypeFor[rows.Name](), reflect.TypeFor[rows.Reason](), reflect.TypeFor[rows.NextStep](), reflect.TypeFor[rows.Hint](), reflect.TypeFor[rows.Row](), reflect.TypeFor[rows.ExpiryState](), reflect.TypeFor[rows.AccountToday](),
 		reflect.TypeFor[rows.AccountActivity](), reflect.TypeFor[rows.ResetEvent](), reflect.TypeFor[rows.ResetLink](), reflect.TypeFor[rows.ResetSource](), reflect.TypeFor[rows.ResetSchedule](), reflect.TypeFor[rows.ModelScope](), reflect.TypeFor[rows.ResetCards](), reflect.TypeFor[rows.ResetCardItem](), reflect.TypeFor[rows.ResetCardSource](), reflect.TypeFor[rows.Account](), reflect.TypeFor[rows.Plan](), reflect.TypeFor[rows.Credits](), reflect.TypeFor[rows.Failure](), reflect.TypeFor[rows.Window](), reflect.TypeFor[rows.RowsSummary](), reflect.TypeFor[wire.RowsProjection](),
@@ -207,12 +208,50 @@ func (m *model) seed(t reflect.Type, name string) (reflect.Value, error) {
 			if err != nil {
 				return reflect.Value{}, err
 			}
+			boundSeed(elem, f.Tag.Get("schema"))
 			v.Field(i).Set(elem)
 		}
 	default:
 		return reflect.Value{}, fmt.Errorf("unsupported capture seed %s", t)
 	}
 	return v, nil
+}
+
+// boundSeed keeps a seeded number inside the schema bounds its field declares (macrevb-1299-1): the clients
+// reject a capture outside them, so the seed is the midpoint of a range that excludes the default.
+func boundSeed(v reflect.Value, tag string) {
+	if v.Kind() == reflect.Pointer && !v.IsNil() {
+		v = v.Elem()
+	}
+	if v.Kind() != reflect.Float64 || tag == "" || !v.CanSet() {
+		return
+	}
+	low, high, hasLow, hasHigh := 0.0, 0.0, false, false
+	for _, part := range strings.Split(tag, ",") {
+		k, val, ok := strings.Cut(part, "=")
+		if !ok {
+			continue
+		}
+		n, err := strconv.ParseFloat(val, 64)
+		if err != nil {
+			continue
+		}
+		switch k {
+		case "minimum":
+			low, hasLow = n, true
+		case "maximum":
+			high, hasHigh = n, true
+		}
+	}
+	x := v.Float()
+	switch {
+	case hasLow && hasHigh && (x < low || x > high):
+		v.SetFloat(low + (high-low)*0.425)
+	case hasHigh && x > high:
+		v.SetFloat(high)
+	case hasLow && x < low:
+		v.SetFloat(low)
+	}
 }
 
 type mutation struct {

@@ -292,6 +292,7 @@ func ObserveLive(cache string, logs []LiveLog, labels bool, subscriptions map[st
 				p.liveOnly = true
 				scanLog(files, log.Path, log.Source, p, now)
 				x = p.probe
+				x.np.Thread = codexThreadOfPath(log.Path)
 			default:
 				continue
 			}
@@ -347,8 +348,9 @@ func (l *PerfLedger) setLive(key, source string, x liveProbe, subscription strin
 			break
 		}
 	}
-	if (x.cwd != "" || x.np.ID != "") && l.project != nil {
-		ref, label := l.project(source, x.cwd, x.np)
+	if (x.cwd != "" || x.np.ID != "" || x.np.Thread != "") && l.project != nil {
+		p := l.project(source, x.cwd, x.np)
+		ref, label := p.Ref, p.Label
 		if r.ProjectRef == "" {
 			r.ProjectRef = ref
 		}

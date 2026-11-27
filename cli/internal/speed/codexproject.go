@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-// Codex's own projects: the folders it lists. config.toml keeps one [projects."<path>"] table per
+// Codex's own workspaces: the folders it lists. config.toml keeps one [projects."<path>"] table per
 // folder the user trusted (CLI and desktop app), and the desktop app keeps its saved workspace
 // roots in .codex-global-state.json. A session belongs to the listed folder that contains its
 // working directory, or the repository root of it (Codex resolves a worktree to its main
@@ -19,7 +19,10 @@ import (
 
 const maxCodexProjectFile = 1 << 20
 
-type codexProjects struct{ roots []string }
+type codexProjects struct {
+	roots                 []string
+	projectless, assigned map[string]bool
+}
 
 var codexProjectTable = regexp.MustCompile(`^\s*\[\s*projects\s*\.\s*("(?:[^"\\]|\\.)*"|'[^']*')\s*\]\s*(?:#.*)?$`)
 
@@ -60,11 +63,20 @@ func loadCodexProjects() *codexProjects {
 	}
 	if b, ok := readCapped(filepath.Join(home, ".codex-global-state.json")); ok {
 		var st struct {
-			Roots []string `json:"electron-saved-workspace-roots"`
+			Roots       []string                   `json:"electron-saved-workspace-roots"`
+			Projectless []string                   `json:"projectless-thread-ids"`
+			Assignments map[string]json.RawMessage `json:"thread-project-assignments"`
 		}
 		if json.Unmarshal(b, &st) == nil {
 			for _, r := range st.Roots {
 				c.add(r)
+			}
+			c.projectless, c.assigned = map[string]bool{}, map[string]bool{}
+			for _, id := range st.Projectless {
+				c.projectless[id] = true
+			}
+			for id := range st.Assignments {
+				c.assigned[id] = true
 			}
 		}
 	}
@@ -91,10 +103,11 @@ func within(dir, root string) bool {
 	return dir == root || strings.HasPrefix(dir, strings.TrimRight(root, string(filepath.Separator))+string(filepath.Separator))
 }
 
-// lookup: the Codex project containing a working directory, "" when none.
-func (c *codexProjects) lookup(cwd string) (id, name string) {
+// lookup: the deepest listed Codex project folder containing a working directory (or its repository root),
+// "" when none; skip names folders that are never projects (home, temp).
+func (c *codexProjects) lookup(cwd string, skip func(string) bool) string {
 	if c == nil || len(c.roots) == 0 || cwd == "" || len(cwd) > 4096 || !filepath.IsAbs(cwd) {
-		return "", ""
+		return ""
 	}
 	dir := filepath.Clean(cwd)
 	if real, err := filepath.EvalSymlinks(dir); err == nil {
@@ -106,16 +119,23 @@ func (c *codexProjects) lookup(cwd string) (id, name string) {
 	}
 	best := ""
 	for _, r := range c.roots {
+		if skip != nil && skip(r) {
+			continue
+		}
 		for _, d := range cands {
 			if within(d, r) && len(r) > len(best) {
 				best = r
 			}
 		}
 	}
-	if best == "" {
-		return "", ""
-	}
-	return "codex:" + best, filepath.Base(best)
+	return best
+}
+
+// independent: a thread the desktop lists as projectless and has not assigned to a project (CodexBar's
+// CodexProjectlessWorkspaceMetadata): the only evidence of an independent chat. A missing id, an unlisted
+// folder or a generated-looking name is not.
+func (c *codexProjects) independent(thread string) bool {
+	return c != nil && c.projectless[thread] && !c.assigned[thread]
 }
 
 func readCapped(p string) ([]byte, bool) {

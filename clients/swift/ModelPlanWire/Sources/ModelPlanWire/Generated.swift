@@ -2085,6 +2085,66 @@ public struct WireCockpitAlert: Codable, Sendable {
     }
 }
 
+public struct WireCockpitBackgroundReview: Codable, Sendable {
+    public let `runs`: Int
+    public let `tokens`: WireCockpitUsageTokens
+    public let `share`: Double
+    public let `costUsd`: Double?
+    public let `costState`: WireCockpitCostState
+    public let `model`: String?
+    public let `modelApprox`: Bool
+    public let `lastObservedAt`: WireTimestamp
+    private enum CodingKeys: String, CodingKey {
+        case `runs`
+        case `tokens`
+        case `share`
+        case `costUsd`
+        case `costState`
+        case `model`
+        case `modelApprox`
+        case `lastObservedAt`
+    }
+    public init(`runs`: Int, `tokens`: WireCockpitUsageTokens, `share`: Double, `costUsd`: Double? = nil, `costState`: WireCockpitCostState, `model`: String? = nil, `modelApprox`: Bool, `lastObservedAt`: WireTimestamp) throws {
+        self.`runs` = `runs`
+        self.`tokens` = `tokens`
+        self.`share` = `share`
+        self.`costUsd` = `costUsd`
+        self.`costState` = `costState`
+        self.`model` = `model`
+        self.`modelApprox` = `modelApprox`
+        self.`lastObservedAt` = `lastObservedAt`
+        try validate()
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.`runs` = try c.decode(Int.self, forKey: .`runs`)
+        self.`tokens` = try c.decode(WireCockpitUsageTokens.self, forKey: .`tokens`)
+        self.`share` = try c.decode(Double.self, forKey: .`share`)
+        self.`costUsd` = try c.decodeIfPresent(Double.self, forKey: .`costUsd`)
+        self.`costState` = try c.decode(WireCockpitCostState.self, forKey: .`costState`)
+        self.`model` = try c.decodeIfPresent(String.self, forKey: .`model`)
+        self.`modelApprox` = try c.decode(Bool.self, forKey: .`modelApprox`)
+        self.`lastObservedAt` = try c.decode(WireTimestamp.self, forKey: .`lastObservedAt`)
+        try validate()
+    }
+    public func encode(to encoder: Encoder) throws {
+        try validate()
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(`runs`, forKey: .`runs`)
+        try c.encode(`tokens`, forKey: .`tokens`)
+        try c.encode(`share`, forKey: .`share`)
+        try c.encode(`costUsd`, forKey: .`costUsd`)
+        try c.encode(`costState`, forKey: .`costState`)
+        try c.encode(`model`, forKey: .`model`)
+        try c.encode(`modelApprox`, forKey: .`modelApprox`)
+        try c.encode(`lastObservedAt`, forKey: .`lastObservedAt`)
+    }
+    private func validate() throws {
+        guard `share` >= 0 else { throw WireDecodeError.invalidBound }
+        guard `share` <= 1 else { throw WireDecodeError.invalidBound }
+    }
+}
+
 public struct WireCockpitCost: Codable, Sendable {
     public let `basis`: String
     public let `currency`: String
@@ -2218,6 +2278,31 @@ public struct WireCockpitCostModels: Codable, Sendable {
     }
 }
 
+public enum WireCockpitCostState: Codable, Sendable, Equatable {
+    case `priced`
+    case `partial`
+    case `unpriced`
+    case unknown(String)
+    public init(rawValue: String) {
+        switch rawValue {
+        case "priced": self = .`priced`
+        case "partial": self = .`partial`
+        case "unpriced": self = .`unpriced`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`priced`: return "priced"
+        case .`partial`: return "partial"
+        case .`unpriced`: return "unpriced"
+        case .unknown(let value): return value
+        }
+    }
+    public var isKnown: Bool { if case .unknown = self { return false }; return true }
+    public init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
+    public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
+}
 public struct WireCockpitCredits: Codable, Sendable {
     public let `balance`: Double?
     public let `observedAt`: WireTimestamp
@@ -2634,6 +2719,7 @@ public struct WireCockpitHistory: Codable, Sendable {
     public let `projects`: WireCockpitProjectRanking
     public let `cycles`: [WireCockpitCycleGroup]
     public let `cost`: WireCockpitCost?
+    public let `usage`: WireCockpitUsage?
     private enum CodingKeys: String, CodingKey {
         case `version`
         case `sources`
@@ -2648,8 +2734,9 @@ public struct WireCockpitHistory: Codable, Sendable {
         case `projects`
         case `cycles`
         case `cost`
+        case `usage`
     }
-    public init(`version`: Int, `sources`: [String], `coverage`: String, `recordingSince`: WireTimestamp? = nil, `subscriptions`: [WireCockpitSubscriptionHistory], `models`: WireCockpitEntityRanking, `tools`: WireCockpitEntityRanking, `dailyFrom`: String? = nil, `daily`: [WireCockpitSourceBucket], `hourly`: [WireCockpitSourceBucket], `projects`: WireCockpitProjectRanking, `cycles`: [WireCockpitCycleGroup], `cost`: WireCockpitCost? = nil) throws {
+    public init(`version`: Int, `sources`: [String], `coverage`: String, `recordingSince`: WireTimestamp? = nil, `subscriptions`: [WireCockpitSubscriptionHistory], `models`: WireCockpitEntityRanking, `tools`: WireCockpitEntityRanking, `dailyFrom`: String? = nil, `daily`: [WireCockpitSourceBucket], `hourly`: [WireCockpitSourceBucket], `projects`: WireCockpitProjectRanking, `cycles`: [WireCockpitCycleGroup], `cost`: WireCockpitCost? = nil, `usage`: WireCockpitUsage? = nil) throws {
         self.`version` = `version`
         self.`sources` = `sources`
         self.`coverage` = `coverage`
@@ -2663,6 +2750,7 @@ public struct WireCockpitHistory: Codable, Sendable {
         self.`projects` = `projects`
         self.`cycles` = `cycles`
         self.`cost` = `cost`
+        self.`usage` = `usage`
         try validate()
     }
     public init(from decoder: Decoder) throws {
@@ -2681,6 +2769,8 @@ public struct WireCockpitHistory: Codable, Sendable {
         self.`cycles` = try c.decode([WireCockpitCycleGroup].self, forKey: .`cycles`)
         if c.contains(.`cost`), try c.decodeNil(forKey: .`cost`) { throw WireDecodeError.invalidIdentity }
         self.`cost` = try c.decodeIfPresent(WireCockpitCost.self, forKey: .`cost`)
+        if c.contains(.`usage`), try c.decodeNil(forKey: .`usage`) { throw WireDecodeError.invalidIdentity }
+        self.`usage` = try c.decodeIfPresent(WireCockpitUsage.self, forKey: .`usage`)
         try validate()
     }
     public func encode(to encoder: Encoder) throws {
@@ -2699,6 +2789,7 @@ public struct WireCockpitHistory: Codable, Sendable {
         try c.encode(`projects`, forKey: .`projects`)
         try c.encode(`cycles`, forKey: .`cycles`)
         try c.encodeIfPresent(`cost`, forKey: .`cost`)
+        try c.encodeIfPresent(`usage`, forKey: .`usage`)
     }
     private func validate() throws {
         guard `version` >= 1 else { throw WireDecodeError.invalidBound }
@@ -2904,6 +2995,37 @@ public struct WireCockpitPlanModels: Codable, Sendable {
     }
 }
 
+public enum WireCockpitProjectKind: Codable, Sendable, Equatable {
+    case `repo`
+    case `workspace`
+    case `independent`
+    case `home`
+    case `none`
+    case unknown(String)
+    public init(rawValue: String) {
+        switch rawValue {
+        case "repo": self = .`repo`
+        case "workspace": self = .`workspace`
+        case "independent": self = .`independent`
+        case "home": self = .`home`
+        case "none": self = .`none`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`repo`: return "repo"
+        case .`workspace`: return "workspace"
+        case .`independent`: return "independent"
+        case .`home`: return "home"
+        case .`none`: return "none"
+        case .unknown(let value): return value
+        }
+    }
+    public var isKnown: Bool { if case .unknown = self { return false }; return true }
+    public init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
+    public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
+}
 public struct WireCockpitProjectRanking: Codable, Sendable {
     public let `recent7d`: [WireCockpitRankedProject]
     public let `recent30d`: [WireCockpitRankedProject]
@@ -3247,6 +3369,11 @@ public struct WireCockpitRecentSession: Codable, Sendable {
     public let `projectLabel`: String?
     public let `projectState`: WireCockpitProjectState?
     public let `lastObservedAt`: WireTimestamp
+    public let `projectKind`: WireCockpitProjectKind?
+    public let `title`: String?
+    public let `totalTokens`: Int64?
+    public let `costUsd`: Double?
+    public let `modelApprox`: Bool?
     private enum CodingKeys: String, CodingKey {
         case `sessionRef`
         case `source`
@@ -3256,8 +3383,13 @@ public struct WireCockpitRecentSession: Codable, Sendable {
         case `projectLabel`
         case `projectState`
         case `lastObservedAt`
+        case `projectKind`
+        case `title`
+        case `totalTokens`
+        case `costUsd`
+        case `modelApprox`
     }
-    public init(`sessionRef`: String, `source`: String, `subscriptionRef`: String? = nil, `model`: String, `effort`: String? = nil, `projectLabel`: String? = nil, `projectState`: WireCockpitProjectState? = nil, `lastObservedAt`: WireTimestamp) throws {
+    public init(`sessionRef`: String, `source`: String, `subscriptionRef`: String? = nil, `model`: String, `effort`: String? = nil, `projectLabel`: String? = nil, `projectState`: WireCockpitProjectState? = nil, `lastObservedAt`: WireTimestamp, `projectKind`: WireCockpitProjectKind? = nil, `title`: String? = nil, `totalTokens`: Int64? = nil, `costUsd`: Double? = nil, `modelApprox`: Bool? = nil) throws {
         self.`sessionRef` = `sessionRef`
         self.`source` = `source`
         self.`subscriptionRef` = `subscriptionRef`
@@ -3266,6 +3398,11 @@ public struct WireCockpitRecentSession: Codable, Sendable {
         self.`projectLabel` = `projectLabel`
         self.`projectState` = `projectState`
         self.`lastObservedAt` = `lastObservedAt`
+        self.`projectKind` = `projectKind`
+        self.`title` = `title`
+        self.`totalTokens` = `totalTokens`
+        self.`costUsd` = `costUsd`
+        self.`modelApprox` = `modelApprox`
         try validate()
     }
     public init(from decoder: Decoder) throws {
@@ -3279,6 +3416,16 @@ public struct WireCockpitRecentSession: Codable, Sendable {
         if c.contains(.`projectState`), try c.decodeNil(forKey: .`projectState`) { throw WireDecodeError.invalidIdentity }
         self.`projectState` = try c.decodeIfPresent(WireCockpitProjectState.self, forKey: .`projectState`)
         self.`lastObservedAt` = try c.decode(WireTimestamp.self, forKey: .`lastObservedAt`)
+        if c.contains(.`projectKind`), try c.decodeNil(forKey: .`projectKind`) { throw WireDecodeError.invalidIdentity }
+        self.`projectKind` = try c.decodeIfPresent(WireCockpitProjectKind.self, forKey: .`projectKind`)
+        if c.contains(.`title`), try c.decodeNil(forKey: .`title`) { throw WireDecodeError.invalidIdentity }
+        self.`title` = try c.decodeIfPresent(String.self, forKey: .`title`)
+        if c.contains(.`totalTokens`), try c.decodeNil(forKey: .`totalTokens`) { throw WireDecodeError.invalidIdentity }
+        self.`totalTokens` = try c.decodeIfPresent(Int64.self, forKey: .`totalTokens`)
+        if c.contains(.`costUsd`), try c.decodeNil(forKey: .`costUsd`) { throw WireDecodeError.invalidIdentity }
+        self.`costUsd` = try c.decodeIfPresent(Double.self, forKey: .`costUsd`)
+        if c.contains(.`modelApprox`), try c.decodeNil(forKey: .`modelApprox`) { throw WireDecodeError.invalidIdentity }
+        self.`modelApprox` = try c.decodeIfPresent(Bool.self, forKey: .`modelApprox`)
         try validate()
     }
     public func encode(to encoder: Encoder) throws {
@@ -3292,6 +3439,11 @@ public struct WireCockpitRecentSession: Codable, Sendable {
         try c.encode(`projectLabel`, forKey: .`projectLabel`)
         try c.encodeIfPresent(`projectState`, forKey: .`projectState`)
         try c.encode(`lastObservedAt`, forKey: .`lastObservedAt`)
+        try c.encodeIfPresent(`projectKind`, forKey: .`projectKind`)
+        try c.encodeIfPresent(`title`, forKey: .`title`)
+        try c.encodeIfPresent(`totalTokens`, forKey: .`totalTokens`)
+        try c.encodeIfPresent(`costUsd`, forKey: .`costUsd`)
+        try c.encodeIfPresent(`modelApprox`, forKey: .`modelApprox`)
     }
     private func validate() throws {
         try WireValidation.reference(`sessionRef`)
@@ -3345,6 +3497,8 @@ public struct WireCockpitSession: Codable, Sendable {
     public let `rate`: Double?
     public let `fast`: Bool?
     public let `startedAt`: WireTimestamp?
+    public let `title`: String?
+    public let `projectKind`: WireCockpitProjectKind?
     public let `observedTotalTokens`: Int64?
     public let `modelDisplay`: String?
     private enum CodingKeys: String, CodingKey {
@@ -3360,10 +3514,12 @@ public struct WireCockpitSession: Codable, Sendable {
         case `rate`
         case `fast`
         case `startedAt`
+        case `title`
+        case `projectKind`
         case `observedTotalTokens`
         case `modelDisplay`
     }
-    public init(`sessionRef`: String, `source`: String, `subscriptionRef`: String? = nil, `model`: String, `effort`: String? = nil, `projectLabel`: String? = nil, `projectState`: WireCockpitProjectState? = nil, `lastObservedAt`: WireTimestamp, `state`: String, `rate`: Double? = nil, `fast`: Bool? = nil, `startedAt`: WireTimestamp? = nil, `observedTotalTokens`: Int64? = nil, `modelDisplay`: String? = nil) throws {
+    public init(`sessionRef`: String, `source`: String, `subscriptionRef`: String? = nil, `model`: String, `effort`: String? = nil, `projectLabel`: String? = nil, `projectState`: WireCockpitProjectState? = nil, `lastObservedAt`: WireTimestamp, `state`: String, `rate`: Double? = nil, `fast`: Bool? = nil, `startedAt`: WireTimestamp? = nil, `title`: String? = nil, `projectKind`: WireCockpitProjectKind? = nil, `observedTotalTokens`: Int64? = nil, `modelDisplay`: String? = nil) throws {
         self.`sessionRef` = `sessionRef`
         self.`source` = `source`
         self.`subscriptionRef` = `subscriptionRef`
@@ -3376,6 +3532,8 @@ public struct WireCockpitSession: Codable, Sendable {
         self.`rate` = `rate`
         self.`fast` = `fast`
         self.`startedAt` = `startedAt`
+        self.`title` = `title`
+        self.`projectKind` = `projectKind`
         self.`observedTotalTokens` = `observedTotalTokens`
         self.`modelDisplay` = `modelDisplay`
         try validate()
@@ -3397,6 +3555,10 @@ public struct WireCockpitSession: Codable, Sendable {
         self.`fast` = try c.decodeIfPresent(Bool.self, forKey: .`fast`)
         if c.contains(.`startedAt`), try c.decodeNil(forKey: .`startedAt`) { throw WireDecodeError.invalidIdentity }
         self.`startedAt` = try c.decodeIfPresent(WireTimestamp.self, forKey: .`startedAt`)
+        if c.contains(.`title`), try c.decodeNil(forKey: .`title`) { throw WireDecodeError.invalidIdentity }
+        self.`title` = try c.decodeIfPresent(String.self, forKey: .`title`)
+        if c.contains(.`projectKind`), try c.decodeNil(forKey: .`projectKind`) { throw WireDecodeError.invalidIdentity }
+        self.`projectKind` = try c.decodeIfPresent(WireCockpitProjectKind.self, forKey: .`projectKind`)
         if c.contains(.`observedTotalTokens`), try c.decodeNil(forKey: .`observedTotalTokens`) { throw WireDecodeError.invalidIdentity }
         self.`observedTotalTokens` = try c.decodeIfPresent(Int64.self, forKey: .`observedTotalTokens`)
         if c.contains(.`modelDisplay`), try c.decodeNil(forKey: .`modelDisplay`) { throw WireDecodeError.invalidIdentity }
@@ -3418,6 +3580,8 @@ public struct WireCockpitSession: Codable, Sendable {
         try c.encode(`rate`, forKey: .`rate`)
         try c.encodeIfPresent(`fast`, forKey: .`fast`)
         try c.encodeIfPresent(`startedAt`, forKey: .`startedAt`)
+        try c.encodeIfPresent(`title`, forKey: .`title`)
+        try c.encodeIfPresent(`projectKind`, forKey: .`projectKind`)
         try c.encodeIfPresent(`observedTotalTokens`, forKey: .`observedTotalTokens`)
         try c.encodeIfPresent(`modelDisplay`, forKey: .`modelDisplay`)
     }
@@ -3853,6 +4017,422 @@ public struct WireCockpitToday: Codable, Sendable {
         try c.encode(`observedOutputTokens`, forKey: .`observedOutputTokens`)
         try c.encode(`generationTps`, forKey: .`generationTps`)
         try c.encode(`bindingBasis`, forKey: .`bindingBasis`)
+    }
+    private func validate() throws {
+    }
+}
+
+public struct WireCockpitUsage: Codable, Sendable {
+    public let `measure`: String
+    public let `today`: WireCockpitUsageWindow
+    public let `recent7d`: WireCockpitUsageWindow
+    public let `recent30d`: WireCockpitUsageWindow
+    private enum CodingKeys: String, CodingKey {
+        case `measure`
+        case `today`
+        case `recent7d`
+        case `recent30d`
+    }
+    public init(`measure`: String, `today`: WireCockpitUsageWindow, `recent7d`: WireCockpitUsageWindow, `recent30d`: WireCockpitUsageWindow) throws {
+        self.`measure` = `measure`
+        self.`today` = `today`
+        self.`recent7d` = `recent7d`
+        self.`recent30d` = `recent30d`
+        try validate()
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.`measure` = try c.decode(String.self, forKey: .`measure`)
+        self.`today` = try c.decode(WireCockpitUsageWindow.self, forKey: .`today`)
+        self.`recent7d` = try c.decode(WireCockpitUsageWindow.self, forKey: .`recent7d`)
+        self.`recent30d` = try c.decode(WireCockpitUsageWindow.self, forKey: .`recent30d`)
+        try validate()
+    }
+    public func encode(to encoder: Encoder) throws {
+        try validate()
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(`measure`, forKey: .`measure`)
+        try c.encode(`today`, forKey: .`today`)
+        try c.encode(`recent7d`, forKey: .`recent7d`)
+        try c.encode(`recent30d`, forKey: .`recent30d`)
+    }
+    private func validate() throws {
+    }
+}
+
+public struct WireCockpitUsageOther: Codable, Sendable {
+    public let `count`: Int
+    public let `tokens`: WireCockpitUsageTokens
+    public let `share`: Double
+    public let `costUsd`: Double?
+    public let `costState`: WireCockpitCostState
+    private enum CodingKeys: String, CodingKey {
+        case `count`
+        case `tokens`
+        case `share`
+        case `costUsd`
+        case `costState`
+    }
+    public init(`count`: Int, `tokens`: WireCockpitUsageTokens, `share`: Double, `costUsd`: Double? = nil, `costState`: WireCockpitCostState) throws {
+        self.`count` = `count`
+        self.`tokens` = `tokens`
+        self.`share` = `share`
+        self.`costUsd` = `costUsd`
+        self.`costState` = `costState`
+        try validate()
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.`count` = try c.decode(Int.self, forKey: .`count`)
+        self.`tokens` = try c.decode(WireCockpitUsageTokens.self, forKey: .`tokens`)
+        self.`share` = try c.decode(Double.self, forKey: .`share`)
+        self.`costUsd` = try c.decodeIfPresent(Double.self, forKey: .`costUsd`)
+        self.`costState` = try c.decode(WireCockpitCostState.self, forKey: .`costState`)
+        try validate()
+    }
+    public func encode(to encoder: Encoder) throws {
+        try validate()
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(`count`, forKey: .`count`)
+        try c.encode(`tokens`, forKey: .`tokens`)
+        try c.encode(`share`, forKey: .`share`)
+        try c.encode(`costUsd`, forKey: .`costUsd`)
+        try c.encode(`costState`, forKey: .`costState`)
+    }
+    private func validate() throws {
+        guard `share` >= 0 else { throw WireDecodeError.invalidBound }
+        guard `share` <= 1 else { throw WireDecodeError.invalidBound }
+    }
+}
+
+public struct WireCockpitUsageProject: Codable, Sendable {
+    public let `ref`: String
+    public let `kind`: WireCockpitProjectKind
+    public let `label`: String?
+    public let `sessions`: Int
+    public let `sources`: [String]
+    public let `subscriptionRefs`: [String]
+    public let `firstObservedAt`: WireTimestamp
+    public let `lastObservedAt`: WireTimestamp
+    public let `running`: Bool
+    public let `tokens`: WireCockpitUsageTokens
+    public let `share`: Double
+    public let `costUsd`: Double?
+    public let `costState`: WireCockpitCostState
+    public let `model`: String?
+    public let `modelApprox`: Bool
+    public let `effort`: String?
+    private enum CodingKeys: String, CodingKey {
+        case `ref`
+        case `kind`
+        case `label`
+        case `sessions`
+        case `sources`
+        case `subscriptionRefs`
+        case `firstObservedAt`
+        case `lastObservedAt`
+        case `running`
+        case `tokens`
+        case `share`
+        case `costUsd`
+        case `costState`
+        case `model`
+        case `modelApprox`
+        case `effort`
+    }
+    public init(`ref`: String, `kind`: WireCockpitProjectKind, `label`: String? = nil, `sessions`: Int, `sources`: [String], `subscriptionRefs`: [String], `firstObservedAt`: WireTimestamp, `lastObservedAt`: WireTimestamp, `running`: Bool, `tokens`: WireCockpitUsageTokens, `share`: Double, `costUsd`: Double? = nil, `costState`: WireCockpitCostState, `model`: String? = nil, `modelApprox`: Bool, `effort`: String? = nil) throws {
+        self.`ref` = `ref`
+        self.`kind` = `kind`
+        self.`label` = `label`
+        self.`sessions` = `sessions`
+        self.`sources` = `sources`
+        self.`subscriptionRefs` = `subscriptionRefs`
+        self.`firstObservedAt` = `firstObservedAt`
+        self.`lastObservedAt` = `lastObservedAt`
+        self.`running` = `running`
+        self.`tokens` = `tokens`
+        self.`share` = `share`
+        self.`costUsd` = `costUsd`
+        self.`costState` = `costState`
+        self.`model` = `model`
+        self.`modelApprox` = `modelApprox`
+        self.`effort` = `effort`
+        try validate()
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.`ref` = try c.decode(String.self, forKey: .`ref`)
+        self.`kind` = try c.decode(WireCockpitProjectKind.self, forKey: .`kind`)
+        self.`label` = try c.decodeIfPresent(String.self, forKey: .`label`)
+        self.`sessions` = try c.decode(Int.self, forKey: .`sessions`)
+        self.`sources` = try c.decode([String].self, forKey: .`sources`)
+        self.`subscriptionRefs` = try c.decode([String].self, forKey: .`subscriptionRefs`)
+        self.`firstObservedAt` = try c.decode(WireTimestamp.self, forKey: .`firstObservedAt`)
+        self.`lastObservedAt` = try c.decode(WireTimestamp.self, forKey: .`lastObservedAt`)
+        self.`running` = try c.decode(Bool.self, forKey: .`running`)
+        self.`tokens` = try c.decode(WireCockpitUsageTokens.self, forKey: .`tokens`)
+        self.`share` = try c.decode(Double.self, forKey: .`share`)
+        self.`costUsd` = try c.decodeIfPresent(Double.self, forKey: .`costUsd`)
+        self.`costState` = try c.decode(WireCockpitCostState.self, forKey: .`costState`)
+        self.`model` = try c.decodeIfPresent(String.self, forKey: .`model`)
+        self.`modelApprox` = try c.decode(Bool.self, forKey: .`modelApprox`)
+        self.`effort` = try c.decodeIfPresent(String.self, forKey: .`effort`)
+        try validate()
+    }
+    public func encode(to encoder: Encoder) throws {
+        try validate()
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(`ref`, forKey: .`ref`)
+        try c.encode(`kind`, forKey: .`kind`)
+        try c.encode(`label`, forKey: .`label`)
+        try c.encode(`sessions`, forKey: .`sessions`)
+        try c.encode(`sources`, forKey: .`sources`)
+        try c.encode(`subscriptionRefs`, forKey: .`subscriptionRefs`)
+        try c.encode(`firstObservedAt`, forKey: .`firstObservedAt`)
+        try c.encode(`lastObservedAt`, forKey: .`lastObservedAt`)
+        try c.encode(`running`, forKey: .`running`)
+        try c.encode(`tokens`, forKey: .`tokens`)
+        try c.encode(`share`, forKey: .`share`)
+        try c.encode(`costUsd`, forKey: .`costUsd`)
+        try c.encode(`costState`, forKey: .`costState`)
+        try c.encode(`model`, forKey: .`model`)
+        try c.encode(`modelApprox`, forKey: .`modelApprox`)
+        try c.encode(`effort`, forKey: .`effort`)
+    }
+    private func validate() throws {
+        guard `share` >= 0 else { throw WireDecodeError.invalidBound }
+        guard `share` <= 1 else { throw WireDecodeError.invalidBound }
+    }
+}
+
+public struct WireCockpitUsageSession: Codable, Sendable {
+    public let `sessionRef`: String
+    public let `source`: String
+    public let `subscriptionRef`: String?
+    public let `projectRef`: String?
+    public let `projectKind`: WireCockpitProjectKind
+    public let `projectLabel`: String?
+    public let `projectState`: WireCockpitProjectState
+    public let `title`: String?
+    public let `firstObservedAt`: WireTimestamp
+    public let `lastObservedAt`: WireTimestamp
+    public let `running`: Bool
+    public let `tokens`: WireCockpitUsageTokens
+    public let `share`: Double
+    public let `costUsd`: Double?
+    public let `costState`: WireCockpitCostState
+    public let `model`: String?
+    public let `modelApprox`: Bool
+    public let `effort`: String?
+    private enum CodingKeys: String, CodingKey {
+        case `sessionRef`
+        case `source`
+        case `subscriptionRef`
+        case `projectRef`
+        case `projectKind`
+        case `projectLabel`
+        case `projectState`
+        case `title`
+        case `firstObservedAt`
+        case `lastObservedAt`
+        case `running`
+        case `tokens`
+        case `share`
+        case `costUsd`
+        case `costState`
+        case `model`
+        case `modelApprox`
+        case `effort`
+    }
+    public init(`sessionRef`: String, `source`: String, `subscriptionRef`: String? = nil, `projectRef`: String? = nil, `projectKind`: WireCockpitProjectKind, `projectLabel`: String? = nil, `projectState`: WireCockpitProjectState, `title`: String? = nil, `firstObservedAt`: WireTimestamp, `lastObservedAt`: WireTimestamp, `running`: Bool, `tokens`: WireCockpitUsageTokens, `share`: Double, `costUsd`: Double? = nil, `costState`: WireCockpitCostState, `model`: String? = nil, `modelApprox`: Bool, `effort`: String? = nil) throws {
+        self.`sessionRef` = `sessionRef`
+        self.`source` = `source`
+        self.`subscriptionRef` = `subscriptionRef`
+        self.`projectRef` = `projectRef`
+        self.`projectKind` = `projectKind`
+        self.`projectLabel` = `projectLabel`
+        self.`projectState` = `projectState`
+        self.`title` = `title`
+        self.`firstObservedAt` = `firstObservedAt`
+        self.`lastObservedAt` = `lastObservedAt`
+        self.`running` = `running`
+        self.`tokens` = `tokens`
+        self.`share` = `share`
+        self.`costUsd` = `costUsd`
+        self.`costState` = `costState`
+        self.`model` = `model`
+        self.`modelApprox` = `modelApprox`
+        self.`effort` = `effort`
+        try validate()
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.`sessionRef` = try c.decode(String.self, forKey: .`sessionRef`)
+        self.`source` = try c.decode(String.self, forKey: .`source`)
+        self.`subscriptionRef` = try c.decodeIfPresent(String.self, forKey: .`subscriptionRef`)
+        self.`projectRef` = try c.decodeIfPresent(String.self, forKey: .`projectRef`)
+        self.`projectKind` = try c.decode(WireCockpitProjectKind.self, forKey: .`projectKind`)
+        self.`projectLabel` = try c.decodeIfPresent(String.self, forKey: .`projectLabel`)
+        self.`projectState` = try c.decode(WireCockpitProjectState.self, forKey: .`projectState`)
+        self.`title` = try c.decodeIfPresent(String.self, forKey: .`title`)
+        self.`firstObservedAt` = try c.decode(WireTimestamp.self, forKey: .`firstObservedAt`)
+        self.`lastObservedAt` = try c.decode(WireTimestamp.self, forKey: .`lastObservedAt`)
+        self.`running` = try c.decode(Bool.self, forKey: .`running`)
+        self.`tokens` = try c.decode(WireCockpitUsageTokens.self, forKey: .`tokens`)
+        self.`share` = try c.decode(Double.self, forKey: .`share`)
+        self.`costUsd` = try c.decodeIfPresent(Double.self, forKey: .`costUsd`)
+        self.`costState` = try c.decode(WireCockpitCostState.self, forKey: .`costState`)
+        self.`model` = try c.decodeIfPresent(String.self, forKey: .`model`)
+        self.`modelApprox` = try c.decode(Bool.self, forKey: .`modelApprox`)
+        self.`effort` = try c.decodeIfPresent(String.self, forKey: .`effort`)
+        try validate()
+    }
+    public func encode(to encoder: Encoder) throws {
+        try validate()
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(`sessionRef`, forKey: .`sessionRef`)
+        try c.encode(`source`, forKey: .`source`)
+        try c.encode(`subscriptionRef`, forKey: .`subscriptionRef`)
+        try c.encode(`projectRef`, forKey: .`projectRef`)
+        try c.encode(`projectKind`, forKey: .`projectKind`)
+        try c.encode(`projectLabel`, forKey: .`projectLabel`)
+        try c.encode(`projectState`, forKey: .`projectState`)
+        try c.encode(`title`, forKey: .`title`)
+        try c.encode(`firstObservedAt`, forKey: .`firstObservedAt`)
+        try c.encode(`lastObservedAt`, forKey: .`lastObservedAt`)
+        try c.encode(`running`, forKey: .`running`)
+        try c.encode(`tokens`, forKey: .`tokens`)
+        try c.encode(`share`, forKey: .`share`)
+        try c.encode(`costUsd`, forKey: .`costUsd`)
+        try c.encode(`costState`, forKey: .`costState`)
+        try c.encode(`model`, forKey: .`model`)
+        try c.encode(`modelApprox`, forKey: .`modelApprox`)
+        try c.encode(`effort`, forKey: .`effort`)
+    }
+    private func validate() throws {
+        try WireValidation.reference(`sessionRef`)
+        if let value = `subscriptionRef` { try WireValidation.reference(value) }
+        guard `share` >= 0 else { throw WireDecodeError.invalidBound }
+        guard `share` <= 1 else { throw WireDecodeError.invalidBound }
+    }
+}
+
+public struct WireCockpitUsageTokens: Codable, Sendable {
+    public let `total`: Int64
+    public let `input`: Int64
+    public let `output`: Int64
+    public let `cacheRead`: Int64
+    public let `cacheWrite`: Int64
+    public let `complete`: Bool
+    private enum CodingKeys: String, CodingKey {
+        case `total`
+        case `input`
+        case `output`
+        case `cacheRead`
+        case `cacheWrite`
+        case `complete`
+    }
+    public init(`total`: Int64, `input`: Int64, `output`: Int64, `cacheRead`: Int64, `cacheWrite`: Int64, `complete`: Bool) throws {
+        self.`total` = `total`
+        self.`input` = `input`
+        self.`output` = `output`
+        self.`cacheRead` = `cacheRead`
+        self.`cacheWrite` = `cacheWrite`
+        self.`complete` = `complete`
+        try validate()
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.`total` = try c.decode(Int64.self, forKey: .`total`)
+        self.`input` = try c.decode(Int64.self, forKey: .`input`)
+        self.`output` = try c.decode(Int64.self, forKey: .`output`)
+        self.`cacheRead` = try c.decode(Int64.self, forKey: .`cacheRead`)
+        self.`cacheWrite` = try c.decode(Int64.self, forKey: .`cacheWrite`)
+        self.`complete` = try c.decode(Bool.self, forKey: .`complete`)
+        try validate()
+    }
+    public func encode(to encoder: Encoder) throws {
+        try validate()
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(`total`, forKey: .`total`)
+        try c.encode(`input`, forKey: .`input`)
+        try c.encode(`output`, forKey: .`output`)
+        try c.encode(`cacheRead`, forKey: .`cacheRead`)
+        try c.encode(`cacheWrite`, forKey: .`cacheWrite`)
+        try c.encode(`complete`, forKey: .`complete`)
+    }
+    private func validate() throws {
+        guard `total` >= 0 else { throw WireDecodeError.invalidBound }
+        guard `input` >= 0 else { throw WireDecodeError.invalidBound }
+        guard `output` >= 0 else { throw WireDecodeError.invalidBound }
+        guard `cacheRead` >= 0 else { throw WireDecodeError.invalidBound }
+        guard `cacheWrite` >= 0 else { throw WireDecodeError.invalidBound }
+    }
+}
+
+public struct WireCockpitUsageWindow: Codable, Sendable {
+    public let `tokens`: WireCockpitUsageTokens
+    public let `costUsd`: Double?
+    public let `costState`: WireCockpitCostState
+    public let `sessionCount`: Int
+    public let `projectCount`: Int
+    public let `projects`: [WireCockpitUsageProject]
+    public let `sessions`: [WireCockpitUsageSession]
+    public let `otherProjects`: WireCockpitUsageOther
+    public let `otherSessions`: WireCockpitUsageOther
+    public let `backgroundReview`: WireCockpitBackgroundReview?
+    private enum CodingKeys: String, CodingKey {
+        case `tokens`
+        case `costUsd`
+        case `costState`
+        case `sessionCount`
+        case `projectCount`
+        case `projects`
+        case `sessions`
+        case `otherProjects`
+        case `otherSessions`
+        case `backgroundReview`
+    }
+    public init(`tokens`: WireCockpitUsageTokens, `costUsd`: Double? = nil, `costState`: WireCockpitCostState, `sessionCount`: Int, `projectCount`: Int, `projects`: [WireCockpitUsageProject], `sessions`: [WireCockpitUsageSession], `otherProjects`: WireCockpitUsageOther, `otherSessions`: WireCockpitUsageOther, `backgroundReview`: WireCockpitBackgroundReview? = nil) throws {
+        self.`tokens` = `tokens`
+        self.`costUsd` = `costUsd`
+        self.`costState` = `costState`
+        self.`sessionCount` = `sessionCount`
+        self.`projectCount` = `projectCount`
+        self.`projects` = `projects`
+        self.`sessions` = `sessions`
+        self.`otherProjects` = `otherProjects`
+        self.`otherSessions` = `otherSessions`
+        self.`backgroundReview` = `backgroundReview`
+        try validate()
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.`tokens` = try c.decode(WireCockpitUsageTokens.self, forKey: .`tokens`)
+        self.`costUsd` = try c.decodeIfPresent(Double.self, forKey: .`costUsd`)
+        self.`costState` = try c.decode(WireCockpitCostState.self, forKey: .`costState`)
+        self.`sessionCount` = try c.decode(Int.self, forKey: .`sessionCount`)
+        self.`projectCount` = try c.decode(Int.self, forKey: .`projectCount`)
+        self.`projects` = try c.decode([WireCockpitUsageProject].self, forKey: .`projects`)
+        self.`sessions` = try c.decode([WireCockpitUsageSession].self, forKey: .`sessions`)
+        self.`otherProjects` = try c.decode(WireCockpitUsageOther.self, forKey: .`otherProjects`)
+        self.`otherSessions` = try c.decode(WireCockpitUsageOther.self, forKey: .`otherSessions`)
+        self.`backgroundReview` = try c.decodeIfPresent(WireCockpitBackgroundReview.self, forKey: .`backgroundReview`)
+        try validate()
+    }
+    public func encode(to encoder: Encoder) throws {
+        try validate()
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(`tokens`, forKey: .`tokens`)
+        try c.encode(`costUsd`, forKey: .`costUsd`)
+        try c.encode(`costState`, forKey: .`costState`)
+        try c.encode(`sessionCount`, forKey: .`sessionCount`)
+        try c.encode(`projectCount`, forKey: .`projectCount`)
+        try c.encode(`projects`, forKey: .`projects`)
+        try c.encode(`sessions`, forKey: .`sessions`)
+        try c.encode(`otherProjects`, forKey: .`otherProjects`)
+        try c.encode(`otherSessions`, forKey: .`otherSessions`)
+        try c.encode(`backgroundReview`, forKey: .`backgroundReview`)
     }
     private func validate() throws {
     }

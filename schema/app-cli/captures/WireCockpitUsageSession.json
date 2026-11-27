@@ -1,0 +1,27 @@
+{
+  "sessionRef": "0123456789abcdef",
+  "source": "synthetic",
+  "subscriptionRef": "0123456789abcdef",
+  "projectRef": "synthetic",
+  "projectKind": "repo",
+  "projectLabel": "synthetic",
+  "projectState": "named",
+  "title": "synthetic",
+  "firstObservedAt": "2026-10-29T12:00:00.123456789Z",
+  "lastObservedAt": "2026-10-29T12:00:00.123456789Z",
+  "running": false,
+  "tokens": {
+    "total": 1,
+    "input": 1,
+    "output": 1,
+    "cacheRead": 1,
+    "cacheWrite": 1,
+    "complete": false
+  },
+  "share": 0.425,
+  "costUsd": 42.5,
+  "costState": "priced",
+  "model": "synthetic",
+  "modelApprox": false,
+  "effort": "synthetic"
+}
