@@ -71,6 +71,22 @@ test('B1 a clicked date key, scale key, fader, session line or "more sessions" k
  // The pointer still chose the range (the app owns it; the page asked).
  expect(await page.evaluate(()=>window.__msgs.filter(m=>m.type==='action'&&m.action==='rangeSelect').length)).toBeGreaterThan(0);
 });
+test('G3-153 a clicked date key shows no ring after the window loses and regains key (macOS restores page focus as a keyboard focus)',async({page})=>{
+ await open(page,{data:visualFixture().data,range:'7d'});
+ const key=page.locator('[data-range-key="7d"]');
+ await page.evaluate(()=>document.activeElement?.blur?.());
+ await key.click();
+ // Window deactivation: the page is no longer the focused document while the key blurs; reactivation refocuses it after a key press.
+ await page.evaluate(()=>{document.hasFocus=()=>false;});
+ await key.evaluate(e=>e.blur());
+ await page.evaluate(()=>{document.hasFocus=()=>true;});
+ await key.evaluate(e=>e.focus());
+await page.keyboard.press('Escape');
+ expect(await key.evaluate(e=>e.matches(':focus-visible')&&getComputedStyle(e,'::before').content!=='none'&&parseFloat(getComputedStyle(e,'::before').borderTopWidth)>0)).toBe(false);
+ // Moving on by keyboard drops the mark, so the next control's own ring is never suppressed (the B1 test below covers the ring).
+ await page.keyboard.press('ArrowRight');
+ expect(await page.evaluate(()=>document.querySelectorAll('[data-pointer-focus]').length)).toBe(0);
+});
 test('B1 keyboard users keep the date keys\' ring: an arrow moves the choice and the ring with it',async({page})=>{
  await open(page,{data:visualFixture().data,range:'today'});
  await page.locator('[data-range-key="today"]').focus();
@@ -188,4 +204,29 @@ test('HUD every ★ effort starts at the same x, whatever the name length',async
  const shown=await page.locator('.hud-b .hp b').allTextContents();
  expect(new Set(shown).size).toBe(shown.length);
  expect(shortLabel('GPT-6 Astra')).toBe('Astra 6');expect(shortLabel('GPT-6 Luna')).toBe('Luna 6');
+});
+
+// ---- G3-165: the date key's ring follows input modality (owner test build 3: the 7d key was gold on every open) ----
+const keyRinged=(page,k='7d')=>page.locator(`[data-range-key="${k}"]`).evaluate(e=>e.matches(':focus-visible')&&getComputedStyle(e,'::before').content!=='none'&&parseFloat(getComputedStyle(e,'::before').borderTopWidth)>0);
+test('G3-165 opening the page, even when the host or WebKit focuses the selected key, draws no ring',async({page})=>{
+ await open(page,{data:visualFixture().data,range:'7d'});
+ expect(await page.evaluate(()=>document.querySelector('#cockpit').hasAttribute('data-kbd-nav'))).toBe(false);
+ // A programmatic focus with no pointer press (what a window reactivation does) matches :focus-visible in WebKit.
+ await page.locator('[data-range-key="7d"]').evaluate(e=>e.focus());
+ expect(await keyRinged(page)).toBe(false);
+});
+test('G3-165 a click then a refocus shows no ring; Tab shows it; a later click clears it',async({page})=>{
+ await open(page,{data:visualFixture().data,range:'7d'});
+ const key=page.locator('[data-range-key="7d"]');
+ await key.click();await key.evaluate(e=>{e.blur();e.focus();});
+ expect(await keyRinged(page)).toBe(false);
+ await page.keyboard.press('Tab');
+ expect(await page.evaluate(()=>document.querySelector('#cockpit').hasAttribute('data-kbd-nav'))).toBe(true);
+ await page.keyboard.press('Shift+Tab');
+ await expect(key).toBeFocused();
+ expect(await keyRinged(page)).toBe(true);
+ await page.locator('[data-range-key="30d"]').click();
+ expect(await page.evaluate(()=>document.querySelector('#cockpit').hasAttribute('data-kbd-nav'))).toBe(false);
+ await key.evaluate(e=>e.focus());
+ expect(await keyRinged(page)).toBe(false);
 });

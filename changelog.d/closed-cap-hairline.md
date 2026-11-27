@@ -1,0 +1,1 @@
+Closed cockpit (shutter closed): no see-through hairline between the cap's rim and the title bar at a fractional page zoom. The cap slab's last row now reaches under the wall top again, and a browser spec plus a walkthrough window-alpha check scan the closed silhouette for gaps.
