@@ -91,13 +91,17 @@ test('macrevb-1290-1 hidden subscription: no look and no newsLook; shown again, 
  expect(await looks()).toEqual([]);
  expect(await receive(send('tick',{nowUnixMs:String(NOW+40*MIN),reason:'deadline'}))).toBe(true);
  expect(await looks()).toEqual([]);
- // Shown again at 10:04: the news is drawn and its look starts now, so it lasts until 10:34.
+ // Shown again at 10:04: the news is drawn, but a repaint is no look (macrev2-1289-1); the user's own input at 10:06 is,
+ // so it lasts until 10:36.
  const shown=NOW+40*MIN;await page.clock.setFixedTime(new Date(shown));
  expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);
  await expect(key(page).locator('.ek-news.solid')).toHaveCount(1);
- expect((await looks()).map(m=>m.events)).toEqual([[{id:'codex-banked-1127',status:'confirmed'}]]);
+ expect(await looks()).toEqual([]);
+ const looked=shown+2*MIN;await page.clock.setFixedTime(new Date(looked));
+ await page.locator('[data-caution]').click();
+ await expect.poll(async()=>(await looks()).map(m=>m.events)).toEqual([[{id:'codex-banked-1127',status:'confirmed'}]]);
  const last=await page.evaluate(()=>window.__posts.filter(m=>m.type==='nextDeadline').at(-1)?.deadlineUnixMs);
- expect(last).toBe(String(shown+30*MIN));
+ expect(last).toBe(String(looked+30*MIN));
 });
 // macrevb-1290-2: one clock lookup per event on every surface. At the look deadline the calendar's all-day line, the key
 // dot, the reserve +1 and the alert row all go together; the reserve count stays.
@@ -154,4 +158,16 @@ test('macrevb-1290-1 a look before negotiation is replayed once with its origina
  expect(posted).toEqual([[{id:'codex-banked-1127',status:'confirmed',atUnixMs:String(NOW)}]]);
  expect(await receive(send('tick',{nowUnixMs:String(NOW+11*MIN),reason:'deadline'}))).toBe(true);
  expect((await looks(page)).length).toBe(1);
+});
+// macrev2-1289-1 (C6, §3.3): a refresh that delivers news to a cockpit already open is not a look; the user's own
+// opening of the alert list is. Through the built page and its normal bridge, with a host that keeps the shared clock.
+test('D466 a refresh never looks: news delivered to an open cockpit waits for the user',async({page})=>{
+ const plain=banked();plain.details.resetEvents=[];
+ const {send,receive}=await open(page,plain,'zh-CN',{news:[]});
+ const looks=()=>page.evaluate(()=>window.__posts.filter(m=>m.type==='action'&&m.action==='newsLook').length);
+ expect(await receive(send('display',{data:banked()}))).toBe(true);
+ await expect(key(page).locator('.ek-news')).toHaveCount(1);
+ expect(await looks()).toBe(0);
+ await page.locator('[data-caution]').click();
+ await expect.poll(looks).toBe(1);
 });
