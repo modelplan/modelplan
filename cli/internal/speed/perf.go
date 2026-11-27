@@ -216,6 +216,9 @@ func observePerf(cache string, now time.Time, in Ingest, f func(*PerfLedger) boo
 	}
 	roll := rollup(l.Rows, "") // before pruning, so days perf.json lets go are kept in daily-long.json
 	b := l.prune(now)
+	if b == nil {
+		return nil // nothing fits under the load limit: keep the old file rather than write one the loader would refuse
+	}
 	if err := write(PerfPath(cache), b); err != nil {
 		return err
 	}
@@ -410,8 +413,8 @@ func (l *PerfLedger) row(d, source, parser string, c config) *PerfRow {
 	return &l.Rows[len(l.Rows)-1]
 }
 
-// prune keeps PerfKeep, at most maxRows rows and maxFile bytes (dropping the oldest days first),
-// and returns the file's content.
+// prune keeps PerfKeep, at most maxRows rows and under writeLimit bytes (dropping the oldest days first),
+// and returns the file's content, or nil when it cannot get under maxFile.
 func (l *PerfLedger) prune(now time.Time) []byte {
 	l.pruneLive(now)
 	l.pruneHourly(now)
@@ -468,9 +471,10 @@ func (l *PerfLedger) prune(now time.Time) []byte {
 			delete(l.Stores, k)
 		}
 	}
-	// The encoded file is always under writeLimit (maxFile minus a margin), so the loader never refuses what this writes.
-	// Order: whole oldest hourly days, then the oldest rows and sessions, then the hourly rows that are left, then counted
-	// requests, then the oldest file and store cursors. Only when nothing is left to give does it write what it has.
+	// The encoded file is under writeLimit (maxFile minus a margin) whenever it can be, and never at or above maxFile (nil is
+	// returned instead, and the caller keeps the old file), so the loader never refuses what this writes.
+	// Shed order: whole oldest hourly days, the oldest rows and sessions, the hourly rows that are left (a derived view), then
+	// counted requests. Cursors are not shed, see below.
 	for {
 		b, _ := json.Marshal(l)
 		if len(b) < writeLimit {
@@ -488,7 +492,7 @@ func (l *PerfLedger) prune(now time.Time) []byte {
 			}
 			continue
 		}
-		if len(l.Hourly) > 1 {
+		if len(l.Hourly) > 0 { // hourly is a derived view, so it can go down to none
 			i := 1
 			for i < len(l.Hourly) && l.Hourly[i].Hour == l.Hourly[0].Hour {
 				i++
@@ -500,35 +504,14 @@ func (l *PerfLedger) prune(now time.Time) []byte {
 			l.Counted = l.Counted[len(l.Counted)/10+1:]
 			continue
 		}
-		if len(l.Files) > 0 || len(l.Stores) > 0 {
-			l.Files = dropOldestCursors(l.Files, func(c Cursor) string { return c.Seen })
-			l.Stores = dropOldestCursors(l.Stores, func(c DBCursor) string { return c.Day })
-			continue
+		// Cursors are never shed here: a cursor whose log can still be read again vouches for rows already counted, and losing it
+		// would count that log twice. (The day pruning above already drops cursors older than every retained row.) Over writeLimit
+		// but under maxFile the file is still written; at or over maxFile prune returns nil and the caller keeps the old file.
+		if len(b) >= maxFile {
+			return nil
 		}
 		return append(b, '\n')
 	}
-}
-
-// dropOldestCursors removes the tenth (at least one) with the oldest day, by key order among equals.
-func dropOldestCursors[C any](m map[string]C, dayOf func(C) string) map[string]C {
-	if len(m) == 0 {
-		return m
-	}
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Slice(keys, func(i, j int) bool {
-		a, b := dayOf(m[keys[i]]), dayOf(m[keys[j]])
-		if a != b {
-			return a < b
-		}
-		return keys[i] < keys[j]
-	})
-	for _, k := range keys[:len(keys)/10+1] {
-		delete(m, k)
-	}
-	return m
 }
 
 // projectRule is the current project attribution rule (see PerfSession.ProjectRule).

@@ -273,3 +273,78 @@ func TestD402AnOverLimitPerfFileIsShrunkByTheNextWrite(t *testing.T) {
 		t.Fatalf("not recovered: ok=%v cursors=%d hourly=%d", ok, len(l.Files), len(l.Hourly))
 	}
 }
+
+// macrev2-1213-3. Invariant: a cursor whose log can still be read again is never evicted while any row it vouches for remains,
+// so a log is never counted twice. Under write pressure only derived rows go (hourly days, rows, sessions), never cursors; and a
+// ledger that cannot be written under maxFile keeps the old file.
+func TestD402WritePressureNeverEvictsTheCursorOfACountedLog(t *testing.T) {
+	utc(t)
+	cache, dir := t.TempDir(), t.TempDir()
+	seedPerf(t, cache, t0.Add(-time.Minute))
+	a, b := filepath.Join(dir, "rollout-a.jsonl"), filepath.Join(dir, "rollout-b.jsonl")
+	writeLines(t, a, cxTurnLines(0, high, 90, req{600, 10, 2}, req{1500, 20, 4})...)
+	now := t0.Add(5 * time.Minute)
+	observeCx(t, cache, now, a)
+	counted := func() int64 {
+		l, ok := loadPerf(cache)
+		if !ok {
+			t.Fatal("perf.json unreadable")
+		}
+		var n int64
+		for _, r := range l.Rows {
+			n += r.ObservedOutputTokens
+		}
+		return n
+	}
+	before := counted()
+	if before == 0 {
+		t.Fatal("log A was not counted")
+	}
+	// Near the margin: pad the cursor table (newer days than A's, so A's cursor is the oldest) until the file is just under maxFile.
+	l, _ := loadPerf(cache)
+	for i := 0; ; i++ {
+		l.Files[fileKey("pad"+time.Duration(i).String())] = Cursor{Offset: int64(i), Seen: "2099-01-01", Source: "codex"}
+		if i%20 == 0 {
+			if raw, _ := json.Marshal(l); len(raw) > maxFile-8<<10 {
+				break
+			}
+		}
+	}
+	raw, _ := json.Marshal(l)
+	if len(raw) >= maxFile || len(raw) < writeLimit {
+		t.Fatalf("fixture %d bytes, want between %d and %d", len(raw), writeLimit, maxFile)
+	}
+	if err := os.WriteFile(PerfPath(cache), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cursors := len(l.Files)
+	key := fileKey(a)
+	// Pressure: another log is counted, so the ledger is saved again over the margin.
+	writeLines(t, b, cxTurnLines(200, high, 90, req{700, 10, 2})...)
+	observeCx(t, cache, now, b)
+	got, ok := loadPerf(cache)
+	if !ok {
+		t.Fatal("the ledger is unreadable after a write under pressure")
+	}
+	if _, kept := got.Files[key]; !kept || len(got.Files) < cursors {
+		t.Fatalf("a cursor was evicted under pressure: A kept=%v, %d of %d cursors", kept, len(got.Files), cursors)
+	}
+	// A is read again, unchanged: its bytes must not be counted a second time.
+	mid := counted()
+	observeCx(t, cache, now, a)
+	if after := counted(); after > mid {
+		t.Fatalf("log A counted twice: %d tokens after the re-observe, %d before", after, mid)
+	}
+	if fi, err := os.Stat(PerfPath(cache)); err != nil || fi.Size() >= maxFile {
+		t.Fatalf("perf.json is %v bytes (err %v)", fi.Size(), err)
+	}
+}
+
+func TestD402ALedgerThatCannotFitKeepsTheOldFile(t *testing.T) {
+	utc(t)
+	now := time.Date(2026, 11, 24, 12, 30, 0, 0, time.UTC)
+	l := PerfLedger{SchemaVersion: 1, Since: now.AddDate(0, 0, -60), Files: bigCursors(60000)}
+	if out := l.prune(now); out != nil {
+		t.Fatalf("a %d byte ledger was offered for writing, the loader refuses it", len(out))
+	}
+}
