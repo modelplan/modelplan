@@ -213,21 +213,20 @@ export function stripAria(c) {
   return current + ' · ' + t('fad.stripTrialAria', {m: c.name, e: fastOnly ? t(tr.fast ? 'fad.tryFast' : 'fad.tryStd') : tr.effort + (tr.fast ? ' ⚡' : ''),
     cost: t('fad.cost', {x: times(tr.cost)}), d: fastOnly ? t('fad.speed', {x: times(tr.speed)}) : t('fad.abl', {d: delta(tr.abl)})});
 }
-// CKP-FAD-55 (WP-08): one session lamp per card, under the row label 会话 / Sessions: lit in the subscription colour while
+// CKP-FAD-55 (WP-08): one session lamp per card, with no row label (owner 11-27, D467, G3-164; overrides D405): lit in the subscription colour while
 // a session runs, dim when the model was used in this range, off otherwise. The ⚡ beside it is fast mode (CKP-FAD-24).
 // Selection and trial are shown on the card (frame, blue lines), not on the lamp.
 export function indicatorView(c) {
   if (!c) return '';
   const trying = !!c.trial, fast = !!c.tier && !!(c.tFast ?? c.currentFast);
   const tone = c.session || 'off';
-  const label = t('fad.indicatorAria', {m: c.name, s: t(tone === 'live' ? 'fad.sessionLive' : tone === 'used' ? 'fad.sessionUsed' : 'fad.sessionNone'),
-    fast: c.tier ? t('fad.fastLampAria', {s: trying ? t(fast ? 'fad.tryFast' : 'fad.tryStd') : t(fast ? 'fad.lampOn' : 'fad.lampOff')}) : ''});
+  const name = `${c.name} ${t(tone === 'live' ? 'fad.sessionLive' : 'fad.sessionNone')}`; // D467: hover title, "<model> 有会话在跑" / "<model> has a session running"
   const sessions = c.leds.map(x => `${x.account ? x.account + ' · ' : ''}${x.tool} · ${x.project} · ${agoText(x)}`).join('\n');
   // CKP-FAD-24 / owner 11-12: fast mode is a ⚡ beside the lamp, symbol only: white = the real configuration is fast, solid blue =
   // a trial turns it on, blue outline = a trial turns it off. The lamp itself stays a dot. Nothing for a tool without a fast mode.
   const state = !c.tier ? '' : c.tFast === true ? 'try' : c.tFast === false ? 'off' : c.currentFast ? 'on' : '';
   const bolt = state ? `<svg class="fd-fast ${state}" data-fast-state="${state}" viewBox="0 0 6 9" role="img" aria-label="${esc(t(state === 'on' ? 'fad.lampOn' : state === 'try' ? 'fad.tryFast' : 'fad.tryStd'))}"><path d="M3.9 0 .3 5.1h2.4L2 9l3.7-5.4H3.3z"/></svg>` : '';
-  return `<span class="fd-indicator ${tone}" data-state="${tone}" data-fast="${fast}"${c.lamp ? ` data-fast-mode="${c.lamp}"` : ''} role="img" aria-label="${esc(label + (sessions ? '\n' + sessions : ''))}"></span>${bolt}`;
+  return `<span class="fd-indicator ${tone}" data-state="${tone}" data-fast="${fast}"${c.lamp ? ` data-fast-mode="${c.lamp}"` : ''} role="img" title="${esc(name)}" aria-label="${esc(name + (tone === 'used' ? '；' + t('fad.sessionUsed') : '') + (c.tier ? '；' + t('fad.fastLampAria', {s: trying ? t(fast ? 'fad.tryFast' : 'fad.tryStd') : t(fast ? 'fad.lampOn' : 'fad.lampOff')}) : '') + (sessions ? '\n' + sessions : ''))}"></span>${bolt}`;
 }
 // The travel's fixed marks: a tick per level the model has, the ★ detent (round D1: this fader's own ★ level, a short
 // gold notch beside the cap's lane and a tiny gold ★, because the shared scale cannot show each model's ★), and white
@@ -236,7 +235,7 @@ export const marksView = c => !c ? '' : `${c.ticks.map(k => `<i class="fd-tick" 
 // Round D1: the ⚡ lit push button above the travel is gone (the owner could not tell what it was); fast mode is tried
 // with the comparison view's own ⚡ key; its state shares the indicator above the LCD.
 // D405 (owner 2026-11-24): the effort names are printed in the two gaps between the three levers, shown twice, like the
-// detent labels on a thrust-lever quadrant; 会话 / Sessions heads the lamp row. Both columns set the same trial.
+// detent labels on a thrust-lever quadrant; the lamp row has no heading (D467). Both columns set the same trial.
 const scaleColumn = gap => `<span class="sc-travel" data-gap="${gap}">${LADDER.map(l => `<button class="silk sc-l" data-level="${l}" tabindex="-1" style="--k:${levelK(l)}">${l}</button>`).join('')}</span>`;
-export const scaleView = () => `<span class="silk sc-led">${t('fad.status')}</span>${scaleColumn(1)}${scaleColumn(2)}`;
+export const scaleView = () => `<span class="silk sc-led"></span>${scaleColumn(1)}${scaleColumn(2)}`;
 export const bankView = M => M.banks > 1 ? `<button class="key sm" data-bank="-1" data-mat="part" aria-label="${esc(t('fad.bankPrevAria'))}">◀</button><span class="bank-lcd" data-mat="well">${esc(t('fad.bank', {i: M.bank + 1, n: M.banks}))}</span><button class="key sm" data-bank="1" data-mat="part" aria-label="${esc(t('fad.bankNextAria'))}">▶</button>` : '';
