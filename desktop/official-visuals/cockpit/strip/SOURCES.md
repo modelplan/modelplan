@@ -43,7 +43,7 @@ The owner approved the round 3 header layout on 2026-11-18 (confirm folder `08-h
 
 | File | SHA-256 |
 | --- | --- |
-| porthole-switch-open@3x.png | `5628e2f7f97da2dbb06e15266e524969c9f958e1befe616319ce3d3756930db4` |
+| porthole-switch-open@3x.png | `7a49b8b31006f0aa99488b37e265b4e97868096aa5b9db51ac21b13343bc9a11` |
 | porthole-switch-closed@3x.png | `8798983b0c62bf4cc1e84b99a8bcb4cda4ef98e3ff63ce52de47b27bac76ded8` |
 | date-key-normal@3x.png | `a096e46cd80f36fac698da91770c520e0efacda07a050984ccb84bc7be8f06f1` |
 | date-key-selected@3x.png | `3a20ae9edc6c41fe343fdcb8ebab268c83da093fc6d80a82523485e75f78d1e9` |

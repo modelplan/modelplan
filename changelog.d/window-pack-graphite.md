@@ -1,0 +1,1 @@
+- Cockpit: the official night skin now uses the owner's deep-graphite window pack (890 canopy, glass-edge pane, closed shell plates, title edge and the open-window button); `--mp-pane-opacity: 0` switches the glass-edge layer off.
