@@ -1101,3 +1101,28 @@ test("D428 sol-prepare and the workflow: an oversize head writes the oversize ma
   assert.match(prep, /output\("oversize", "true"\)/);
   assert.match(readFileSync(join(root, ".github/workflows/pr-review-sol.yml"), "utf8"), /steps\.prep\.outputs\.oversize == 'true'/);
 });
+
+// D428: a branch that merged main after the last review must not review main's changes (#1205: 18 KB PR, 2.7 MB request).
+test("D428 prDelta: since -> merge main -> head holds only the PR's own change; no merge keeps the plain range", async () => {
+  const { execFileSync } = await import("node:child_process");
+  const dir = mkdtempSync(join(tmpdir(), "prdelta-"));
+  try {
+    const g = (...a) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", dir, ...a], { encoding: "utf8" });
+    const put = (f, t) => writeFileSync(join(dir, f), t);
+    g("init", "-q", "-b", "main"); put("base.txt", "base\n"); g("add", "."); g("commit", "-qm", "base");
+    g("checkout", "-qb", "pr"); put("own.txt", "own 1\n"); g("add", "."); g("commit", "-qm", "own 1");
+    const since = g("rev-parse", "HEAD").trim();
+    g("checkout", "-q", "main"); put("main-only.txt", "main change\n".repeat(500)); g("add", "."); g("commit", "-qm", "main moves");
+    g("checkout", "-q", "pr"); g("merge", "-q", "--no-edit", "main"); put("own.txt", "own 1\nown 2\n"); g("add", "."); g("commit", "-qm", "own 2");
+    const head = g("rev-parse", "HEAD").trim();
+    assert.ok(g("diff", since, head).includes("main-only.txt"), "the plain range does hold main's change (the bug)");
+    const d = S.prDelta((...a) => g(...a), { since, head, main: "main" });
+    assert.ok(!d.includes("main-only.txt"), "main's change is not in the delta");
+    assert.ok(d.includes("+own 2") && d.includes("own.txt"), "the PR's own change is");
+    assert.ok(d.length < 1000, `delta is small: ${d.length}`);
+    // no merge between: the plain range, byte for byte
+    g("checkout", "-q", since); g("checkout", "-qb", "pr2"); put("own.txt", "own 1\nown 3\n"); g("add", "."); g("commit", "-qm", "own 3");
+    const head2 = g("rev-parse", "HEAD").trim();
+    assert.equal(S.prDelta((...a) => g(...a), { since, head: head2, main: "main" }), g("diff", "--no-color", "--no-ext-diff", since, head2));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});

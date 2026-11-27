@@ -198,6 +198,23 @@ export function omitGeneratedDiffs(diff, listed = GENERATED_DIFF_OMITTED, { same
   }).join("");
 }
 
+// The PR's own change since an earlier reviewed head (D428). `git diff since head` is wrong once the branch merged main after
+// `since`: it then holds every change main took meanwhile (#1205: an 18 KB PR was reviewed as 2.7 MB). With a merge in
+// since..head, the delta is the PR's own diff at the head (merge base..head) cut to the file sections that differ from the
+// PR's own diff at `since` (its merge base..since); without one the plain range is exact. `git` runs a git command and returns
+// its text; `main` is the ref of main. Returns the unfiltered diff text (omitGeneratedDiffs is the caller's next step).
+export function prDelta(git, { since, head, main }) {
+  const merges = Number(git("rev-list", "--merges", "--count", `${since}..${head}`).trim());
+  if (!merges) return git("diff", "--no-color", "--no-ext-diff", since, head);
+  const own = (tip) => git("diff", "--no-color", "--no-ext-diff", git("merge-base", main, tip).trim(), tip);
+  const sections = (d) => new Map(String(d).split(/^(?=diff --git )/m).filter((x) => x.startsWith("diff --git ")).map((x) => [/^diff --git a\/(\S+) b\/(\S+)/.exec(x)?.[2] ?? x.split("\n")[0], x]));
+  const before = sections(own(since));
+  const after = sections(own(head));
+  // hunk positions move when main changed lines above them, so compare the changed lines only
+  const lines = (x) => x.split("\n").filter((l) => /^[+-]/.test(l)).join("\n");
+  return [...after].filter(([path, x]) => !before.has(path) || lines(before.get(path)) !== lines(x)).map(([, x]) => x).join("");
+}
+
 // Oversize (D428): even the PR's own delta, without the omitted files, is over the request budget. The run posts this
 // advisory note once per head (no VERDICT) and the coordinator hands the head to an interactive Codex lane: its first line
 // is the event, always exactly "review oversize, interactive lane needed @ <sha> (<lane>)".

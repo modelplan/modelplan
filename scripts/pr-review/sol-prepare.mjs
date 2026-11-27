@@ -8,7 +8,7 @@ import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { client } from "../merge-gates/github.mjs";
 import { feed, parseGlmTiers } from "../merge-gates/rules.mjs";
-import { OVERSIZE_EVENT, buildSolPrompt, compileRunProblem, compileStatus, decideSol, diffOmitReason, omitGeneratedDiffs } from "./sol.mjs";
+import { OVERSIZE_EVENT, buildSolPrompt, compileRunProblem, compileStatus, decideSol, diffOmitReason, omitGeneratedDiffs, prDelta } from "./sol.mjs";
 
 const env = process.env;
 const output = (k, v) => appendFileSync(env.GITHUB_OUTPUT, `${k}=${v}\n`);
@@ -69,7 +69,7 @@ const differsFromMain = new Set(git("diff", "--name-only", "--no-renames", "-z",
 const same = new Set(git("diff", "--name-only", "--no-renames", "-z", mergeBase, d.head).split("\0").filter((p) => p && !differsFromMain.has(p)));
 const omittedDiffs = [];
 const diff = omitGeneratedDiffs(git("diff", "--no-color", "--no-ext-diff", mergeBase, d.head), undefined, { same, report: omittedDiffs });
-const delta = mode === "delta" ? omitGeneratedDiffs(git("diff", "--no-color", "--no-ext-diff", d.since, d.head), undefined, { same }) : "";
+const delta = mode === "delta" ? omitGeneratedDiffs(prDelta(git, { since: d.since, head: d.head, main: "refs/remotes/origin/main" }), undefined, { same }) : "";
 const stat = git("diff", "--stat=160", "--no-color", mergeBase, d.head);
 const changed = git("diff", "--name-only", "--no-renames", "--diff-filter=AMRT", "-z", mergeBase, d.head).split("\0").filter((p) => p && !same.has(p) && !diffOmitReason(p));   // the omitted files stay out of the file texts too
 const deleted = git("diff", "--name-only", "--no-renames", "--diff-filter=D", "-z", mergeBase, d.head).split("\0").filter(Boolean);
