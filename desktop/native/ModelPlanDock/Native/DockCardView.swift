@@ -69,8 +69,8 @@ import CryptoKit
 }
 @MainActor private final class DockCardBar:NSView {
     var fraction:Double?,on:NSColor,track:NSColor
-    /// Plugin rows (D327): a faint segment after the fill and a warning notch.
-    var faint:Double?,notch:Double?
+    /// Plugin rows (D327): a faint segment after the fill (D421: no threshold notch).
+    var faint:Double?
     var size=CGSize(width:96,height:10){didSet{invalidateIntrinsicContentSize();needsDisplay=true}}
     var gap:CGFloat=2{didSet{needsDisplay=true}}
     init(row:DockCardRow,on:NSColor,track:NSColor){self.fraction=row.fillFraction;self.on=on;self.track=track;super.init(frame:CGRect(x:0,y:0,width:96,height:10));setAccessibilityElement(true);setAccessibilityRole(.levelIndicator);setAccessibilityValue(row.fillFraction.map{NSNumber(value:$0*100)});setAccessibilityMinValue(0);setAccessibilityMaxValue(100);setAccessibilityLabel(row.label);setAccessibilityHelp([row.value,row.detail].filter{!$0.isEmpty}.joined(separator:" · "));setAccessibilityIdentifier("dock.card.quota."+row.id)}
@@ -78,7 +78,7 @@ import CryptoKit
     override var intrinsicContentSize:NSSize{size}
     func apply(row:DockCardRow,on:NSColor,track:NSColor){
         let changed=fraction != row.fillFraction
-        fraction=row.fillFraction;self.on=on;self.track=track;faint=row.plugin?.faintFill;notch=row.plugin?.notch
+        fraction=row.fillFraction;self.on=on;self.track=track;faint=row.plugin?.faintFill
         setAccessibilityLabel(row.label);setAccessibilityValue(fraction.map{NSNumber(value:$0*100)})
         setAccessibilityHelp([row.value,row.detail].filter{!$0.isEmpty}.joined(separator:" · "));needsDisplay=true
         if changed{NSAccessibility.post(element:self,notification:.valueChanged)}
@@ -94,11 +94,6 @@ import CryptoKit
         for i in 0..<10{
             let r=CGRect(x:CGFloat(i)*(w+gap),y:0,width:w,height:bounds.height)
             (i<lit ? on:i<faintEnd ? on.withAlphaComponent(0.35):track).setFill();NSBezierPath(roundedRect:r,xRadius:1,yRadius:1).fill()
-        }
-        if let notch,notch.isFinite,notch>0,notch<1{
-            // The notch sits in the gap before the segment it marks (CPU 70 %: between the 7th and 8th).
-            let x=CGFloat((notch*10).rounded())*(w+gap)-gap/2
-            on.withAlphaComponent(0.7).setFill();CGRect(x:x-0.5,y:-1,width:1,height:bounds.height+2).fill()
         }
     }
 }
@@ -312,7 +307,9 @@ import CryptoKit
                 valueContent=max(valueContent,ceil(natural(label("row."+row.id+".value",row.value,font:readout,color:style.ink)).width))
             }
         }
-        let c0=min(labelContent,c[0]),c2=min(valueContent,c[2])
+        // A percent is never ellipsized (owner, build 5: "99.…"): the value column grows past the approved 34 pt to
+        // the widest value, and only the time column gives way (its detail wraps below the bar when it no longer fits).
+        let c0=min(labelContent,c[0]),c2=max(0,min(valueContent,rowWidth-c0-c[1]-3*g))
         for (index,row) in readings.enumerated(){
             if index>0{rowY+=style.rowGap}
             let rowID="row."+row.id

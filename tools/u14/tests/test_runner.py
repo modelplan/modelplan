@@ -202,7 +202,7 @@ class RealBinaryTests(unittest.TestCase):
         self.assertEqual(result['completedQueries'], 2)
         self.assertTrue(result['revokeCommitted'])
         self.assertTrue(result['receiptReplayed'])
-        self.assertTrue(result['healthChanged'])
+        self.assertTrue(result['inflightPrivateFrameCut'])
         self.assertGreaterEqual(result['elapsedSeconds'], 9)
         self.assertLess(result['elapsedSeconds'], 13)
 

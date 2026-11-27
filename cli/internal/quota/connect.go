@@ -336,7 +336,7 @@ func ReadPermitted(p Paths, now time.Time) Report {
 	if mode == consent.Off || !s.Allows("codex", consent.Local, mode) {
 		// WP-17: nothing decoded from Codex rollouts outlives the admission to read them.
 		forgetCodexRollouts()
-		p.CodexIndex.clear()
+		p.CodexIndex.clear(p.CodexHome)
 	}
 	if mode == consent.Off {
 		reason := "reader-privacy"
@@ -398,6 +398,12 @@ func ReadDeclared(p Paths, now time.Time) Report {
 // reconnect and catalogue rollback cannot reset a provider's request budget.
 func ForgetTool(p Paths, tool string) error { return forgetTool(p, tool, true, false, "", "") }
 
+// ForgetToolGuarded is ForgetTool for a retried obligation; see EraseScopeGuarded.
+func ForgetToolGuarded(p Paths, tool string, guard consent.EraseGuard) error {
+	p.eraseGuard = guard
+	return forgetTool(p, tool, true, false, "", "")
+}
+
 func forgetTool(p Paths, tool string, history, identity bool, scopeClass, scope string) error {
 	admission, err := consent.ReaderLockWait()
 	if err != nil {
@@ -406,6 +412,9 @@ func forgetTool(p Paths, tool string, history, identity bool, scopeClass, scope 
 	defer admission()
 	if !consent.ValidTool(tool) {
 		return errors.New("invalid tool")
+	}
+	if err := p.eraseGuard.Check(); err != nil {
+		return err
 	}
 	if tool == "codex" {
 		// Sampling 11-20 S1 follow-up: disconnecting Codex or erasing any of its scopes leaves
@@ -518,14 +527,22 @@ func forgetZaiAccountNative(cache, scope string) error {
 	if status != "" || json.Unmarshal(b, &doc) != nil {
 		return errors.New("cached readings invalid")
 	}
-	if len(doc["providers"]) == 0 || string(doc["providers"]) == "null" {
-		return nil
-	}
 	var entries []json.RawMessage
-	if json.Unmarshal(doc["providers"], &entries) != nil {
+	if raw := doc["providers"]; len(raw) != 0 && json.Unmarshal(raw, &entries) != nil {
 		return errors.New("cached readings invalid")
 	}
 	changed := false
+	if raw := doc[zaiMembershipKey]; len(raw) != 0 {
+		var memberships map[string]json.RawMessage
+		if json.Unmarshal(raw, &memberships) != nil {
+			return errors.New("cached membership invalid")
+		}
+		if _, exists := memberships[scope]; exists {
+			delete(memberships, scope)
+			doc[zaiMembershipKey], _ = json.Marshal(memberships)
+			changed = true
+		}
+	}
 	for i, raw := range entries {
 		var e codexbarEntry
 		if json.Unmarshal(raw, &e) != nil {
@@ -541,7 +558,9 @@ func forgetZaiAccountNative(cache, scope string) error {
 	if !changed {
 		return nil
 	}
-	doc["providers"], _ = json.Marshal(entries)
+	if entries != nil {
+		doc["providers"], _ = json.Marshal(entries)
+	}
 	b, err := json.Marshal(doc)
 	if err != nil {
 		return err
@@ -572,6 +591,9 @@ func filterCachedSourceWithWriter(path, name, tool string, history bool, legacy 
 	var doc map[string]json.RawMessage
 	if json.Unmarshal(b, &doc) != nil {
 		return errors.New("cached readings invalid")
+	}
+	if name == "native.json" && tool == "zai" {
+		delete(doc, zaiMembershipKey)
 	}
 	keys := []string{"providers"}
 	if name == "cycles.json" || name == "pace.json" {

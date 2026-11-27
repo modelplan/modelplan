@@ -47,7 +47,8 @@ public struct CockpitAppearance: Equatable, Sendable {
     case en
     case zhCN = "zh-CN"
   }
-  public enum Profile: String, Sendable { case full, compact }
+  /// D444 (owner, 2026-11-25): one cockpit layout; the short (640) version is retired.
+  public enum Profile: String, Sendable { case full }
   public let theme: Theme, locale: Locale, profile: Profile
   public let reduceMotion: Bool, reduceTransparency: Bool, shutterClosed: Bool, detached: Bool
   public let redBelow: Int
@@ -96,7 +97,8 @@ public enum CockpitRange: String, CaseIterable, Equatable, Sendable {
 }
 public struct CockpitShellState: Equatable, Sendable {
   public enum Profile: String, Sendable { case open, closed }
-  public enum Tier: String, Sendable { case tall, compact }
+  /// D444: one layout, so the wire's `tier` is always `tall` (the key stays for the page's exact-key check).
+  public enum Tier: String, Sendable { case tall }
   public let profile: Profile
   public let tier: Tier
   public let scope: String
@@ -144,6 +146,8 @@ public enum CockpitIntent: Equatable, Sendable {
   case pluginsRunning([String])
   /// A plugin edit made on the page (right-click Remove or the + menu), as `CockpitPluginWire.canonical` JSON.
   case pluginsEdit(Data)
+  /// D376: the page's right-click Remove on a plugin key; the app confirms and turns that plugin off.
+  case pluginClose(String)
 }
 /// A typed public page, never a URL from the page: native builds the address from these fields.
 public struct CockpitWebsiteLink: Equatable, Sendable {
@@ -701,12 +705,12 @@ public final class CockpitBridgeState {
       let action = m["action"] as? String
       let history = action == "openHistory", scope = action == "scopeSelect" || action == "rangeSelect" || action == "refreshMember", website = action == "openWebsite", ack = action == "cautionAck" || action == "pinnedModels"
       let focusedField = action == "openField" && m["key"] != nil
-      let running = action == "pluginsRunning", pluginEdit = action == "pluginsEdit"
-      let extra:Set<String> = history ? ["action","tool"] : scope || focusedField ? ["action","key"] : website ? ["action","page","value"] : ack || running ? ["action","ids"] : pluginEdit ? ["action","plugins"] : ["action"]
+      let running = action == "pluginsRunning", pluginEdit = action == "pluginsEdit", pluginClose = action == "pluginClose"
+      let extra:Set<String> = history ? ["action","tool"] : scope || focusedField ? ["action","key"] : website ? ["action","page","value"] : ack || running ? ["action","ids"] : pluginEdit ? ["action","plugins"] : pluginClose ? ["action","id"] : ["action"]
       // Plugin actions exist only for a host that sent `plugins`. A page stops its plugins when it hides, so
       // `pluginsRunning` is accepted without focus; every other action needs the active page.
       guard Set(m.keys) == base.union(extra), ready, !blocked,
-        running ? pluginsSent : visibility.active, !pluginEdit || pluginsSent
+        running ? pluginsSent : visibility.active, !pluginEdit || pluginsSent, !pluginClose || pluginsSent
       else { throw CockpitBridgeError.invalidMessage }
       let intent: CockpitIntent
       switch action {
@@ -743,6 +747,9 @@ public final class CockpitBridgeState {
       case "pluginsEdit":
         guard let body = m["plugins"], let canonical = CockpitPluginWire.canonical(body) else { throw CockpitBridgeError.invalidMessage }
         intent = .pluginsEdit(canonical)
+      case "pluginClose":
+        guard let id = m["id"] as? String, CockpitPluginWire.validID(id) else { throw CockpitBridgeError.invalidMessage }
+        intent = .pluginClose(id)
       case "close": intent = .close
       case "detach": intent = .detach
       case "putBack": intent = .putBack

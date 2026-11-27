@@ -1,0 +1,17 @@
+{
+  "decision": "D395/D396/D404 (owner 2026-11-24): most PRs are reviewed by the GitHub GLM reviewer and its exact-head verdict counts; only IMPORTANT PRs need a Codex (GPT) lane verdict. A PR is IMPORTANT when its path tier is 2, it carries a label below, it touches maxFiles or more files, or ANY touched non-test path matches ANY area pattern (one important path makes the whole PR important; test files, rules.mjs TEST_RE, never match an area). Patterns are case-insensitive and use only syntax JavaScript and Python read alike. The coordinator (decide.py review_class) reads this same file from main.",
+  "maxFiles": 100,
+  "labels": ["review:codex", "review:gpt"],
+  "areas": [
+    { "area": "consent", "re": "consent|scope_policy|(^|/)scopes?\\.go$|erase_scope|forget_identity" },
+    { "area": "privacy", "re": "privacy|redact|^cli/internal/diagnostics/|(^|/)Diagnostics[A-Za-z]*\\.swift$" },
+    { "area": "credentials", "re": "credential|keychain|secret|manualkey|identity|_login\\.go$|LoginService|claudesession|browser_session" },
+    { "area": "readers", "re": "^cli/internal/(quota|readers|connections|localusage|tokenacct)/|reader" },
+    { "area": "wire", "re": "^schema/app-cli/|^cli/internal/(appserver|swiftwire|appcontract|rows)/|^clients/swift/|wire" },
+    { "area": "swift-go-seam", "re": "^desktop/native/Sources/ModelPlanCore/|^desktop/native/ModelPlan(EngineStore|EngineClient|CockpitWeb|CredentialAgent)/|^desktop/cockpit/src/bridge|(^|/)(AppServer[A-Za-z]*|Engine(Lifecycle|RowsEventDecoder|RowsEntry|AppCache|AccountMembers)[A-Za-z]*|[A-Za-z]*Bridge|[A-Za-z]*Transport)\\.swift$|^cli/cmd/modelplan/(app_|consent|connect|reader_|doctor_readers|native_refresh|plugin_install|update)" },
+    { "area": "timing", "re": "deadline|fence|lifecycle|watchdog|supervis|schedul|cadence|observe_loop|refresh|lease|debounce|timer|SystemEvents|DisplayChangeRecheck|RunLoop|procgroup|(^|[/_])lock(ed)?(_[a-z]+)?\\.go$|(^|/)pipe_[a-z]+\\.go$" },
+    { "area": "release", "re": "release|notari[sz]|codesign|signing|sparkle|cliupdate|(^|/)update\\.go$|install|(^|/)go\\.(mod|sum)$|(^|/)Package\\.resolved$|(^|/)package-lock\\.json$|\\.entitlements$|(^|/)Info\\.plist$" },
+    { "area": "pins", "re": "-pin[^/]*$|(^|/)pins?\\.[a-z]+$" },
+    { "area": "security", "re": "^\\.github/workflows/(merge-gates|pr-review|mac-compile)|^scripts/(merge-gates|pr-review|mac-compile)/|^desktop/native/verification/scenario-tiers\\.tsv$|sandbox|entitlement|permission|(^|/)SECURITY" }
+  ]
+}

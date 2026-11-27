@@ -11,15 +11,15 @@
     },
     {
       "path": "desktop/native/ModelPlanCredentialAgent/README.md",
-      "sha256": "d61637309532975e3f3586253d8ec77c25c39988aed10b52907d802d281e4f81"
+      "sha256": "a56981cda5e306dc11766e45ab4ccf963b74358c5213c88ce06df0155d36366c"
     },
     {
       "path": "desktop/native/ModelPlanCredentialAgent/Sources/ModelPlanCredentialAgent/FixedItem.swift",
-      "sha256": "a9df1303c64ef11c88b0b35b96009fe0c9cd2d985b2ed715f5f62023eb67e20a"
+      "sha256": "d558a70a7822686f2486571d5e51c3a8574d80fe89fa9c5d88cc3d102e404cf1"
     },
     {
       "path": "desktop/native/ModelPlanCredentialAgent/Sources/ModelPlanCredentialAgent/NativeCredentialAgent.swift",
-      "sha256": "3670d89bb63f8f68f1dd12405cf6826bd467c998cebeba6ffe52eb4a061679de"
+      "sha256": "fd0a57ff9705d45d9da20dabbc1412bb39f61191f818f32dde372f043853d1a1"
     },
     {
       "path": "desktop/native/ModelPlanCredentialAgent/Tests/ModelPlanCredentialAgentTests/AgentTests.swift",
@@ -28,6 +28,10 @@
     {
       "path": "desktop/native/ModelPlanCredentialAgent/Tests/ModelPlanCredentialAgentTests/QueryBoundaryTests.swift",
       "sha256": "bb6821f4ea4c0d71ceb31d3421ea481c0f311f89db9d4a889d2556906d98bd2d"
+    },
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/Tests/ModelPlanCredentialAgentTests/ZCodeKeychainTests.swift",
+      "sha256": "cc510334140e20048d8a1e9f9499fc4aa105ad8f3076a28dee4dc0bd8ab363f4"
     }
   ],
   "scenarios": [

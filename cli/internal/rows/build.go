@@ -301,7 +301,12 @@ func buildCandidate(in Input, c *candidate) Row {
 		f.Busy = true
 		f.Latest = AttemptResultNever
 	}
+	keepUnavailable := c.id == "zai" && in.ZaiSubscriptionEstablished && allow && !f.Outdated && !f.Retired &&
+		(f.Veto == "" || f.Veto == CodeKeyMissing)
 	outcome := classify(f)
+	if keepUnavailable && outcome.Code == CodeNotReadYet {
+		outcome = Describe(CodeNoUsageWindows)
+	}
 	applyOutcome(&row, in, c, outcome)
 	if offeredLater(c, f) {
 		// D238: a tool installed after the first run and not yet decided is offered in the menu
@@ -309,7 +314,11 @@ func buildCandidate(in Input, c *candidate) Row {
 		// exported; like every unreadable tool it has no Dock ring (G3-38, owner D76).
 		row.Surfaces = []Surface{SurfaceMenu, SurfaceSettings}
 	}
-	if row.Reason.Code == CodeNotSignedIn {
+	if keepUnavailable && unreadable(row) {
+		// A tool-level ring has no account identity or measurements to borrow.
+		row.Accounts = []Account{{Route: RouteUnknown, Plan: planValue(c.id, "", ""), ValueState: ValueStateNone, Windows: []Window{}}}
+	}
+	if row.Reason.Code == CodeNotSignedIn && !keepUnavailable {
 		// G3-38 (owner D52): a signed-out tool has no ring. Settings and the menu still say why.
 		row.Surfaces = []Surface{SurfaceMenu, SurfaceSettings}
 	}
@@ -340,7 +349,7 @@ func buildCandidate(in Input, c *candidate) Row {
 		// (both follow the Dock surface). One line in Settings says why.
 		row.Surfaces = []Surface{SurfaceSettings}
 	}
-	if row.Kind == KindTool && unreadable(row) {
+	if row.Kind == KindTool && unreadable(row) && !keepUnavailable {
 		// G3-38 (owner decision D76): a detected subscription with no reading and no way to get
 		// one from ModelPlan has no ring. Settings and the menu still list it with the reason.
 		surfaces := row.Surfaces[:0:0]
@@ -425,9 +434,24 @@ func toolStepText(tool string, code Code) (Text, bool) {
 		return Text{EN: "ZCode sign-in found. Allow reading it in Settings to show its quota.", ZH: "已找到 ZCode 登录。在设置中允许读取后显示额度。"}, true
 	case CodeLoginExpired:
 		return Text{EN: "Sign in to ZCode again. ModelPlan reads it after you do.", ZH: "请重新登录 ZCode。登录后会自动读取。"}, true
+	case CodeKeychainUnset, CodeKeychainDenied, CodeKeychainCanceled, CodeKeychainConfirmationNeeded, CodeKeychainUnavailable:
+		// D380: ZCode 3.19+ keeps its sign-in key in the macOS Keychain.
+		return ZCodeKeychainText, true
+	case CodeUnsupportedLogin:
+		// Owner 11-22: a store ModelPlan cannot read automatically offers the pasted-key route.
+		return ZCodeUnreadableText, true
 	}
 	return Text{}, false
 }
+
+// ZCodeKeychainText (D380) and ZCodeUnreadableText (owner 11-22) are ZCode's own next steps. The
+// Swift copies in Settings, first run and the Dock card use the same words; a test pins them.
+var (
+	ZCodeKeychainText = Text{EN: "ZCode may keep its sign-in key in the Keychain. Allow ModelPlan to read it in Settings; when macOS asks, choose Always Allow.",
+		ZH: "ZCode 的登录密钥可能保存在钥匙串中。请在设置中允许 ModelPlan 读取；macOS 询问时请选择“始终允许”。"}
+	ZCodeUnreadableText = Text{EN: "Can't read the ZCode sign-in automatically · Paste a Zhipu / Z.ai API key to read the quota",
+		ZH: "无法自动读取 ZCode 登录 · 可粘贴智谱 / Z.ai 的 API key 读取额度"}
+)
 
 // NotSignedInText is the single not-signed-in sentence. The Swift copies in Settings and
 // first run (SettingsScopeConsentView.blockLine) use the same words; a test pins them.
@@ -511,9 +535,8 @@ func summary(in Input, rows []Row, allowed, declared int) RowsSummary {
 	default:
 		usable := false
 		for _, row := range rows {
-			// Tool rows without a value have no Dock surface (G3-38), so only a value counts for a
-			// tool; a declared row may still carry a next step.
-			if hasSurface(row, SurfaceDock) && (hasValue(row.Accounts) || row.Kind != KindTool && row.NextStep != nil && row.NextStep.Action != ActionNone) {
+			if hasSurface(row, SurfaceDock) && (row.Kind == KindTool || hasValue(row.Accounts) ||
+				row.NextStep != nil && row.NextStep.Action != ActionNone) {
 				usable = true
 			}
 		}
@@ -546,7 +569,8 @@ func hasSurface(row Row, s Surface) bool {
 
 // summaryTool: an allowed tool that holds no value. These are the rows G3-38 keeps off the Dock.
 func summaryTool(row Row) bool {
-	return row.Kind == KindTool && permitted(row.Consent) && row.Reason.Code != CodeCleanupPending && !hasValue(row.Accounts)
+	return row.Kind == KindTool && !hasSurface(row, SurfaceDock) && permitted(row.Consent) &&
+		row.Reason.Code != CodeCleanupPending && !hasValue(row.Accounts)
 }
 
 // summaryReadingNames lists the allowed tools still waiting for their first read.

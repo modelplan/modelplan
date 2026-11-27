@@ -203,13 +203,25 @@ struct DockHelpInteraction: Equatable {
     /// The resource sampler's widget cadence follows `isWidgetShown` (the community delegate owns `visibilityChanged`).
     public var widgetShownChanged: ((Bool) -> Void)?
     private func reportVisibility(_ visible: Bool, expanded: Bool = false) {
-        reportWidgetShown(visible && expanded)
+        reportWidgetShown(visible && expanded && panel?.occlusionState.contains(.visible) == true)
         guard visible != isVisible else { return }
         isVisible = visible; visibilityChanged?()
     }
+    #if DEBUG
+    /// D397: drives the hidden/occluded transition the panel's occlusion notification reports.
+    func reportWidgetShownForChecks(_ shown: Bool) { reportWidgetShown(shown) }
+    #endif
     private func reportWidgetShown(_ shown: Bool) {
         guard shown != isWidgetShown else { return }
-        isWidgetShown = shown; widgetShownChanged?(shown)
+        isWidgetShown = shown
+        if !shown {
+            workingDriver?.stop()
+        } else if model?.inputs.contains(where: { $0.working != nil }) == true {
+            // A hidden or collapsed surface retired its layers. Reattach only
+            // when there is still admitted activity to draw.
+            rebuild()
+        }
+        widgetShownChanged?(shown)
     }
     /// macrevb-1096-4: a plugin ring's card as it is now (rows, footer, action); nil keeps the rows of the last redraw.
     public var livePluginCard: ((String) -> DockPluginCard?)?
@@ -401,6 +413,9 @@ struct DockHelpInteraction: Equatable {
     /// Observe real CA installation before a detached offscreen tree is flushed.
     @_spi(DockResourceChecks) public var workingEffectsDidConfigureForChecks: (() -> Void)?
     @_spi(DockResourceChecks) public var workingEffectRotationPeriodsForChecks: [String:Double] { workingDriver?.rotationPeriods ?? [:] }
+    /// G3-91: the running spin animation of each ring; a refresh keeps the same object (it is never re-added).
+    @_spi(DockResourceChecks) public var workingEffectRotationAnimationsForChecks: [String: CAAnimation] { workingDriver?.rotationAnimations ?? [:] }
+    @_spi(DockResourceChecks) public var workingEffectRotationBeginTimesForChecks: [String: CFTimeInterval] { workingDriver?.rotationBeginTimes ?? [:] }
     @_spi(DockResourceChecks) public var animatingWorkingEffectIDs: Set<String> { workingDriver?.animatingIDs ?? [] }
     @_spi(DockResourceChecks) public var workingEffectCycleSeconds: [String: Double] { workingDriver?.cycleSeconds ?? [:] }
     @_spi(DockResourceChecks) public func seekWorkingEffectsForChecks(_ seconds: Double) { workingDriver?.seekForCapture(seconds) }
@@ -430,9 +445,18 @@ struct DockHelpInteraction: Equatable {
     var detachedCardForChecks: DockCardView? { !createsNativePanels && !card.isHidden ? card : nil }
     /// Render passes run, full (resting) and carried (a press's edge-view preparation), for the carry checks.
     private(set) var fullRebuildPassesForChecks = 0, carriedRebuildPassesForChecks = 0
+    /// D397: in-place replacements whose reinstall equalled the last completed pass, kept without a full pass.
+    private(set) var keptReplacementsForChecks = 0
     /// G3-161: plugin ring updates that repainted only the ring (no rebuild pass).
     private(set) var ringOnlyRefreshesForChecks = 0
     var applicationForChecks: SettingsApplication? { application }
+    /// G3-161: official face paints across every view this host draws into.
+    var officialFacePaintsForChecks: Int {
+        var seen = Set<ObjectIdentifier>()
+        return ([dockView] + alternateViews + Array(edgeViews.values)).reduce(0) { total, view in
+            seen.insert(ObjectIdentifier(view)).inserted ? total + view.officialPaintsForChecks : total
+        }
+    }
     #endif
     func refreshPresence() { displayFollower.sample(); edge.refresh() }
     var isFollowingDisplay: Bool { displayFollower.isRunning }
@@ -602,6 +626,8 @@ struct DockHelpInteraction: Equatable {
     var officialFacesForChecks = 0
     var preparedEdgesForChecks: Set<DockEdge> { Set(edgeViews.keys) }
     var catalogueReportsForChecks = 0
+    /// The subscription IDs of every completed rebuild pass, in order (what each painted face showed).
+    var paintedSubscriptionIDsForChecks: [[String]] = []
     #endif
     private func reportCatalogue(_ subscriptions: [SettingsSubscription]) {
         #if DEBUG
@@ -632,6 +658,21 @@ struct DockHelpInteraction: Equatable {
     private var rebuildPending = false
     /// A non-privacy content withdrawal arrived while the widget was pressed; it is applied after the press.
     private var withdrawHeldForPress = false
+    /// D397: what a completed resting pass drew. Two passes with equal keys draw the same face.
+    private struct PassKey: Equatable {
+        var rows: [DockInstrumentReading]
+        let catalogue: String
+        let menuStatusLines: [String]?, emptyText: String?
+        let notices: [String: DockNotice]
+        let display: DockDisplayArea?
+        let backingScale: Int
+        let preferences: Data?
+    }
+    private static let passKeyEncoder: JSONEncoder = { let e = JSONEncoder(); e.outputFormatting = .sortedKeys; return e }()
+    /// The last completed resting pass; nil once its face is retired or it fell back.
+    private var lastPassKey: PassKey?
+    /// D397: set by an in-place replacement's clear (G3-161 `retainingFace`), consumed by the next resting pass.
+    private var replacementRetained = false
     /// The placement the last drop committed, kept as the host's own until a Settings snapshot carries it.
     private var heldDrop: HeldDockDrop?
     /// T4: mouse-down monitors installed while a card is shown, and a press seen by them for the sample it starts.
@@ -1327,8 +1368,11 @@ struct DockHelpInteraction: Equatable {
 
     /// Synchronously retire cached values and accessibility nodes before replacement.
     /// Reset notice acknowledgements only on a privacy withdrawal, not on a timer tick.
+    /// G3-161: with `retainingFace` (an in-place replacement with no card open) the catalogue, painted face, sliver and
+    /// overflow tray stay as they are; the reinstall repaints only what changed, and `completeDeferredWithdrawal`
+    /// withdraws them if no content is reinstalled in the same step. A presented card or privacy always retires them.
     @discardableResult
-    func withdrawAdmittedContent(privacy: Bool, keepingCardFor members: Set<String> = []) -> Bool {
+    func withdrawAdmittedContent(privacy: Bool, keepingCardFor members: Set<String> = [], retainingFace: Bool = false) -> Bool {
         guard !retired else { return false }
         if !privacy, edge.isBackgroundPressed {
             // G3-113 (Pulse rebuilds nothing during a drag): a replacement that lands while the widget is pressed
@@ -1337,6 +1381,7 @@ struct DockHelpInteraction: Equatable {
             return false
         }
         let keepCard = !privacy && cardPresentedGeneration != nil && (cardID.map(members.contains) ?? false)
+        replacementRetained = retainingFace && !privacy && !keepCard
         if keepCard {
             // Leave only an empty shell during the synchronous replacement.
             // Its old labels, AX nodes and action generation retire before recompute.
@@ -1350,14 +1395,33 @@ struct DockHelpInteraction: Equatable {
         workingSignals = [:]; attentionSignals = []
         if privacy { attention = DockAttentionState() }
         menuNotice = nil; menuNoticeDidChange?(nil, false)
-        if !keepCard { catalogueKey = ""; if !catalogueReportedEmpty { reportCatalogue([]) } }
+        // An in-place replacement keeps the catalogue too, so an unchanged reinstall reports nothing.
+        if retainingFace && !privacy && !keepCard { return false }
+        if !keepCard { withdrawCatalogue() }
+        retireAdmittedFace(privacy: privacy)
+        return keepCard
+    }
+    private func withdrawCatalogue() { catalogueKey = ""; if !catalogueReportedEmpty { reportCatalogue([]) } }
+    /// Finishes a withdrawal that kept the face for a reinstall that did not come: the catalogue and the face.
+    func completeDeferredWithdrawal() {
+        guard !retired else { return }
+        withdrawCatalogue(); retireAdmittedFace()
+    }
+    /// True when a replacement can keep the painted face until its reinstall: no card is open and no press holds it.
+    var canReplaceInPlace: Bool { !retired && cardPresentedGeneration == nil && !edge.isBackgroundPressed }
+    /// The visual half of a withdrawal: the face, sliver and overflow tray.
+    private func retireAdmittedFace(privacy: Bool = false) {
+        guard !retired else { return }
+        lastPassKey = nil; replacementRetained = false
         try? overflowTray.apply([]); overflowPanel?.orderOut(nil)
         // G3-98: a plain replacement keeps a ring click's hidden number so the landed value fades in (#906);
         // a privacy withdrawal drops it with everything else.
-        for view in [dockView] + alternateViews { view.retireOfficialPresentation(keepingRefreshHolds: !privacy) }
+        for view in [dockView] + alternateViews {
+            if privacy { view.discardPreparedAppearance?() }
+            view.retireOfficialPresentation(keepingRefreshHolds: !privacy)
+        }
         sliver.noticeMarks = []
         try? sliver.apply(image: nil, logicalSize: .zero, scale: 1, accessibilityLabel: "")
-        return keepCard
     }
 
     func finishCardReplacement() -> Bool {
@@ -1425,7 +1489,7 @@ struct DockHelpInteraction: Equatable {
         guard permitted, !retired, preferences.showDock, preferences.followActiveDisplay else {
             displayFollower.stop(); followedDisplayID = nil; return
         }
-        displayFollower.start(); displayFollower.sample()
+        displayFollower.start(externallySampled: true); displayFollower.sample()
     }
     private func rebuild() {
         guard !retired, !retiring, application != nil else { return }
@@ -1448,7 +1512,7 @@ struct DockHelpInteraction: Equatable {
     }
     private func rebuildPass(_ generation: UInt64, carriedTo: DockDisplayArea? = nil) {
         #if DEBUG
-        if carriedTo == nil { fullRebuildPassesForChecks += 1 } else { carriedRebuildPassesForChecks += 1 }
+        if carriedTo != nil { carriedRebuildPassesForChecks += 1 }
         #endif
         let displayFacts = sampleEnvironment()
         let topology = topology(of: displayFacts)
@@ -1497,6 +1561,35 @@ struct DockHelpInteraction: Equatable {
         let presentationNotices = Dictionary(uniqueKeysWithValues: attentionSignals.compactMap { signal in
             DockNoticeProjection.selected(for: signal, at: now).map { (signal.id, $0) }
         })
+        // D397 (energy-p0-1124): an in-place replacement (G3-161: the clear kept the painted face) that reinstalls
+        // exactly what the last completed pass drew keeps that pass. The face, geometry, edges and working effects
+        // it installed are still in place, so only the model and the attention the clear withdrew come back; an
+        // identical delivery then builds no geometry, renders no material and runs no full pass. Any difference (a
+        // reading or its countdown at this time, the catalogue, a notice, the display, the scale or a preference)
+        // runs the full pass below, which still repaints only changed readings.
+        var passKey: PassKey?
+        if carriedTo == nil {
+            passKey = PassKey(rows: rows, catalogue: key, menuStatusLines: content.menuStatusLines, emptyText: content.emptyText,
+                              notices: presentationNotices, display: display, backingScale: backingScale,
+                              preferences: try? Self.passKeyEncoder.encode(passPreferences))
+            let keep = replacementRetained && !rows.isEmpty && lastAppearanceError == nil && passKey == lastPassKey
+            replacementRetained = false
+            if keep {
+                #if DEBUG
+                keptReplacementsForChecks += 1
+                #endif
+                publishAttention()
+                model = next
+                // macrevb-1220-2: the clear and this refresh advanced the input generation, so the Help surface, the
+                // interaction binding and the card are republished as after any resting pass.
+                finishRestingPass(generation, preferences: passPreferences, display: display, topology: topology, order: order)
+                return
+            }
+            lastPassKey = nil
+            #if DEBUG
+            fullRebuildPassesForChecks += 1
+            #endif
+        }
         for view in [dockView] + alternateViews {
             view.appearanceNotices = presentationNotices
             view.appearanceDisplaySize = display?.usableFrame.size
@@ -1515,7 +1608,7 @@ struct DockHelpInteraction: Equatable {
                 geometry.scaleRegistration(by: dockView.appliedGeometryScale)
             }
             else {
-                try dockView.applyCommunity(rows, locale: passPreferences.language.rawValue)
+                try dockView.applyCommunity(rows, locale: passPreferences.language.rawValue, showsPercentages: passPreferences.showPercentages)
                 geometry = .init(hoverRects: [dockView.bounds])
             }
         } catch {
@@ -1525,7 +1618,7 @@ struct DockHelpInteraction: Equatable {
                 lastAppearanceError = error
                 Logger(subsystem: "ai.modelplan.dock", category: "appearance").error("Official Dock appearance failed: \(String(describing: error), privacy: .private)")
             }
-            try? dockView.applyCommunity(rows, locale: passPreferences.language.rawValue)
+            try? dockView.applyCommunity(rows, locale: passPreferences.language.rawValue, showsPercentages: passPreferences.showPercentages)
             geometry = .init(hoverRects: [dockView.bounds])
         }
         guard passIsCurrent(generation) else { return }
@@ -1539,6 +1632,9 @@ struct DockHelpInteraction: Equatable {
                                      rotation: .working, provider: { _ in provider })
             } catch { driver.stop(); lastWorkingEffectError = error }
         } else { workingDriver?.stop() }
+        #if DEBUG
+        paintedSubscriptionIDsForChecks.append(rows.map(\.subscriptionID))
+        #endif
         workingEffectsDidConfigureForChecks?()
         publishAttention()
         model = next
@@ -1611,6 +1707,15 @@ struct DockHelpInteraction: Equatable {
         edgeGeometries = nextGeometries; edgeViews = nextViews
         appearanceDisplay = display
         if carriedTo != nil { return }
+        if !appearanceFallback { lastPassKey = passKey }
+        finishRestingPass(generation, preferences: passPreferences, display: display, topology: topology, order: order)
+    }
+    /// The presentation tail of a resting pass: sliver, edge preference, the card, and the edge presentation (which
+    /// republishes the generation-bound Help surface and interaction binding). A kept replacement (D397) runs it too:
+    /// it skips only the face, geometry and material, never this republication.
+    private func finishRestingPass(_ generation: UInt64, preferences passPreferences: SettingsPreferences, display: DockDisplayArea?,
+                                   topology: DockDisplayTopology, order: [String]) {
+        let selected = nativeEdge(passPreferences.dockEdge)
         if sliverPrepared {
             let logical = sliverLogicalSize
             // AppKit can round the owned window to whole backing pixels. A data-only
@@ -1640,16 +1745,24 @@ struct DockHelpInteraction: Equatable {
     }
     private func makeEdge(preference: DockEdgePreference = .init(), policy: DockVisibilityPolicy = .init()) -> DockEdgeController {
         let read: () -> DockEdgeEnvironment = { [weak self] in self?.environment() ?? .init(displays: [], layouts: []) }
+        let controller: DockEdgeController
         #if DEBUG
-        if let timing = visibilityTimingForChecks {
-            return DockEdgeController(preference: preference, policy: policy, clock: timing.clock,
-                                      scheduler: timing.scheduler, read: read, position: PulseDockPositioning.resolve)
-        }
+        let timing = visibilityTimingForChecks ?? (elapsedClock.flatMap { clock in edgeScheduling.map { (clock, $0) } })
+        #else
+        let timing = elapsedClock.flatMap { clock in edgeScheduling.map { (clock, $0) } }
         #endif
-        if let elapsedClock, let edgeScheduling {
-            return DockEdgeController(preference: preference, policy: policy, clock: elapsedClock, scheduler: edgeScheduling, read: read, position: PulseDockPositioning.resolve)
+        if let (clock, scheduler) = timing {
+            controller = DockEdgeController(preference: preference, policy: policy, clock: clock, scheduler: scheduler,
+                                            read: read, position: PulseDockPositioning.resolve)
+        } else {
+            controller = DockEdgeController(preference: preference, policy: policy, read: read, position: PulseDockPositioning.resolve)
         }
-        return DockEdgeController(preference: preference, policy: policy, read: read, position: PulseDockPositioning.resolve)
+        controller.onScheduledSample = { [weak self] in
+            guard let self, self.permitted, !self.retired else { return }
+            self.pointerSurface.sampleNow()
+            self.displayFollower.sample()
+        }
+        return controller
     }
     private func topology(of environment: DockEdgeEnvironment) -> DockDisplayTopology {
         .init(displays: environment.displays, primaryID: environment.primaryDisplayID)
@@ -1764,7 +1877,7 @@ struct DockHelpInteraction: Equatable {
         }
     }
     private func makePointerSurface() -> PulsePanelPointerSurface {
-        let surface = PulsePanelPointerSurface(pointSource: pointerSampleSource)
+        let surface = PulsePanelPointerSurface(pointSource: pointerSampleSource, externallySampled: true)
         surface.onChange = { [weak self] _ in
             guard let self, self.permitted, !self.retired, !self.rendering else { return }
             // Local samples invalidate input observation. Resolve fresh global
@@ -1928,6 +2041,7 @@ struct DockHelpInteraction: Equatable {
     }
     @objc private func dockHelpOcclusionChanged(_ notification: Notification) {
         guard let current = edge.presentation else { withdrawDockHelpSurface(); return }
+        reportVisibility(panel?.isVisible == true, expanded: current.state == .expanded)
         publishDockHelpSurface(current)
     }
     func isCurrentDockHelpSurface(_ value: DockHelpSurface) -> Bool {
@@ -2491,6 +2605,11 @@ struct DockHelpInteraction: Equatable {
         guard let reading = try? DockInstrumentProjection.evaluate(value, now: currentDate(), redBelow: effectiveRedBelow),
               (try? dockView.replaceReading(reading)) == true else { return false }
         var inputs = model.inputs; inputs[index] = input
+        // macrevb-1220-1: the face now shows this ring, so the last pass's key does too; an identical delivery that
+        // follows is still a kept replacement (D397).
+        if var key = lastPassKey, let i = key.rows.firstIndex(where: { $0.subscriptionID == reading.subscriptionID }) {
+            key.rows[i] = reading; lastPassKey = key
+        }
         self.model = CommunityDockSnapshot(inputs: inputs, subscriptions: model.subscriptions, presentationRows: model.presentationRows,
                                            unavailableReason: model.unavailableReason, readerDiagnostics: model.readerDiagnostics,
                                            emptyDiagnostic: model.emptyDiagnostic)

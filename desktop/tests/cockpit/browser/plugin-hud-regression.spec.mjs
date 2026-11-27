@@ -45,7 +45,7 @@ test('Calendar followed by an effort-scale key shows its effort view',async({pag
  expect(await receive(send('display',{data:build13Profile()}))).toBe(true);
  await page.locator('.fd-ch:not(.empty) .fd-strip').first().click();
  await page.locator('.eng-keys .pl-key[data-plugin="calendar"]').click();
- await page.locator('.fd-scale .sc-l[data-level="Low"]').click();
+ await page.locator('.fd-scale .sc-l[data-level="Low"]').first().click();
  await expect(page.locator('.mfd-screen .pl-screen')).toHaveCount(0);
  await expect(page.locator('.mfd-page.pg-compare')).toBeVisible();
 });

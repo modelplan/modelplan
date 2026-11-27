@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
+	"github.com/modelplan/modelplan/cli/internal/logindex"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/rows"
 )
@@ -22,7 +23,7 @@ func TestActivityObserverNotifiesOnTransitionAndExpiry(t *testing.T) {
 	phase <- "finished"
 	at := time.Now().UTC()
 	b := &SharedBackend{changes: make(chan struct{}, 1)}
-	b.config.Activity = func(context.Context, consent.Admission, time.Time) []rows.ActivityInput {
+	b.config.Activity = func(context.Context, consent.Admission, logindex.Ticket, time.Time) []rows.ActivityInput {
 		return []rows.ActivityInput{{ToolID: "codex", SubscriptionRef: "aaaaaaaaaaaaaaaa", SessionRef: "bbbbbbbbbbbbbbbb", BindingVerified: true, Phase: rows.ActivityPhase(<-phase), RecordAt: at, ExpiresAt: at.Add(5 * time.Minute)}}
 	}
 	b.observeActivity(ctx, at)

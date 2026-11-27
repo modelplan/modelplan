@@ -15,6 +15,14 @@ import (
 // EraseScope is the engine's cleanup hook. It never reads tool credentials,
 // starts a provider, or erases the independent shared request reservations.
 func EraseScope(p Paths, scope string, forget bool) error {
+	return EraseScopeGuarded(p, scope, forget, nil)
+}
+
+// EraseScopeGuarded is EraseScope for a retried obligation: guard is checked after the reader
+// lock is held and before anything is deleted, so a retry whose authority lapsed (a confirmed
+// reset, or a re-grant after the obligation was met) erases nothing (macrevb-1218-5).
+func EraseScopeGuarded(p Paths, scope string, forget bool, guard consent.EraseGuard) error {
+	p.eraseGuard = guard
 	tool, path, ok := strings.Cut(scope, ".")
 	if !ok || !consent.ValidScope(scope) {
 		return errors.New("invalid scope")
@@ -25,6 +33,9 @@ func EraseScope(p Paths, scope string, forget bool) error {
 			return err
 		}
 		defer unlock()
+		if err := p.eraseGuard.Check(); err != nil {
+			return err
+		}
 		if tool == "codex" {
 			forgetCodexRollouts() // WP-17: the decoded rollout memo goes with the scope
 		}

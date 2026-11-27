@@ -123,10 +123,13 @@ func NativeReader(provider string) (regions []string, keyEnv string, ok bool) {
 	return n.Regions, n.KeyEnv, true
 }
 
+const zaiMembershipKey = "zaiMembership"
+
 type nativeSnap struct {
-	SchemaVersion int             `json:"schemaVersion"`
-	ObservedAt    time.Time       `json:"observedAt"`
-	Providers     []codexbarEntry `json:"providers"`
+	SchemaVersion int                              `json:"schemaVersion"`
+	ObservedAt    time.Time                        `json:"observedAt"`
+	Providers     []codexbarEntry                  `json:"providers"`
+	ZaiMembership map[string]*consent.CaptureStamp `json:"zaiMembership,omitempty"`
 }
 
 func nativePath(cache string) string { return filepath.Join(cache, "observed", "native.json") }
@@ -301,13 +304,15 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 	}
 	generations := manualKeyGenerations(p.Cache)
 	previous := map[string]codexbarEntry{}
-	if old := loadNative(p.Cache); old != nil {
+	old := loadNative(p.Cache)
+	if old != nil {
 		for _, entry := range old.Providers {
 			previous[entry.Provider] = entry
 		}
 	}
 	unlockSnapshot()
-	s := &nativeSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Providers: []codexbarEntry{}}
+	s := &nativeSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Providers: []codexbarEntry{},
+		ZaiMembership: zaiMembership(p.Cache, old, state)}
 	if selected != nil {
 		ids := []string{}
 		for provider := range previous {
@@ -364,6 +369,10 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 				// The saved key file is unsafe or unreadable: fail this provider closed. Neither the saved key
 				// nor a detected key is sent anywhere, so a different account's usage cannot be shown.
 				e = codexbarEntry{Status: "error", ErrorCode: "file_unreadable", ObservedAt: now.UTC()}
+			} else if hasManual && x.Provider == "zai" && !zaiPastedKeyAdmitted() {
+				// macrev2-1162-2: a pasted GLM key kept after its own API-key Deny is never sent, whatever
+				// else admitted this provider; the row shows the consent cause instead.
+				e = codexbarEntry{Status: "error", ErrorCode: "consent_required", ObservedAt: now.UTC()}
 			} else if hasManual {
 				// D90, owner decision 2026-11-14: a key the user entered wins over any detected key and is
 				// the only one used; it goes only to the compiled official host of its region.
@@ -456,6 +465,9 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 				continue
 			}
 			kept = append(kept, e)
+			if e.Provider == "zai" {
+				rememberZaiMembership(s.ZaiMembership, &e, state)
+			}
 		}
 		s.Providers = kept
 		// A concurrent key change may have cleared GLM while this refresh was in
@@ -586,6 +598,11 @@ func applyNative(r *Report, p Paths, now time.Time) {
 		}
 	}
 	s := loadNative(p.Cache)
+	admission := admissionFor(p)
+	if admission.Mode() == consent.Automatic && !nativeOff() {
+		_, pending := PolicyPending("zai")
+		r.ZaiSubscriptionEstablished = !pending && len(zaiMembership(p.Cache, s, admission.State())) != 0
+	}
 	by := map[string]codexbarEntry{}
 	if s != nil {
 		for _, e := range s.Providers {
@@ -863,9 +880,20 @@ func claudeBackoffIsLocal(cache string) bool {
 	return true
 }
 
+// zaiPastedKeyAdmitted: the GLM API-key scope (the pasted key's own admission) is not denied right now.
+// An undecided scope stays with the selection's own consent check, as before.
+func zaiPastedKeyAdmitted() bool {
+	current, mode := consent.Current()
+	if r, decided := current.Scopes[consent.ScopeZaiAccountUsageAPIKey]; decided && !r.Allowed {
+		return false
+	}
+	return mode != consent.Off
+}
+
 // pastedGLMKeyRoute: a pasted GLM key is saved and the GLM selection runs natively, unblocked.
+// The selected ZCode sign-in is not that route: it never reads the pasted key (macrev2-1162-2).
 func pastedGLMKeyRoute(p Paths) bool {
-	if !ManualKeyPresent(p.Cache, "zai") {
+	if !ManualKeyPresent(p.Cache, "zai") || zcodeLoginRoute(p, "zai") {
 		return false
 	}
 	ss, err := Selections(p)
@@ -895,7 +923,7 @@ func credentialStageFailure(e readerEntry) bool {
 // With ZCode's QR-code sign-in present but its saved-login scope not allowed (D369), the fixed reason
 // is "consent required": the row offers the consent action and shows no data.
 func applyZCodeNoProviderFile(r *Report, p Paths) {
-	if !p.ZCodeNoProviderFile && !p.ZCodeLoginConsent {
+	if !p.ZCodeNoProviderFile && !p.ZCodeLoginConsent && p.ZCodeKeychainPending == "" {
 		return
 	}
 	// S6 (#1031 sampling): a selected, admitted pasted GLM key is a route that can run; its own
@@ -906,6 +934,9 @@ func applyZCodeNoProviderFile(r *Report, p Paths) {
 	cause := SourceStatus{Source: "native:zai", Status: "unavailable", Reason: "unsupported_login", ErrorCode: "unsupported_login"}
 	if p.ZCodeLoginConsent {
 		cause = SourceStatus{Source: "native:zai", Status: "unavailable", Reason: "consent_required", ErrorCode: "consent_required"}
+	}
+	if code := map[string]string{"unset": "keychain_unset", "denied": "keychain_denied"}[p.ZCodeKeychainPending]; code != "" {
+		cause = SourceStatus{Source: "native:zai", Status: "unavailable", Reason: code, ErrorCode: code}
 	}
 	for i, s := range r.Sources {
 		if s.Source == "native:zai" {

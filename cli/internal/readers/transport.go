@@ -105,6 +105,11 @@ func (t *ReadTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if pin.stage <= t.stage || (t.attempts == 0 && pin.stage == 1 && t.scope == consent.ScopeMiniMaxAccountUsageAPIKey) {
 		return nil, ErrRequestNotAllowed
 	}
+	// The live consent check runs last, immediately before the dispatch it guards.
+	if err := checkLiveAdmission(req.Context()); err != nil {
+		t.stopped = err
+		return nil, err
+	}
 	t.stage = pin.stage
 	t.host = req.URL.Host
 	t.attempts++
