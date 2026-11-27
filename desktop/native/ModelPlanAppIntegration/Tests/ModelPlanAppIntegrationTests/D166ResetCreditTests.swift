@@ -175,7 +175,7 @@ final class D166ResetCreditTests: XCTestCase {
 
     /// macrev2-1289-4 (DOCK-3.7-03, C19): once the window reading restarts, a confirmed direct reset is no longer news on the
     /// widget (dot and card block both come from this one choice), as in the cockpit; a banked reset stays news.
-    func testARestartedReadingRetiresDirectResetNewsButNotBankedNews() throws {
+    @MainActor func testARestartedReadingRetiresDirectResetNewsButNotBankedNews() throws {
         let confirmed = at("2026-11-12T10:00:00Z"), now = confirmed.addingTimeInterval(180)
         let routine = try currentAccount(observed: confirmed.addingTimeInterval(60), resets: confirmed.addingTimeInterval(4 * 3600))
         let restarted = try currentAccount(observed: confirmed.addingTimeInterval(120), resets: confirmed.addingTimeInterval(60 + 18000))
@@ -188,7 +188,7 @@ final class D166ResetCreditTests: XCTestCase {
     }
 
     /// macrev2-1289-2: a retired newer event gives the slot to a still-live older one.
-    func testAStillLiveOlderEventTakesTheSlotWhenTheNewerRetires() throws {
+    @MainActor func testAStillLiveOlderEventTakesTheSlotWhenTheNewerRetires() throws {
         let confirmed = at("2026-11-12T10:00:00Z")
         let account = try currentAccount(observed: confirmed.addingTimeInterval(60), resets: confirmed.addingTimeInterval(4 * 3600))
         let older = event("older", kind: "reset_credit", confirmed: confirmed)
