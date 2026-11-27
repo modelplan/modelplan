@@ -147,7 +147,7 @@ export function solPolicy(base, sha) {
 - Scope: the delta since ${base || "the first commit"} up to ${sha} (git diff ${base || "<root>"}..${sha} in the checkout). Unchanged code is reopened only for a demonstrated material defect or an invalidated assumption, and then say why it was missed before.
 - Block only for a violated stated requirement, or a concrete reachable failure with material impact. Each blocker states its trigger, its consequence and an acceptance test. Everything else is a non-blocking line starting with 'FOLLOW-UP:'.
 - Material (D364) = an outcome the owner or a user sees as wrong: wrong merge or a PR blocked for good, lost or deleted data or work, security/privacy/credential, user-visible failure. Wrong alert text, wording or an extra event is a FOLLOW-UP. Reachable = a real input can produce it; untrusted input always counts, a format our own trusted tooling never emits does not, unless the PR is what starts emitting it. A fail-closed outcome that comes with an alert (the PR waits and an event is raised) is a FOLLOW-UP, not 'blocked for good'; a wrong landing, a leak or data loss still blocks.
-- First pass (D426): list ALL blockers at once, at most 5, ranked by severity, most severe first. Anything beyond goes under FOLLOW-UP.
+- First pass (D426): list ALL blockers at once, most severe first. Ordinary blockers are capped at 5; anything beyond the fifth goes under FOLLOW-UP. A protected finding (security, privacy, credential or data loss) is never capped or demoted: each one stays a blocker even below fifth place.
 - From round 2 (R20, consults included, D426): a NEW blocker counts only if the delta introduced it AND it is at least as severe as what it repairs, or it is security, privacy, credential or data loss. Everything else is FOLLOW-UP.
 - Concise output (D426): findings, then the Record block, then VERDICT. Do not restate the diff.
 - Say closed/open for every earlier finding you were given. After two failed repairs of one finding, propose a reproducer and an acceptance condition instead of another patch (R20).
@@ -212,7 +212,12 @@ export function prDelta(git, { since, head, main }) {
   const after = sections(own(head));
   // hunk positions move when main changed lines above them, so compare the changed lines only
   const lines = (x) => x.split("\n").filter((l) => /^[+-]/.test(l)).join("\n");
-  return [...after].filter(([path, x]) => !before.has(path) || lines(before.get(path)) !== lines(x)).map(([, x]) => x).join("");
+  const changed = [...after].filter(([path, x]) => !before.has(path) || lines(before.get(path)) !== lines(x)).map(([, x]) => x);
+  // A change the PR had at `since` and no longer has (a repair removed the file or reverted the edit) must stay visible: the
+  // reviewer would otherwise judge a repair that dropped reviewed code without seeing any hunk for it (macrevb-1245-4).
+  const gone = [...before].filter(([path]) => !after.has(path)).map(([path, x]) =>
+    `diff --git a/${path} b/${path}\n# REMOVED since the reviewed head: the PR no longer changes this file. Its change at the reviewed head was (commented out, no longer part of the PR):\n${x.split("\n").slice(1).map((l) => `# ${l}`).join("\n")}\n`);
+  return [...changed, ...gone].join("");
 }
 
 // Oversize (D428): even the PR's own delta, without the omitted files, is over the request budget. The run posts this
@@ -220,7 +225,8 @@ export function prDelta(git, { since, head, main }) {
 // is the event, always exactly "review oversize, interactive lane needed @ <sha> (<lane>)".
 export const OVERSIZE_EVENT = "review oversize, interactive lane needed";
 export const OVERSIZE_RE = /^review oversize, interactive lane needed @ ([0-9a-f]{40}) \(gh[a-z]+\)$/;
-export const oversizeNoted = (items, head) => items.some((x) => OVERSIZE_RE.exec(String(x.body).split("\n")[0].replace(/\r$/, ""))?.[1] === head);
+// Only the trusted account (the bot token and the owner) counts: an untrusted comment in this format never suppresses the real note.
+export const oversizeNoted = (items, head) => items.some((x) => isTrusted(x.user) && OVERSIZE_RE.exec(String(x.body).split("\n")[0].replace(/\r$/, ""))?.[1] === head);
 export function renderOversizeNote({ head, lane, chars, budget, omitted = [], runUrl = "" }) {
   const body = [`${OVERSIZE_EVENT} @ ${head} (${lane})`, "",
     `_Advisory, no verdict. The patches of this PR's own delta are ${chars} characters, over the ${budget} budget of the workflow reviewer, so this head is routed to an interactive Codex review lane._`,

@@ -139,7 +139,7 @@ test("policy: verbatim the sol-consult.sh policy text", { skip: !existsSync(proc
 test("policy: D426 big-not-small rules (owner 11-25) are in the policy text", () => {
   const p = S.solPolicy(BASE, H);
   for (const want of [
-    "list ALL blockers at once, at most 5, ranked by severity", "Anything beyond goes under FOLLOW-UP",
+    "list ALL blockers at once, most severe first", "Ordinary blockers are capped at 5", "anything beyond the fifth goes under FOLLOW-UP", "A protected finding (security, privacy, credential or data loss) is never capped or demoted", "each one stays a blocker even below fifth place",
     "From round 2 (R20, consults included", "a NEW blocker counts only if the delta introduced it AND it is at least as severe as what it repairs, or it is security, privacy, credential or data loss",
     "fail-closed outcome that comes with an alert (the PR waits and an event is raised) is a FOLLOW-UP", "a wrong landing, a leak or data loss still blocks",
     "findings, then the Record block, then VERDICT. Do not restate the diff",
@@ -1082,9 +1082,12 @@ test("D428 oversize note: first line is the coordinator event, once per head, sa
   assert.match(note, /interactive Codex review lane/);
   assert.match(note, /a\.png \(binary file\)/);
   assert.ok(!note.split("\n").some((l) => /^\s*VERDICT/i.test(l)), "no verdict line");
-  assert.equal(S.oversizeNoted([{ body: note }], H), true);
-  assert.equal(S.oversizeNoted([{ body: note }], OLD), false);
-  assert.equal(S.oversizeNoted([{ body: "oversize" }], H), false);
+  assert.equal(S.oversizeNoted([{ user: ME, body: note }], H), true);
+  assert.equal(S.oversizeNoted([{ user: ME, body: note }], OLD), false);
+  assert.equal(S.oversizeNoted([{ user: ME, body: "oversize" }], H), false);
+  // macrevb-1245-3: a stranger's comment in the same format never suppresses the genuine advisory
+  assert.equal(S.oversizeNoted([{ user: { login: "stranger", id: 1 }, body: note }], H), false);
+  assert.equal(S.oversizeNoted([{ body: note }], H), false, "no author, no trust");
 });
 
 test("D428 review comment names the files left out of the size budget", () => {
@@ -1124,5 +1127,36 @@ test("D428 prDelta: since -> merge main -> head holds only the PR's own change; 
     g("checkout", "-q", since); g("checkout", "-qb", "pr2"); put("own.txt", "own 1\nown 3\n"); g("add", "."); g("commit", "-qm", "own 3");
     const head2 = g("rev-parse", "HEAD").trim();
     assert.equal(S.prDelta((...a) => g(...a), { since, head: head2, main: "main" }), g("diff", "--no-color", "--no-ext-diff", since, head2));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("D426 policy (macrevb-1245-1): a protected finding is never capped or demoted; only ordinary blockers are capped at 5", () => {
+  const p = S.solPolicy(BASE, H);
+  assert.ok(!/at most 5, ranked/.test(p) && !/Anything beyond goes under FOLLOW-UP/.test(p), "the old uncapped-for-everyone overflow instruction is gone");
+  const line = p.split("\n").find((l) => l.startsWith("- First pass (D426)"));
+  assert.match(line, /Ordinary blockers are capped at 5/);
+  assert.match(line, /protected finding \(security, privacy, credential or data loss\) is never capped or demoted/);
+  assert.ok(line.indexOf("never capped or demoted") > line.indexOf("capped at 5"), "the protected exception follows the cap it exempts");
+});
+
+test("D428 prDelta (macrevb-1245-4): a file or edit the repair removed after a main merge stays visible; main's change stays out", async () => {
+  const { execFileSync } = await import("node:child_process");
+  const dir = mkdtempSync(join(tmpdir(), "prdelta2-"));
+  try {
+    const g = (...a) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", dir, ...a], { encoding: "utf8" });
+    const put = (f, t) => writeFileSync(join(dir, f), t);
+    g("init", "-q", "-b", "main"); put("base.txt", "base\n"); put("existing.txt", "keep\n"); g("add", "."); g("commit", "-qm", "base");
+    g("checkout", "-qb", "pr"); put("validation.txt", "check input\n"); put("existing.txt", "keep\nrisky edit\n"); g("add", "."); g("commit", "-qm", "reviewed");
+    const since = g("rev-parse", "HEAD").trim();
+    g("checkout", "-q", "main"); put("main-only.txt", "main change\n".repeat(300)); g("add", "."); g("commit", "-qm", "main moves");
+    g("checkout", "-q", "pr"); g("merge", "-q", "--no-edit", "main");
+    g("rm", "-q", "validation.txt"); put("existing.txt", "keep\n"); g("add", "."); g("commit", "-qm", "repair removes both");
+    const head = g("rev-parse", "HEAD").trim();
+    const d = S.prDelta((...a) => g(...a), { since, head, main: "main" });
+    assert.ok(!d.includes("main-only.txt"), "main's change is not in the delta");
+    assert.match(d, /REMOVED since the reviewed head/);
+    assert.ok(d.includes("validation.txt") && d.includes("check input"), "the removed file and what it held are visible");
+    assert.ok(d.includes("existing.txt") && d.includes("risky edit"), "the reverted edit to an existing file is visible");
+    assert.ok(d.length < 2000, `still small: ${d.length}`);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
