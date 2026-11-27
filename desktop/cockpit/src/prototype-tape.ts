@@ -26,12 +26,15 @@ export function mountPrototypeTape(root:HTMLElement,link?:TapeLink){
   const unavailable=coverage==='recording-off'?(ht(locale,'host.sessionRecordingOff')):(ht(locale,'host.sessionDataUnavailable'));
   host.setAttribute('aria-label',coverage==='local-last-seen'?title:unavailable);
   const sessions=coverage==='local-last-seen'?(detail?.sessions??[]).filter(s=>s.state==='running'||s.state==='idle').slice().sort((a,b)=>Number(b.state==='running')-Number(a.state==='running')):[];
-  const shown=sessions.length>count?sessions.slice(0,count-1):sessions.slice(0,count),members=data?cockpitMembers(data):[];
+  // D467 / master §6.1: with nothing running the last-seen sessions sit under one header, in ink-3.
+  const idleOnly=sessions.length>0&&!sessions.some(s=>s.state==='running'),cap=idleOnly?count-1:count;
+  const shown=sessions.length>cap?sessions.slice(0,cap-1):sessions.slice(0,cap),members=data?cockpitMembers(data):[];
   // The chip is the session's subscription colour (study tape.js); an unbound session stays neutral.
   // A published model reads by its short name, as on the faders and the HUD; anything else as reported.
   const names=new Map((detail?.publishedModels??[]).map(m=>[m.id,shortLabel(m.name)])),modelName=(id:string)=>names.get(id)??id;
   const palette=memberColours(members),colours=shown.map(s=>{const m=sessionMember(members,s);return m?palette.get(m.key)??NEUTRAL:NEUTRAL;});
-  const rows=shown.map(s=>{
+  const rows:string[]=idleOnly?[`<span class="tl t-head">${esc(ht(locale,'host.idleHead'))}</span>`]:[];
+  rows.push(...shown.map(s=>{
    const line=sessionLine(s,now,locale,modelName);
    const running=line.running?(ht(locale,'host.running')):(ht(locale,'host.lastSeen')),rateLabel=line.rate===null?'':(ht(locale,'host.sessionRate'))+Math.round(line.rate)+' t/s';
    // G3-100: no project in the tool's own definition reads "No project"; with names turned off the label stays hidden ("--").
@@ -46,7 +49,7 @@ export function mountPrototypeTape(root:HTMLElement,link?:TapeLink){
    <i class="chip"></i><span class="t-tool" title="${esc(s.source)}">${esc(line.tool)}</span><span class="t-proj">${esc(project)}</span>
    <span class="t-me"><span class="t-model${line.unknownModel?' t-unknown':line.unlisted?' t-unlisted':''}" title="${esc(line.unlisted?(s.modelDisplay??''):s.model)}">${esc(model)}</span>${line.unlisted?` <span class="t-badge">${esc(badge)}</span>`:''}${line.effort?` <span class="t-eff">${esc(line.effort)}</span>`:''}</span>
    <span class="t-elapsed">${esc(line.elapsed??'')}</span><span class="t-tok">${esc(line.tokens??'')}</span><span class="t-live">${right}</span></button>`;
-  });
+  }));
   // CKP-STRIP-50: the last line of an overflowing strip is a button to the where page ("另有 3 个会话 ▸"); with no
   // session at all one grey line says so.
   if(sessions.length>shown.length)rows.push(`<button class="tl t-overflow" type="button" data-more="1">${esc(ht(locale,'host.moreSessions',{n:sessions.length-shown.length}))}</button>`);

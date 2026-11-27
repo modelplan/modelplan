@@ -226,7 +226,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
    for(const [j,el] of [...marks.querySelectorAll<HTMLElement>('.fd-tick')].entries())el.style.setProperty('--k',String(c.ticks[j]));const rec=marks.querySelector<HTMLElement>('.fd-rec');rec?.style.setProperty('--k',String(c.recK));for(const [j,el] of [...marks.querySelectorAll<HTMLElement>('.fd-dot')].entries())el.style.setProperty('--k',String(c.dots[j].k));
    // CSP (style-src 'self') drops inline styles: the share bar's length and colour and the lamp colour go through CSSOM.
    const shareBar=strip.querySelector<HTMLElement>('.cd-bar');if(shareBar&&c.card.bar!=null){shareBar.style.setProperty('--s',(c.card.bar*100).toFixed(1)+'%');if(c.segments[0])shareBar.style.setProperty('--v',c.segments[0]);}
-   const lamp=leds.querySelector<HTMLElement>('.fd-indicator');if(lamp&&c.lampColour)lamp.style.setProperty('--lamp',c.lampColour);for(const [j,el] of [...strip.querySelectorAll<HTMLElement>('.st-vend b')].entries())el.style.setProperty('--v',c.segments[j]);
+   for(const [j,el] of [...strip.querySelectorAll<HTMLElement>('.st-vend b')].entries())el.style.setProperty('--v',c.segments[j]);
   }
   paintSlots();
   bank.innerHTML=bankView(model);root.querySelector('.dk-fad')?.classList.toggle('paged',model.banks>1||!model.all.length);if(!model.all.length)bank.append(node('p','mp-empty sm',ht(locale,'host.dataUnavailable')));for(const b of bank.querySelectorAll<HTMLButtonElement>('[data-bank]'))b.onclick=e=>{if(!e.isTrusted)return;bankIndex+=b.dataset.bank==='1'?1:-1;paintFaders();};

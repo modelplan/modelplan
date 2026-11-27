@@ -106,12 +106,12 @@ function channel(f, ui, colour) {
     leds: f.sessions.slice(0, 6).map(x => ({...x, colour: colour.get(x.sub) || null})),
     fast: tier ? {state: from === 'fast' ? 'try' : f.currentFast ? 'on' : 'off', std: f.currentFast} : null,
     sel: ui.selModel === f.id};
-  // CKP-FAD-55: one session lamp. Lit in the subscription colour = a session is running; dim = used in this range; off.
+  // CKP-FAD-55: one session lamp. Lit teal = a session is running; dim = used in this range; off.
   // macrevb-1052-2: from every verified session (f.lamps), not the six the tooltip lists; the colour is a bound session's
-  // subscription, never another subscription's (an unbound running session lights the lamp in the neutral ink).
+  // subscription, never another subscription's .
   const lamps = f.lamps || f.sessions, running = lamps.find(x => x.active && x.sub) || lamps.find(x => x.active);
   ch.session = running ? 'live' : f.live || f.recorded || f.use || lamps.length ? 'used' : 'off';
-  ch.lampColour = running && running.sub ? colour.get(running.sub) || null : null;
+  ch.running = lamps.filter(x => x.active).length; // D467: the title counts every running session, not the six listed
   ch.card = card(ch, f);
   return ch;
 }
@@ -213,14 +213,14 @@ export function stripAria(c) {
   return current + ' · ' + t('fad.stripTrialAria', {m: c.name, e: fastOnly ? t(tr.fast ? 'fad.tryFast' : 'fad.tryStd') : tr.effort + (tr.fast ? ' ⚡' : ''),
     cost: t('fad.cost', {x: times(tr.cost)}), d: fastOnly ? t('fad.speed', {x: times(tr.speed)}) : t('fad.abl', {d: delta(tr.abl)})});
 }
-// CKP-FAD-55 (WP-08): one session lamp per card, with no row label (owner 11-27, D467, G3-164; overrides D405): lit in the subscription colour while
+// CKP-FAD-55 (WP-08): one session lamp per card, with no row label (owner 11-27, D467, G3-164; overrides D405): lit in teal (#4fd1a5, the owner-approved live lamp; no longer the subscription colour) while
 // a session runs, dim when the model was used in this range, off otherwise. The ⚡ beside it is fast mode (CKP-FAD-24).
 // Selection and trial are shown on the card (frame, blue lines), not on the lamp.
 export function indicatorView(c) {
   if (!c) return '';
   const trying = !!c.trial, fast = !!c.tier && !!(c.tFast ?? c.currentFast);
   const tone = c.session || 'off';
-  const name = `${c.name} ${t(tone === 'live' ? 'fad.sessionLive' : 'fad.sessionNone')}`; // D467: hover title, "<model> 有会话在跑" / "<model> has a session running"
+  const n = c.running || 0, name = `${c.name} · ${tone === 'live' ? t(n === 1 ? 'fad.sessionLive' : 'fad.sessionLiveMany', {n}) : t('fad.sessionNone')}`; // D467: hover title, "Sol 6.2 · 2 个会话在跑" / "Sol 6.2 · 1 session running"
   const sessions = c.leds.map(x => `${x.account ? x.account + ' · ' : ''}${x.tool} · ${x.project} · ${agoText(x)}`).join('\n');
   // CKP-FAD-24 / owner 11-12: fast mode is a ⚡ beside the lamp, symbol only: white = the real configuration is fast, solid blue =
   // a trial turns it on, blue outline = a trial turns it off. The lamp itself stays a dot. Nothing for a tool without a fast mode.
