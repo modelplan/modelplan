@@ -50,7 +50,9 @@ itself (see `publication-fresh-profile` below). That is the only network use, an
 | File | Purpose |
 |---|---|
 | `steps.json` | The fixed script: per step the actions, what to expect, what to compare with, and scripted checks |
-| `seed.json` | Invented readings |
+| `seed.json` | Invented readings (synthetic leg) |
+| `seed-dogfood.json` | Realistic invented readings, the step subset and the zh-Hans target names (dogfood legs) |
+| `dogfood_seed.py` | Builds and writes the dogfood seed's files; tested in `tests/test_walkthrough.py` |
 | `walkthrough.py` | Runner, checks, manifest. Pure parts are tested in `tests/test_walkthrough.py` |
 | `walkthrough_input.swift` | Reads windows and accessibility for one PID, posts mouse and keys, measures a picture |
 
@@ -112,3 +114,71 @@ Status `info` records a fact without passing or failing the job:
 red pixels there and at its reflection, what the accessibility hit test answers at both, and from `ring-card-map`
 which card opens at each painted and each reported position. When frames are mirrored the tool reflects them
 before pointing, and stops doing so by itself once the app reports true frames.
+
+## Dogfood seed (owner build 6, 2026-11-27)
+
+The owner found about 30 problems in the first hour of build 6. The synthetic walk could not see them: tidy data
+(`synthetic-ok`, short names, one bank), a black notch-less desktop, English only, and nobody comparing the pictures
+with the approved designs. Every run of this workflow therefore has three legs in parallel (same wall time):
+
+| Leg | Seed | Language | Steps | Artifact |
+|---|---|---|---|---|
+| `synthetic` | `seed.json` | en | every step without `profiles` | `walkthrough-<sha>` |
+| `dogfood-zh` | `seed-dogfood.json` | zh-Hans | `walk.only` of the seed | `walkthrough-dogfood-zh-<sha>` |
+| `dogfood-en` | `seed-dogfood.json` | en | `walk.only` of the seed | `walkthrough-dogfood-en-<sha>` |
+
+The dogfood legs are `continue-on-error`: their pictures are evidence for the coordinator's vision review (a step
+they could not walk shows there as a gap), not a pass/fail of the run. The fourth job, `notch-geometry`, is below.
+
+`seed-dogfood.json` holds, all invented and written through the files the bundled CLI reads:
+
+- Codex Pro 100 (`plan: prolite`) with a five-hour window at 15 % (red), a weekly window at 59 % with fixed reset
+  (amber run-out forecast), one banked reset expiring in 29 days (`credits`, identity observed) and 1,865 points
+  (`usageCredits`).
+- A GLM Max plan (`zhipu-global-max`, declared in `local.json`) with five-hour, weekly (22 %, red) and monthly windows
+  and two reset chances expiring within 48 hours. Substitute: the real ZCode reading needs a live call to z.ai, so the
+  ZCode reader itself is not exercised; the monthly window stands in for the MCP limit.
+- Claude Code with an `apiKeyHelper` login (unsupported), a `kiro-cli` that answers with unparsable text (cannot parse),
+  and Antigravity `not_supported_yet` (`observed/antigravity-v1.json`): three unreadable subscriptions.
+- Six Codex sessions over five models plus a Codex Auto Review session (`codex-auto-review`), with long paths: the
+  home directory itself, Codex scratch chats under `~/Documents/Codex/<date>/<slug>`, a `~/.codex/worktrees/<uuid>`
+  worktree. Live ones are rewritten to end "now" by the `d-freshen` step (`freshenSessions`), because the live strip
+  counts only sessions active in the last five minutes.
+- A 30-day Codex history over four models and four project paths, imported before launch with
+  `modelplan history --import --first-run --offline` (the first-run import path).
+- Reset news: an announced reset credit (AIHot link) and a confirmed one, added to the synced public data after
+  `modelplan sync` (`add_reset_events`: the client object, manifest and state are re-addressed exactly as the CLI
+  verifies them; when the manifest's identity cannot be reproduced nothing is changed and the check
+  `dogfood-reset-events` says why).
+- The Resources plugin is on by default in the packaged app; nothing to seed.
+- `walk.brightDesktop` sets the light desktop picture before the first step, so every shot shows seams and halos as
+  the owner sees them. `walk.skipFreshProfile` skips the 120-second fresh-profile probe (the synthetic leg keeps it).
+
+Times in seed files are `@now`, `@now-90m`, `@now+3d` (minutes, hours, days) or minutes from the walk's start. The
+zh-Hans leg launches the app with `-AppleLanguages (zh-Hans)`. `walk.targets` replaces whole target strings per
+language: the cockpit labels in zh-Hans (checked against the cockpit's own string tables by the tests) and the Codex
+tab, whose realistic name is not `Codex`. Dogfood-only steps carry `"profiles": ["dogfood"]`: `d-card-second` (the
+GLM card), `d-freshen`, `d-mfd-calendar` and `d-mfd-resources`. Zoom: `air-1440x900` and `air-1470x956` walk the
+cockpit's Auto size; hosted Macs offer neither size, so they run at 1600x900 and 1280x960 (same height, so the same fit). The Auto size of a notched 1470x956 Air itself
+(85 % capped by the height) is covered by `ShellLayoutTests` below.
+
+### Two displays and the notch
+
+Neither can be real on a hosted Mac. The `notch-geometry` job of this workflow runs the synthetic geometry tests at
+the build's own commit beside the walk, and the coordinator's build gate requires it:
+
+- `ShellLayoutTests` (Auto size and cap, the notched 13-inch Air at 956 points, the status item hidden behind the notch)
+- `CockpitScreenSelectionTests` (the click's display wins, a second display, one size on every display, Auto and the cap across displays, remembered origins)
+- `CockpitCatchZoneDisplayTests` (catch zone and Put back after a cross-display drop)
+- `CockpitLaunchRackEntryTests` (a hidden status item opens under the notch's right edge, or right of the menu bar centre without a notch)
+- `CockpitSnapGuideDisplayTests` (snap guides per display, when present at the commit)
+- `CockpitGeometryTests` in `ModelPlanCockpitShell` (containment across display origins, sizes and preferences)
+
+### What happens to the pictures
+
+The coordinator downloads the run, builds a review pack (each dogfood shot beside the approved design of the same
+surface, the decisions and a checklist: seams and transparency, clipped text or an ellipsis, overlaps, misalignment,
+wrong order or emphasis, stale wording, decision conformance) and has one reviewer go through it. Findings become
+owner-report rows that block the next owner build until they are fixed or deferred. That part lives with the
+coordinator, not in this repository, because the approved designs are private.
+

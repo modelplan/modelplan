@@ -22,8 +22,30 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' && github.ref_type == 'branch' && github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/heads/release') }}
 jobs:
   walkthrough:
+    # Three legs in parallel (WALKTHROUGH.md "Dogfood seed"): the synthetic walk (every step, en, artifact
+    # walkthrough-<sha>) and the dogfood walk (realistic seed, light desktop, a subset that covers every surface) in
+    # zh-Hans and en (artifacts walkthrough-dogfood-<lang>-<sha>). A dogfood leg never fails the run: its pictures go
+    # to the coordinator's vision review, and a step it could not walk shows there as a gap.
+    name: walkthrough (${{ matrix.leg }})
     runs-on: macos-15
     timeout-minutes: 45
+    continue-on-error: ${{ matrix.leg != 'synthetic' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - leg: synthetic
+            seed: seed.json
+            language: en
+            prefix: walkthrough
+          - leg: dogfood-zh
+            seed: seed-dogfood.json
+            language: zh-Hans
+            prefix: walkthrough-dogfood-zh
+          - leg: dogfood-en
+            seed: seed-dogfood.json
+            language: en
+            prefix: walkthrough-dogfood-en
     env:
       GH_TOKEN: ${{ github.token }}
       SUBJECT_REF: ${{ inputs.ref }}
@@ -99,18 +121,47 @@ jobs:
         env:
           SHA: ${{ steps.find.outputs.sha }}
           ARTIFACT: ${{ steps.find.outputs.artifact }}
+          SEED: ${{ matrix.seed }}
+          LANGUAGE: ${{ matrix.language }}
         run: |
           dir=desktop/native/verification/walkthrough
           python3 "$dir/walkthrough.py" --app "$APP" --out "$RUNNER_TEMP/walkthrough" --home "$RUNNER_TEMP/profile" \
-            --helper "$RUNNER_TEMP/walkthrough_input" --steps "$dir/steps.json" --seed "$dir/seed.json" \
-            --source-sha "$SHA" --artifact "$ARTIFACT"
+            --helper "$RUNNER_TEMP/walkthrough_input" --steps "$dir/steps.json" --seed "$dir/$SEED" \
+            --language "$LANGUAGE" --source-sha "$SHA" --artifact "$ARTIFACT"
       - name: Summarise
         if: always()
         run: cat "$RUNNER_TEMP/walkthrough/SUMMARY.md" >> "$GITHUB_STEP_SUMMARY" || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: walkthrough-${{ steps.find.outputs.sha }}
+          name: ${{ matrix.prefix }}-${{ steps.find.outputs.sha }}
           path: ${{ runner.temp }}/walkthrough/
           if-no-files-found: warn
           retention-days: 7
+  notch-geometry:
+    # Two displays and a notch cannot be real on a hosted Mac, so every owner-build pass runs the synthetic
+    # notch and multi-display geometry tests of the build's own commit beside the walk (WALKTHROUGH.md "Dogfood
+    # seed"); the coordinator's build gate requires this job. The SPI flag compiles the gated classes, as desktop.yml
+    # cockpit-spi-tests does on main.
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SUBJECT_REF: ${{ inputs.ref }}
+    steps:
+      - name: Resolve the build commit
+        id: find
+        run: echo "sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/${SUBJECT_REF//\//%2F}" -q .sha)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.find.outputs.sha }}
+          persist-credentials: false
+      - name: Notch and two-display geometry tests
+        env:
+          DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+        run: |
+          swift test --package-path desktop/native/ModelPlanCockpitWeb --scratch-path "$RUNNER_TEMP/notch-web" --jobs 2 \
+            -Xswiftc -DMODELPLAN_TEST_ONLY_SPI \
+            --filter '(ShellLayoutTests|CockpitScreenSelectionTests|CockpitCatchZoneDisplayTests|CockpitLaunchRackEntryTests|CockpitSnapGuideDisplayTests)'
+          swift test --package-path desktop/native/ModelPlanCockpitShell --scratch-path "$RUNNER_TEMP/notch-shell" --jobs 2 \
+            --filter 'CockpitGeometryTests'
