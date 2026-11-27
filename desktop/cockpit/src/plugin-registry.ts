@@ -55,6 +55,9 @@ export interface PluginColumn {
   /** D323 custom draw: when present, the host gives the plugin the column's cell area (every cell row, above the bottom
    *  line) and calls this instead of drawing `cells`. If it throws, the host draws `cells` instead. */
   readonly draw?:((context:PluginDrawContext)=>void)|null;
+  /** D465: the draw area also covers the bottom-line row (the draw paints its own last row), so the host adds no framework
+   *  bottom line. Only honoured together with `draw`; if the draw fails the cells and the bottom line come back. */
+  readonly drawFoot?:boolean;
 }
 export interface PluginScreen {
   /** Label/value lines; also the fallback when `draw` fails. */

@@ -1,0 +1,1 @@
+The gold frame on the selected date key no longer shows when the cockpit opens or the window is reactivated: the keyboard ring now appears only after a navigation key (Tab, arrows, Space, Enter) and disappears on any click.

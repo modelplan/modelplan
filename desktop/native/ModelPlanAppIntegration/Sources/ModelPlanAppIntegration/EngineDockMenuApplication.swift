@@ -1552,7 +1552,7 @@ struct StatusNoticePresentation {
             button.font = NSFont.menuBarFont(ofSize: 0); statusCompactFontApplied = false
         }
     }
-    /// D377: the used-up dot sits at the icon's top-right corner, unless a notice dot already marks the icon.
+    /// D377 / G3-166: the used-up dot sits at the icon's bottom-right corner, unless a notice dot already marks the icon.
     private func applyUsedUpDot(_ button: NSButton, show: Bool) {
         let visible = show && noticeIndicator.notice == nil
         if visible { usedUpDot.attach(to: button) }

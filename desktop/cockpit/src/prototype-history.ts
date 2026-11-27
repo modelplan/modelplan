@@ -7,7 +7,7 @@ import {costView} from './prototype-cost.js';
 import type {WireCockpitData} from '../generated/wire.js';
 import {overviewCost,type OverviewCost} from './overview-cost.js';
 
-const HOUR=36e5,DAYS=182;
+const HOUR=36e5,DAYS=182,LONG_DAYS=30;
 const dayKey=(at:number)=>{const d=new Date(at);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
 /** Hour series keyed by the producer's own bucket instants. The nominal grid steps in whole absolute hours from a local anchor,
  * which is not where a bucket falls after a fractional-offset change (Lord Howe's 30-minute fall-back), so a recorded instant
@@ -24,7 +24,7 @@ const startOfDay=(key:string)=>{const [y,m,d]=key.split('-').map(Number);return 
 export interface HistoryView {
  readonly daily:readonly {accountId:string;values:(number|null)[];imported:(number|null)[];coverageStart:number}[];
  readonly hourly:readonly {accountId:string;instants:number[];values:(number|null)[]}[];
- /** D390: the same hourly series over the 48 hours the wire keeps (today and yesterday), for the day-by-hour heatmap. */
+ /** D390: the same hourly series over the 30 days the wire keeps (D402), for the day-by-hour heatmap. */
  readonly hourlyLong:readonly {accountId:string;instants:number[];values:(number|null)[]}[];
  readonly projectRanking:{recent7d:unknown[];recent30d:unknown[]};
  readonly paceHistory:Record<string,Record<string,unknown[]>>;
@@ -47,9 +47,9 @@ export function historyView(data:WireCockpitData|null|undefined,ids:ReadonlyMap<
  const clock=new Date(now),top=now-clock.getMinutes()*6e4-clock.getSeconds()*1e3-clock.getMilliseconds();
  const instants=Array.from({length:24},(_,i)=>top-(23-i)*HOUR);
  // The study pages read a series from its end, so index 181 is today and the days before the record began stay null.
- // D390 (macrevb-1212-1): from local midnight of yesterday to the current hour, in absolute steps, so a 25-hour fall-back day keeps
- // every hour the producer records for today and yesterday (a fixed 48 hours would drop its first one).
- const yesterday=new Date(clock.getFullYear(),clock.getMonth(),clock.getDate()-1).getTime(),longInstants=Array.from({length:Math.max(1,Math.floor((top-yesterday)/HOUR)+1)},(_,i)=>yesterday+i*HOUR);
+ // D390 (macrevb-1212-1) + D402: from local midnight 29 days ago (30 local days, today included) to the current hour, in absolute
+ // steps, so a 25-hour fall-back day keeps every hour the producer records (a fixed 720 hours would drop its first one).
+ const firstDay=new Date(clock.getFullYear(),clock.getMonth(),clock.getDate()-(LONG_DAYS-1)).getTime(),longInstants=Array.from({length:Math.max(1,Math.floor((top-firstDay)/HOUR)+1)},(_,i)=>firstDay+i*HOUR);
  const end=new Date(now),days=Array.from({length:DAYS},(_,i)=>dayKey(new Date(end.getFullYear(),end.getMonth(),end.getDate()-(DAYS-1-i)).getTime()));
  for(const sub of h.subscriptions){
   const accountId=ids.get(sub.subscriptionRef);if(!accountId)continue;

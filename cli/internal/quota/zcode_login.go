@@ -54,30 +54,18 @@ func ZCodeLoginDir(home string) string { return filepath.Join(home, ".zcode", "v
 // ZCodeLoginPresent: ZCode's sign-in layout is there (detect.ZCodeLoginPresent; metadata only).
 func ZCodeLoginPresent(home string) bool { return detect.ZCodeLoginPresent(home) }
 
-// zcodeLoginStamp follows the files that determine the selected login. It uses
-// metadata only, so checking it during discovery or projection opens no credentials.
-func zcodeLoginStamp(dir string) string {
-	var stamp strings.Builder
-	for _, name := range []string{"setting.json", "config.json", "credentials.json", "telemetry-state.json"} {
-		fi, err := os.Lstat(filepath.Join(dir, name))
-		if err == nil {
-			stamp.WriteString(strconv.FormatInt(fi.Size(), 10))
-			stamp.WriteByte('.')
-			stamp.WriteString(strconv.FormatInt(fi.ModTime().UnixNano(), 10))
-			stamp.WriteByte('.')
-			stamp.WriteString(strconv.FormatUint(uint64(fi.Mode()), 10))
-		}
-		stamp.WriteByte(':')
-	}
-	return stamp.String()
-}
-
 // zcodeLogin is one resolved read. credential is in memory only.
 type zcodeLogin struct {
 	region     string // global | bigmodel-cn
 	billing    bool   // Start Plan balance (JWT) rather than Coding Plan quota (account key)
 	credential string
 	deviceMid  string
+	// What names the account (zcodeAccountMaterial) and the still-sealed store it came from, so
+	// the read can record it for the projection (zcodeRememberSeal). In memory only.
+	material string
+	sel      zcodeSelected
+	format   string
+	store    map[string]any
 }
 
 var zcodeProviderIDs = map[string]map[string]string{
@@ -359,6 +347,42 @@ func zcodeBaseRegion(base string) string {
 	return ""
 }
 
+// zcodeSelected is the sign-in ZCode's settings select: the family, its region and the selected
+// provider entry. Only this entry of the registry decides the account (owner build-6 #1).
+type zcodeSelected struct {
+	family, region, providerID, kind string
+	provider                         zcodeProvider
+	start                            bool
+}
+
+// zcodeSelect follows the selection the way the read does; the code is the read's refusal.
+func zcodeSelect(settings zcodeSettings, providers map[string]zcodeProvider) (zcodeSelected, string) {
+	family := strings.TrimSpace(settings.Domain)
+	region := map[string]string{"zai": "global", "bigmodel": "bigmodel-cn"}[family]
+	if region == "" {
+		return zcodeSelected{}, "not_signed_in"
+	}
+	providerID, kind := zcodeSelectedProvider(settings, family)
+	provider, ok := providers[providerID]
+	if providerID == "" || !ok {
+		return zcodeSelected{}, "not_signed_in"
+	}
+	if provider.Enabled != nil && !*provider.Enabled {
+		if reason := strings.TrimSpace(provider.DisabledReason); reason == "" || reason == "oauth_provider_inactive" {
+			return zcodeSelected{}, "not_signed_in"
+		}
+	}
+	start := providerID == zcodeProviderIDs["startPlan"][family]
+	if !start && providerID != zcodeProviderIDs["codingPlan"][family] {
+		return zcodeSelected{}, "unsupported_login" // a pay-as-you-go API key entry: no plan quota to read
+	}
+	// Region scoping (Pulse lesson): the entry's own endpoint must not name the other region.
+	if r := zcodeBaseRegion(provider.Options.BaseURL); r != "" && r != region {
+		return zcodeSelected{}, "region_refused"
+	}
+	return zcodeSelected{family: family, region: region, providerID: providerID, kind: kind, provider: provider, start: start}, ""
+}
+
 // readZCodeLogin resolves what one read may send and where, from ZCode's own files, read-only.
 // The code on failure is a reader error code; nothing of the files appears in it.
 func readZCodeLogin(ctx context.Context, dir string, keychain *ZCodeKeychain, now time.Time) (zcodeLogin, string) {
@@ -388,29 +412,11 @@ func readZCodeLogin(ctx context.Context, dir string, keychain *ZCodeKeychain, no
 	if json.Unmarshal(b, &registry) != nil {
 		return zcodeLogin{}, "parse_error"
 	}
-	family := strings.TrimSpace(settings.Domain)
-	region := map[string]string{"zai": "global", "bigmodel": "bigmodel-cn"}[family]
-	if region == "" {
-		return zcodeLogin{}, "not_signed_in"
+	sel, code := zcodeSelect(settings, registry.Provider)
+	if code != "" {
+		return zcodeLogin{}, code
 	}
-	providerID, kind := zcodeSelectedProvider(settings, family)
-	provider, ok := registry.Provider[providerID]
-	if providerID == "" || !ok {
-		return zcodeLogin{}, "not_signed_in"
-	}
-	if provider.Enabled != nil && !*provider.Enabled {
-		if reason := strings.TrimSpace(provider.DisabledReason); reason == "" || reason == "oauth_provider_inactive" {
-			return zcodeLogin{}, "not_signed_in"
-		}
-	}
-	start := providerID == zcodeProviderIDs["startPlan"][family]
-	if !start && providerID != zcodeProviderIDs["codingPlan"][family] {
-		return zcodeLogin{}, "unsupported_login" // a pay-as-you-go API key entry: no plan quota to read
-	}
-	// Region scoping (Pulse lesson): the entry's own endpoint must not name the other region.
-	if r := zcodeBaseRegion(provider.Options.BaseURL); r != "" && r != region {
-		return zcodeLogin{}, "region_refused"
-	}
+	family, region, kind, provider, start := sel.family, sel.region, sel.kind, sel.provider, sel.start
 	var store map[string]any
 	if b, err = zcodeLoginRead(filepath.Join(dir, "credentials.json")); err == nil {
 		if json.Unmarshal(b, &store) != nil {
@@ -509,6 +515,8 @@ func readZCodeLogin(ctx context.Context, dir string, keychain *ZCodeKeychain, no
 	if len(login.credential) > 8192 || strings.ContainsAny(login.credential, "\r\n\x00") {
 		return zcodeLogin{}, "unsupported_login"
 	}
+	login.material = zcodeAccountMaterial(sel, format, store, open)
+	login.sel, login.format, login.store = sel, format, store
 	return login, ""
 }
 
@@ -554,6 +562,24 @@ func fetchZCodeLogin(ctx context.Context, c *http.Client, source ZaiConfigSource
 		e.ErrorCode, e.Error = code, code
 		return e
 	}
+	generation := ""
+	if source.Resolved != nil {
+		var same bool
+		if generation, same = source.Resolved(login); !same || generation == "" {
+			e.zcodeMismatch = true
+			e.ErrorCode, e.Error = "consent_required", "consent_required"
+			return e
+		}
+	}
+	login.store, login.material = nil, ""
+	e = fetchZCodeLoginAs(ctx, c, source, login, now)
+	e.zcodeGeneration = generation
+	return e
+}
+
+// fetchZCodeLoginAs sends the one request of a resolved sign-in.
+func fetchZCodeLoginAs(ctx context.Context, c *http.Client, source ZaiConfigSource, login zcodeLogin, now time.Time) codexbarEntry {
+	e := codexbarEntry{Status: "error", ObservedAt: now.UTC()}
 	if _, blocked := zaiConfigAdmission(ctx); blocked != "" {
 		e.ErrorCode, e.Error = "consent_required", "consent_required"
 		return e
