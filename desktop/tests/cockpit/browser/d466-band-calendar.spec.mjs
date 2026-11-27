@@ -176,3 +176,20 @@ for(const locale of ['zh-CN','en'])test(`D466 five page keys and the Resources s
  const fit=await page.evaluate(()=>{const s=document.querySelector('.mfd-pk .pk-seg').getBoundingClientRect();return [...document.querySelectorAll('.mfd-pk .pk-seg [role=tab]')].every(h=>{const r=h.getBoundingClientRect();return r.left>=s.left-.5&&r.right<=s.right+.5;});});
  expect(fit).toBe(true);
 });
+
+// macrevb-1290-2 on the 日历 tab: the agenda's news line reads the same clock as the key dot, so both go at the look
+// deadline; the banked reset's chip then stays on its day, muted (the calendar is a record).
+test('D466 the agenda news line and the key dot retire together at the look deadline',async({page})=>{
+ const data=band(),at=local(27,0,29);
+ data.details.resetEvents=[{version:1,id:'codex-banked-1127',provider:'openai',rowId:'codex',kind:'reset_credit',status:'confirmed',publishedAt:iso(at-H),confirmedAt:iso(at),expiresAt:iso(at+28*24*H),source:{kind:'publication',publicationId:'0123456789abcdef01234567'}}];
+ const {send,receive}=await open(page,{data});
+ await page.locator('.mfd-pk .pk[data-mfd="page:calendar"]').click();
+ const news=page.locator('.pg-calendar .cal-news');
+ await expect(news).toHaveCount(1);await expect(news).toContainText('+1');
+ await expect(page.locator('.eng-keys .ek[data-sub] .ek-news')).toHaveCount(1);
+ expect(await receive(send('tick',{nowUnixMs:String(NOW+30*60_000),reason:'deadline'}))).toBe(true);
+ await expect(page.locator('.pg-calendar .cal-news')).toHaveCount(0);
+ await expect(page.locator('.eng-keys .ek[data-sub] .ek-news')).toHaveCount(0);
+ expect(await receive(send('shell',{...shell,range:'7d'}))).toBe(true);
+ await expect(page.locator('.pg-calendar .w7-chip.credit.past')).toHaveCount(1);
+});

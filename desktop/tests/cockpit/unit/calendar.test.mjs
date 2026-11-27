@@ -311,7 +311,8 @@ test('D406 review: a point deadline before local midnight stays on its day; a co
  const iso=t=>new Date(t).toISOString();
  const ev=(id,status,schedule)=>({version:1,id,rowId:'codex',provider:'openai',kind:'reset_credit',status,publishedAt:iso(local(2026,11,10,9)),expiresAt:iso(local(2026,11,20)),...(schedule?{schedule}:{}),source:{kind:'publication',publicationId:'p'}});
  const late=local(2026,11,14,23,50);
- data.details.resetEvents=[ev('a','announced',{from:iso(late),through:iso(late),precision:'exact'}),ev('b','confirmed')];
+ // D466: an untimed confirmed banked reset is drawn for its news clock (24 h from its confirmation at most), so it is confirmed within it here.
+ data.details.resetEvents=[ev('a','announced',{from:iso(late),through:iso(late),precision:'exact'}),{...ev('b','confirmed'),confirmedAt:iso(NOW-3600e3)}];
  const cal=calendarFromCockpit(data,NOW),credit=cal.spans.filter(x=>x.kind!=='cards');
  assert.equal(new Date(credit[0].to).getDate(),14,'23:50 is still the 14th');
  assert.deepEqual(credit.map(x=>x.kind),['credit','creditConfirmed']);
@@ -367,4 +368,21 @@ test('D466 the strip hover card: the next 24 h, else "nothing" and the next two 
  assert.equal(codex.now,null);assert.equal(codex.empty,true);assert.ok(codex.lines.length<=2);
  setLanguage('en');
  assert.equal(nextLines(m,2,'en').now,'Off-peak');
+});
+
+// macrevb-1290-2: the calendar reads the same news clock as the key dot, reserve "+1" and alert list. An untimed confirmed
+// banked reset leaves the calendar's all-day line at the same tick as the others; a timed one stays until its time.
+test('macrevb-1290-2 an untimed banked reset leaves the calendar with its news clock; a timed announcement stays until its time',async()=>{
+ const {newsClock}=await import('../../../cockpit/.tmp/compiled/src/news-clock.js');
+ const {data}=display(),iso=t=>new Date(t).toISOString();
+ const credit={version:1,id:'credit',rowId:'claude',provider:'anthropic',kind:'reset_credit',status:'confirmed',publishedAt:iso(NOW-2*HOUR),confirmedAt:iso(NOW-HOUR),expiresAt:iso(NOW+20*24*HOUR),source:{kind:'publication',publicationId:'p'}};
+ data.details.resetEvents=[credit,data.details.resetEvents[0]];
+ newsClock.reset();
+ try{
+  newsClock.observe(data.details.resetEvents,NOW,true);// the cockpit opens with it drawn
+  const kinds=at=>calendarFromCockpit(data,at).spans.map(s=>s.kind);
+  assert.ok(kinds(NOW+29*60_000).includes('creditConfirmed'));
+  assert.ok(!kinds(NOW+30*60_000).includes('creditConfirmed'),'gone at the look deadline, although the event expires later');
+  assert.ok(kinds(NOW+30*60_000).includes('announced'),'a timed announcement stays until its time');
+ }finally{newsClock.reset();}
 });

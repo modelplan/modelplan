@@ -17,13 +17,16 @@
 // back (`newsLook` action → `recordNewsLook`), so a look in the cockpit also retires the widget dot. Without such a host
 // (an older app, tests) the page keeps the same rule in its own memory: a reopened page then starts a fresh look, and the
 // 24 h cap still bounds it.
-import type {WireResetEvent} from '../generated/wire.js';
+import type {WireCockpitData,WireResetEvent} from '../generated/wire.js';
+import {cockpitMembers} from './members.js';
 
 export const NEWS_LOOK_MS=30*60_000;
 export const NEWS_PRESENT_MS=3*3_600_000;
 export const NEWS_CAP_MS=24*3_600_000;
-/** A gap between two refreshes longer than this is not counted as present time (the Mac slept or the page was hidden). */
-export const NEWS_STEP_MAX_MS=10*60_000;
+/** A gap between two present refreshes counts as present time only when it is at most this long; a longer gap (the Mac
+ *  slept or was locked, with no visibility change) counts nothing. The same 15-minute rule as the app's DockNewsClock. */
+export const NEWS_STEP_MAX_MS=15*60_000;
+const presentGap=(from:number|null,to:number)=>from!==null&&to>from&&to-from<=NEWS_STEP_MAX_MS?to-from:0;
 const MAX_ENTRIES=64;
 
 export type NewsEvent=Pick<WireResetEvent,'id'|'status'|'publishedAt'|'expiresAt'>&{readonly confirmedAt?:string};
@@ -74,7 +77,7 @@ export function createNewsClock():NewsClock {
     if(!x){if(!present)continue;x={firstLooked:null,present:0,last:null,end:cap};entries.set(key,x);}
     if(present){
      if(looked&&x.firstLooked===null){x.firstLooked=now;looks.push({id:e.id,status:e.status});}// the cockpit open with the item drawn is a look
-     if(x.last!==null&&now>x.last)x.present+=Math.min(now-x.last,NEWS_STEP_MAX_MS);
+     x.present+=presentGap(x.last,now);
      x.last=now;
     }else x.last=null;
     x.end=endOf(x,cap,now,present);
@@ -87,7 +90,7 @@ export function createNewsClock():NewsClock {
   present(value,now){
    for(const x of entries.values()){
     if(value&&x.last===null)x.last=now;
-    if(!value&&x.last!==null){if(now>x.last)x.present+=Math.min(now-x.last,NEWS_STEP_MAX_MS);x.last=null;}
+    if(!value&&x.last!==null){x.present+=presentGap(x.last,now);x.last=null;}
    }
    shown=value;
   },
@@ -96,7 +99,7 @@ export function createNewsClock():NewsClock {
    const until=hostUntil(e);if(until!==undefined)return until!==null&&now<until;
    const x=entries.get(newsKey(e));if(!x)return true;
    if(x.firstLooked!==null&&now>=x.firstLooked+NEWS_LOOK_MS)return false;
-   const running=shown&&x.last!==null&&now>x.last?Math.min(now-x.last,NEWS_STEP_MAX_MS):0;
+   const running=shown?presentGap(x.last,now):0;
    return x.present+running<NEWS_PRESENT_MS;
   },
   nextChange(events,now){
@@ -113,6 +116,13 @@ export function createNewsClock():NewsClock {
   reset(){entries.clear();answers.clear();},
  };
  return clock;
+}
+/** D466 (macrevb-1290-1): the announcements the cockpit can draw: those of a shown subscription (its row, and its plan
+ *  when the announcement names plans). One hidden in Settings, or of a tool the user does not have, is drawn nowhere, so
+ *  the clock never records a look at it; its clock starts when the subscription is shown. */
+export function drawnNews(data:WireCockpitData):WireResetEvent[] {
+ const members=cockpitMembers(data);
+ return (data.details?.resetEvents??[]).filter(e=>members.some(m=>m.row.id===e.rowId&&(!e.planIds?.length||e.planIds.includes(m.account.plan.id))));
 }
 /** The page's one clock: every cockpit surface reads it, and only the view (render, tick, visibility) moves it. */
 export const newsClock:NewsClock=createNewsClock();
