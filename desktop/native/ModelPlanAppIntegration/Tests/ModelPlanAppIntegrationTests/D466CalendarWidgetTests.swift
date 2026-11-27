@@ -52,7 +52,11 @@ final class D466CalendarWidgetTests: XCTestCase {
         let s = signal(DockResetSignal(id: "e", status: .confirmed, confirmedAt: now.addingTimeInterval(-60)))
         var projection = try state.project([s], stationBySubscription: ["member": "one"], at: now)
         XCTAssertNotNil(projection.menuNotice); XCTAssertEqual(projection.dots.count, 1)
-        try state.acknowledgeDockOpen([s], at: now)
+        // Master spec §5.1 (D474): not looked yet, nothing clears; the first look clears both pointer dots.
+        try state.acknowledgeLooked([s], looked: { _ in false }, at: now)
+        projection = try state.project([s], stationBySubscription: ["member": "one"], at: now)
+        XCTAssertNotNil(projection.menuNotice); XCTAssertEqual(projection.dots.count, 1)
+        try state.acknowledgeLooked([s], looked: { $0 == s.reset?.newsKey }, at: now)
         projection = try state.project([s], stationBySubscription: ["member": "one"], at: now)
         XCTAssertNil(projection.menuNotice); XCTAssertTrue(projection.dots.isEmpty)
     }

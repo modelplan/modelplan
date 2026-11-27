@@ -1218,7 +1218,7 @@ actor EntrySyntheticClient: EngineClient {
         let problem = try XCTUnwrap(try items().first { $0.title == enProblem })
         _ = try XCTUnwrap(problem.target as? NSObject).perform(try XCTUnwrap(problem.action), with: problem)
         await surface.waitForShow()
-        XCTAssertEqual(surface.pane, "diagnostics")
+        XCTAssertEqual(surface.pane, "subscriptions", "master spec S2: the health line opens Settings › 订阅")
     }
 
     func testS07NormalEntryDistinguishesPaintedHelpTargetsAndFocus() async throws {
@@ -1324,7 +1324,7 @@ actor EntrySyntheticClient: EngineClient {
         let problem = try XCTUnwrap(problems.first)
         _ = try XCTUnwrap(problem.target as? NSObject).perform(try XCTUnwrap(problem.action), with: problem)
         await surface.waitForShow()
-        XCTAssertEqual(surface.pane, "diagnostics")
+        XCTAssertEqual(surface.pane, "subscriptions", "master spec S2: the health line opens Settings › 订阅")
         let id = "aaaaaaaaaaaaaaaa"
         XCTAssertEqual(try app.composition.dock.cardContent(for: id, at: wall)?.name, "Synthetic account")
         // WP-15 (DOCK-3.8-50): no stale badge; the header carries the reading's age.

@@ -702,7 +702,7 @@ do {
         try expect(DockWidgetFigures.tokens(980)=="980" && DockWidgetFigures.tokens(1_200)=="1.2k" && DockWidgetFigures.tokens(33_900_000)=="33.9M" && DockWidgetFigures.tokens(212_000_000)=="212M" && DockWidgetFigures.tokens(1_500_000_000)=="1.5B" && DockWidgetFigures.tokens(999_960)=="1M" && DockWidgetFigures.tokens(2_000)=="2k","V1-FINAL §0 token figures, never truncated")
         try expect(DockWidgetFigures.duration(minutes:40)=="40m" && DockWidgetFigures.duration(minutes:198)=="3h18" && DockWidgetFigures.duration(minutes:119.7)=="2h00" && DockWidgetFigures.duration(minutes:5*1440+18*60)=="5d18h","V1-FINAL §0 durations")
         let both=DockTodayRow.make(label:"今日",cost:"≈$10.2",tokens:33_900_000,running:"1 个在跑",tokensPerSecond:65.6)
-        try expect(both?.value=="≈$10.2 33.9M" && both?.detail=="● 1 个在跑 · 66 t/s" && both?.kind == .statistic,"left amount, right now")
+        try expect(both?.value=="33.9M ≈$10.2" && both?.detail=="● 1 个在跑 · 66 t/s" && both?.kind == .statistic,"left amount, right now")
         let noCost=DockTodayRow.make(label:"今日",cost:nil,tokens:33_900_000,running:nil,tokensPerSecond:nil)
         try expect(noCost?.value=="33.9M" && noCost?.detail=="","until WP-06 there is no ≈$ and an absent half is left out")
         let rightOnly=DockTodayRow.make(label:"Today",cost:nil,tokens:0,running:nil,tokensPerSecond:61)

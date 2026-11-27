@@ -8,6 +8,7 @@ import ModelPlanWire
 import ModelPlanCommunityHost
 import ModelPlanSettings
 import ModelPlanDock
+import ModelPlanCockpitWeb
 import ModelPlanResources
 
 @MainActor private final class EngineDockClock {
@@ -170,6 +171,11 @@ public struct EngineMenuRefreshResult {
         adapter = EngineDockContentProvider(source: provider)
         dock = ProductionDockFactory.community(createsNativePanels: createsNativePanels, nativeEnvironment: dockEnvironment, currentDate: { clock.now() }, edition: edition)
         adapter.bindDockMenuTracking(dock)
+        // Master spec §2.1 (D474): the card's 今天 row reads the same `cost.daily` sums as the cockpit.
+        adapter.todayFigures = { [weak store] ref in
+            guard let sum = CockpitCostTotals.subscription(store?.snapshot.cockpit, ref: ref, range: .today, now: clock.now()) else { return nil }
+            return (sum.tokens, sum.estimatedUSD.flatMap(CockpitCostTotals.text))
+        }
         dock.newsClock = adapter.newsClock
         _ = pairedProjection
         // G3-136: the empty ring's one line comes from the same admitted rows as the menu.

@@ -38,9 +38,12 @@ import ModelPlanCockpitWeb
         // projection records a first good reading, or a Forget / privacy clear empties it). No store: nothing is sent.
         if let seen = provider.seenSubscriptions { coordinator?.seenIDs = seen.ids }
     }
+    /// The page's looks landed in the clock; the app lets the pointer dots (menu bar, sliver) follow them at once.
+    public var onLooked: (() -> Void)?
     private func record(_ looks: [CockpitNewsLookEvent]) {
         let at = now()
         for look in looks { provider.recordNewsLook(eventID: look.id, status: look.status.rawValue, at: look.at ?? at) }
         refresh()
+        onLooked?()
     }
 }

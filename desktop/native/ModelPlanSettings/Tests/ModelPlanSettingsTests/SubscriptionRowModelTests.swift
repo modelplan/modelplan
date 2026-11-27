@@ -41,7 +41,7 @@ final class SubscriptionRowModelTests: XCTestCase {
         let targets = model.added.map { $0.fix?.target }
         XCTAssertEqual(targets, [.allowKeychain, .installTool, .addKey, .installTool, .addKey])
         XCTAssertEqual(model.added[1].fix?.action.english, "Open install page", "a hint and the install page, not a path chooser")
-        XCTAssertEqual(model.added[1].status.chinese, "找不到 Codex 命令")
+        XCTAssertEqual(model.added[1].status.chinese, "读不到 · 需要安装 Codex CLI", "master spec §3.4: the card's rung")
         XCTAssertEqual(model.added[3].fix?.action.english, "Install kiro-cli")
         XCTAssertTrue(model.added.allSatisfy(\.needsAttention))
         // Without the key area the GLM row falls back to opening ZCode.

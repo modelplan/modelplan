@@ -42,6 +42,8 @@ import CryptoKit
     public var background:NSColor = .windowBackgroundColor,ink:NSColor = .labelColor,track:NSColor = .separatorColor
     /// Secondary text: plan, read time, row labels and times.
     public var muted:NSColor = .secondaryLabelColor
+    /// Ink-3: a header age over an hour old (master spec header, D474).
+    public var tertiary:NSColor = .tertiaryLabelColor
     /// Plate corner radius and its 1 pt inset seam (nil: no seam).
     public var plateRadius:CGFloat=8,seam:NSColor?=nil
     /// The inset readout window behind the rows (nil: rows sit on the plate).
@@ -257,7 +259,7 @@ import CryptoKit
         // Source · age, then any state badge, on the header's one line (card.js cd-h); the name keeps 64 pt.
         var right=[(field:NSTextField,width:CGFloat)]()
         for (id,text,size) in [("source",value.sourceAndAge,style.smallFontSize),("state",value.stateLabel,style.smallFontSize-1)] where !text.isEmpty{
-            let field=label(id,text,font:.systemFont(ofSize:size),color:style.muted,alignment:.right)
+            let field=label(id,text,font:.systemFont(ofSize:size),color:id == "source" && value.sourceAndAgeDimmed ? style.tertiary:style.muted,alignment:.right)
             right.append((field,ceil(natural(field).width)))
         }
         let rightLimit=max(0,style.width-style.padding-x-64-style.headerGap)
@@ -326,7 +328,8 @@ import CryptoKit
             let isReading=row.kind == .quota || row.kind == .extraQuota
             // DOCK-3.2-50: an unknown tone is muted, also when a retained reading over an hour old keeps its number. A plugin
             // row's number is full ink when its row is emphasised (variant A), secondary otherwise; amber/red keep their tone.
-            let valueColor:NSColor = row.tone == .warning || row.tone == .critical ? toneColor : row.plugin != nil ? (row.emphasised ? style.ink:style.muted) : (isReading && row.tone == .unknown ? style.muted : style.ink)
+            // The reserve line's tone colours only its expiry clause (below), never its counts (§5.1, D474).
+            let valueColor:NSColor = row.kind != .reserve && (row.tone == .warning || row.tone == .critical) ? toneColor : row.plugin != nil ? (row.emphasised ? style.ink:style.muted) : (isReading && row.tone == .unknown ? style.muted : style.ink)
             var cells:[(view:NSView,x:CGFloat,width:CGFloat)]=[]
             var detailBelow:NSTextField?
             if row.kind == .quota || row.kind == .extraQuota{
@@ -349,7 +352,8 @@ import CryptoKit
                 let v=label(rowID+".value",row.value,font:readout,color:valueColor,wraps:true);place(v,in:rowView)
                 var valueWidth=restWidth
                 if !row.detail.isEmpty{
-                    let d=label(rowID+".detail",row.detail,font:readoutSmall,color:style.muted,alignment:.right);place(d,in:rowView)
+                    let detailInk:NSColor = row.kind == .reserve && row.tone == .warning ? (style.quota[.warning] ?? style.muted) : style.muted
+                    let d=label(rowID+".detail",row.detail,font:readoutSmall,color:detailInk,alignment:.right);place(d,in:rowView)
                     let dw=ceil(natural(d).width),vw=ceil(natural(v).width)
                     if vw+g+dw<=restWidth{valueWidth=restWidth-dw-g;cells.append((view:d as NSView,x:restX+valueWidth+g,width:dw))}
                     else{setWraps(d,true);d.alignment = .left;detailBelow=d}
@@ -375,7 +379,27 @@ import CryptoKit
                 let dx=c0+g,dw=max(0,rowWidth-dx),dh=wrapped(detailBelow,width:dw)
                 detailBelow.frame=CGRect(x:dx,y:rowHeight,width:dw,height:dh);rowHeight+=dh
             }
-            let kept=Set(cells.map{ObjectIdentifier($0.view)}+(detailBelow.map{[ObjectIdentifier($0)]} ?? []))
+            // Master spec S4 / decision 1 (D474): line 2 under the reset, right-aligned in the time column when it fits,
+            // else on its own line under the bar. Estimate amber/red, "够用到重置" muted, "已用完" red.
+            var secondBelow:NSTextField?
+            if isReading, !row.secondLine.isEmpty{
+                let toned=row.secondLineTone == .warning || row.secondLineTone == .critical
+                let ink=toned ? (style.quota[row.secondLineTone] ?? style.ink) : style.muted
+                let d2=label(rowID+".detail2",row.secondLine,font:readoutSmall,color:ink,alignment:.right);place(d2,in:rowView)
+                let timeX=c0+c[1]+c2+3*g,timeWidth=max(0,rowWidth-timeX)
+                let w2=ceil(natural(d2).width)
+                if detailBelow == nil, w2<=timeWidth{
+                    let h2=height(d2,width:timeWidth)
+                    d2.frame=CGRect(x:timeX-2,y:rowHeight,width:timeWidth+4,height:h2);rowHeight+=h2
+                }else{
+                    setWraps(d2,true);d2.alignment = .left
+                    let dx=c0+g,dw=max(0,rowWidth-dx),dh=wrapped(d2,width:dw)
+                    d2.frame=CGRect(x:dx,y:rowHeight,width:dw,height:dh);rowHeight+=dh
+                }
+                secondBelow=d2
+                rowView.setAccessibilityLabel([row.label,row.value,row.detail,row.secondLine].filter{!$0.isEmpty}.joined(separator:" · "))
+            }
+            let kept=Set(cells.map{ObjectIdentifier($0.view)}+(detailBelow.map{[ObjectIdentifier($0)]} ?? [])+(secondBelow.map{[ObjectIdentifier($0)]} ?? []))
             for child in rowView.subviews where !kept.contains(ObjectIdentifier(child)){child.removeFromSuperview()}
             // The reserve line is spoken once, by the row; its text fields are not read a second time.
             if row.kind == .reserve{rowView.subviews.forEach{$0.setAccessibilityElement(false)}}

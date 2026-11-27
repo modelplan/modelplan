@@ -1376,7 +1376,8 @@ struct StatusNoticePresentation {
             diagnosticFacts.append(.init(providerID: member.rowID, name: provider, condition: condition))
         }
         let diagnostics = ProviderDiagnosticSummary.lines(diagnosticFacts, english: english)
-        let openDiagnostics: (() -> Void)? = available ? { [weak self] in Task { await self?.settingsHost.present(paneID: "diagnostics", origin: .userInitiated) } } : nil
+        // Master spec S2 / S17 (D474): the grey health line opens Settings › 订阅, where each subscription shows its fix.
+        let openDiagnostics: (() -> Void)? = available ? { [weak self] in Task { await self?.settingsHost.present(paneID: "subscriptions", origin: .userInitiated) } } : nil
         // MENU-50: one problem line. Feedback and the paused state come first (paused with a retry is the retry); then
         // one subscription's own line, or a count when more than one has a problem; then a newly detected tool (D238).
         if let feedback = helpError ?? showFeedbackText(language) { menuItems.append(.init(title: feedback)) }
@@ -1443,8 +1444,14 @@ struct StatusNoticePresentation {
     /// The ≈cost segment arrives with WP-06.
     func rangeTotalLine(_ range: CockpitRange, language: SettingsLanguage) -> String? {
         guard composition.provider.dockContent.status != .cleared else { return nil }
-        return MenuRangeSummary.line(tokens: CockpitRangeTotals.outputTokens(composition.store.snapshot.cockpit, range: range),
-                                     cost: nil, language: language)
+        let data = composition.store.snapshot.cockpit
+        // Master spec §2.1 / S2 (D474): total tokens and ≈$ from `cost.daily`, the same sums as the cockpit's 总览; a reply
+        // without a cost section keeps the older output-token figure.
+        if let sum = CockpitCostTotals.total(data, range: range, now: composition.currentDate()), sum.tokens > 0 || sum.estimatedUSD != nil {
+            return MenuRangeSummary.line(tokens: sum.tokens > 0 ? sum.tokens : nil,
+                                         cost: sum.estimatedUSD.flatMap(CockpitCostTotals.text), language: language)
+        }
+        return MenuRangeSummary.line(tokens: CockpitRangeTotals.outputTokens(data, range: range), cost: nil, language: language)
     }
     /// The open menu keeps its rows (G3-122); only the total line's text follows a range chosen in it.
     private func updateOpenRangeTotals(_ range: CockpitRange) {

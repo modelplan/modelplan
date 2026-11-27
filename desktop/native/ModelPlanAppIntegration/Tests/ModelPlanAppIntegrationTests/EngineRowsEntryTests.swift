@@ -484,7 +484,7 @@ private actor RowsEntryClient: EngineClient {
         defer { app.composition.dock.close() }
         await app.settingsHost.present(paneID: "subscriptions")
         let view = app.scopeConsentEntry.view; view.layoutSubtreeIfNeeded()
-        XCTAssertEqual((settingNode(view, id: "subscriptions.status.codex") as? NSTextField)?.stringValue, "Keychain access needed")
+        XCTAssertEqual((settingNode(view, id: "subscriptions.status.codex") as? NSTextField)?.stringValue, "No reading · Needs permission", "master spec §3.4 ladder")
         XCTAssertEqual((settingNode(view, id: "subscriptions.fix.codex") as? NSButton)?.title, "Allow reading")
         await app.composition.stop()
     }

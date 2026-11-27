@@ -146,6 +146,9 @@ public enum EngineDeadlineFacts {
     public private(set) var retainedWindows: [EngineRetainedWindow] = []
     /// WP-06 hook: the estimated cost text for a member's today row ("≈$10.2"). Unset in WP-15, so no ≈$ is shown yet.
     public var todayCost: ((String) -> String?)?
+    /// Master spec §2.1 / DOCK-3.8-51 (D474, C23): a verified subscription's today figures from `cost.daily` (total tokens,
+    /// priced + unpriced, and the ≈$ text when any usage is priced); nil without a cost section. Keyed by subscription ref.
+    public var todayFigures: ((String) -> (tokens: Int64, cost: String?)?)?
     /// Consumers must discard session placement and scope for these members on every refresh.
     public private(set) var memberInstability:[String:Bool] = [:]
     public var language="en"
@@ -365,7 +368,7 @@ public enum EngineDeadlineFacts {
             let cause = needsKeychain ? nil : causeLine(member, now: context.now)
             let keychainReason: String = english ? "Keychain access needed" : "需要允许读取钥匙串"
             let messageReason: String = text(message.0.text)
-            let reasonText: String
+            var reasonText: String
             if needsKeychain {
                 reasonText = keychainReason
             } else if let causeReason = cause?.reason {
@@ -373,13 +376,26 @@ public enum EngineDeadlineFacts {
             } else {
                 reasonText = messageReason
             }
-            let nextStepText: String
+            var nextStepText: String
             if let causeNext = cause?.nextStep {
                 nextStepText = causeNext
             } else if let messageNext = message.1 {
                 nextStepText = text(messageNext.text)
             } else {
                 nextStepText = ""
+            }
+            // Master spec §3.4 (D474): an unreadable card says its rung of the one reading ladder ("读不到 · 需要登录") and the
+            // one step ("打开 Codex"). A step the card's own button already is ("重新读取", D41 "允许读取") is not repeated.
+            let ladderCodes = needsKeychain ? ["keychain_unset"] : [message.0.code.rawValue] + (account.lastFailure.map { [$0.code.rawValue] } ?? [])
+            if cardState == .error, let rung = ladderCodes.lazy.compactMap({ ReadingLadder.entry(code: $0, tool: row.id, toolName: member.name(english: english)) }).first {
+                let language: SettingsLanguage = english ? .english : .chinese
+                reasonText = rung.title.value(language)
+                switch rung.kind {
+                case .cannotParse: nextStepText = ""
+                case .notReported: nextStepText = rung.detail?.value(language) ?? ""
+                case .needsPermission where needsKeychain: nextStepText = ""
+                default: nextStepText = rung.action.value(language)
+                }
             }
             let planName: String = account.plan.name.map { text($0) } ?? ""
             let linkList = preferred.map(resetEventLinks) ?? []
@@ -477,8 +493,17 @@ public enum EngineDeadlineFacts {
         let today = member.account.today
         let language: SettingsLanguage = english ? .english : .chinese
         let running = today?.runningSessions.flatMap { $0 > 0 ? WidgetCardText.running($0).value(language) : nil }
-        return DockTodayRow.make(label: WidgetCardText.today.value(language), cost: todayCost?(member.id),
-                                 tokens: today?.observedTotalTokens ?? today?.observedOutputTokens, running: running, tokensPerSecond: today?.generationTps)
+        // The cost section's total tokens and ≈$ when the reply has them (the cockpit's own sums); "未计价" when the
+        // tokens have no public price. Without it, the account's own today tokens as before.
+        let figures = member.subscriptionRef.flatMap { ref in member.isStable && member.id == ref ? todayFigures?(ref) : nil }
+        var tokens = today?.observedTotalTokens ?? today?.observedOutputTokens
+        var cost = todayCost?(member.id)
+        if let figures, figures.tokens > 0 {
+            tokens = figures.tokens
+            cost = cost ?? figures.cost ?? WidgetCardText.unpriced.value(language)
+        }
+        return DockTodayRow.make(label: WidgetCardText.today.value(language), cost: cost,
+                                 tokens: tokens, running: running, tokensPerSecond: today?.generationTps)
     }
     /// WP-15: the producer's run-out forecast (WP-03) for a current window of this same verified subscription, when it
     /// falls before the window's reset; the card writes "约40m用完" in place of the reset time and the footer can alert.

@@ -237,8 +237,14 @@ actor S4RowsClient: EngineClient {
         entry.composition.dock.setPresentationAllowed(true)
         try require(!entry.cockpitEntryEnabled, "the interim beta must keep cockpit disabled")
         try await inspect?(entry)
+        // Master spec §5.1 (D474): revealing the widget is not a look, so the menu-bar dot stays; the first look clears it.
+        let before=entry.noticeIndicator.notice
         entry.composition.dock.acknowledgeDockReveal()
-        try require(entry.noticeIndicator.notice == nil, "opening the widget must clear the menu-bar indicator without cockpit")
+        try require(entry.noticeIndicator.notice == before, "revealing the widget must not clear the menu-bar indicator")
+        let keys=entry.composition.resetSignals.compactMap { $0.reset?.newsKey }
+        entry.composition.dock.newsClock?.look(keys,at:entry.composition.currentDate())
+        entry.composition.dock.newsLooksChanged()
+        try require(entry.noticeIndicator.notice == nil, "the first look must clear the menu-bar indicator without cockpit")
         await entry.composition.stop()
         return displayed
     }
@@ -375,7 +381,11 @@ actor S4RowsClient: EngineClient {
         try require(entry.noticeIndicator.notice != nil, "normal entry must show the projected menu notice")
         entry.composition.dock.showConsole = {}
         entry.composition.dock.perform(NSSelectorFromString("openConsole"))
-        try require(entry.noticeIndicator.notice == nil, "cockpit acknowledgement must clear the menu indicator")
+        // Master spec C6 / §5.1 (D474): opening the cockpit is no look; the page's look (recorded in the clock) clears it.
+        try require(entry.noticeIndicator.notice != nil, "opening the cockpit alone must not clear the menu indicator")
+        entry.composition.dock.newsClock?.look(entry.composition.resetSignals.compactMap { $0.reset?.newsKey }, at: entry.composition.currentDate())
+        entry.composition.dock.newsLooksChanged()
+        try require(entry.noticeIndicator.notice == nil, "the first look must clear the menu indicator")
         let signals=entry.composition.presentedContent.signals
         guard let matching=signals.first(where:{$0.id == "0123456789abcdef"}),let unmatched=signals.first(where:{$0.id == "fedcba9876543210"}) else { throw Failure(description:"event members missing") }
         try require(matching.reset?.id == decoded[0].id && unmatched.reset == nil,"only the matching member must expose the event signal")

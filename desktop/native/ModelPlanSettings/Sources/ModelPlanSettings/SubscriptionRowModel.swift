@@ -146,8 +146,11 @@ public struct SubscriptionRowModel: Equatable, Sendable {
             if let fix, stale {
                 status = .init("The last reading is old · cause: \(fix.reason.english)",
                                "上次读数已过期 · 原因：\(fix.reason.chinese)")
-            } else if let fix { status = fix.reason }
-            else {
+            } else if let fix {
+                // Master spec §3.4 (D474): the same rung of the one reading ladder as the widget card ("读不到 · 需要登录");
+                // the fix button beside it is the one step. A cause without a rung keeps the shared table's sentence.
+                status = code.flatMap { ReadingLadder.entry(code: $0, tool: tool, toolName: displayName.value(english))?.title } ?? fix.reason
+            } else {
                 switch sub.source {
                 case .fresh: status = SettingsText("Reading works", "读取正常")
                 case .stale: status = SettingsText("The last reading is old", "上次读数已过期")

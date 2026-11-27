@@ -33,7 +33,12 @@ import ModelPlanDock
                 XCTAssertEqual(shown.frameInButton.maxY, shown.buttonBounds.maxY, accuracy: 0.01)
             }
 
+            // Master spec §5.1: the reveal is no look, so the dot stays; the first look (recorded in the shared clock,
+            // as a card hover or the cockpit page does) clears it.
             app.composition.dock.acknowledgeDockReveal()
+            XCTAssertEqual(app.statusNoticePresentation?.isVisible, true, "revealing the widget keeps the dot")
+            app.composition.dock.newsClock?.look(app.composition.resetSignals.compactMap { $0.reset?.newsKey }, at: Date())
+            app.composition.dock.newsLooksChanged()
             let cleared = try XCTUnwrap(app.statusNoticePresentation)
             XCTAssertFalse(cleared.isVisible)
             XCTAssertNil(cleared.tone)

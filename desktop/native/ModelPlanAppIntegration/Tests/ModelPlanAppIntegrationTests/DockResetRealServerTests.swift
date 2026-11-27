@@ -208,7 +208,9 @@ import ModelPlanSettings
         #endif
         // A detached surface cannot order in a panel. The native variant
         // relies entirely on automatic acknowledgement from visible order-in.
-        if !native { dock.acknowledgeDockReveal() }
+        // Master spec §5.1 (D474): the pointer dots clear on the first look, not on the reveal.
+        dock.newsClock?.look(app.composition.resetSignals.compactMap { $0.reset?.newsKey }, at: Date())
+        dock.newsLooksChanged()
         XCTAssertEqual(face(), announcement)
         XCTAssertNil(app.noticeIndicator.notice)
         try await wait("Return to the strip") { dock.edgePresentation?.state == .sliver }

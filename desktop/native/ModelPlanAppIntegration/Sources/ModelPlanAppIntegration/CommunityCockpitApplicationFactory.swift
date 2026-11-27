@@ -114,6 +114,7 @@ import ModelPlanResources
             application.cockpitNews = CockpitNewsBridge(coordinator: coordinator, provider: composition.contentProvider,
                 events: { if case .available(let events) = composition.rowEvents { return events } else { return [] } },
                 now: { composition.currentDate() })
+            application.cockpitNews?.onLooked = { [weak composition] in composition?.dock.newsLooksChanged() }
         }
         owner.systemSignals = { [weak application] in application?.cockpitSystemSignals }
         owner.presence = application.dockPresence

@@ -169,6 +169,17 @@ public struct DockAttentionState: Sendable {
             }
         }
     }
+    /// Master spec §5.1 / §3.3 (D474): the pointer dots (menu bar, sliver) clear on the first LOOK at the item, the same
+    /// look the news clock records (a card that shows it, the cockpit page drawing it or its alert list). `looked` are the
+    /// news keys (`DockResetSignal.newsKey`) the clock has a first look for. Revealing the widget is not a look.
+    public mutating func acknowledgeLooked(_ signals: [DockSubscriptionSignal], looked: (String) -> Bool, at now: Date) throws {
+        try reconcile(signals, at: now)
+        for s in signals {
+            guard let key = s.reset?.newsKey, looked(key), let notice = DockNoticeProjection.selected(for: s, at: now) else { continue }
+            sliverAcknowledgements.insert(notice.key)
+            menuAcknowledgements.insert(notice.key)
+        }
+    }
     public mutating func acknowledgeCockpitOpen(_ signals: [DockSubscriptionSignal], at now: Date) throws {
         try reconcile(signals, at: now)
         for s in signals { if let n = DockNoticeProjection.selected(for: s, at: now) { menuAcknowledgements.insert(n.key) } }
