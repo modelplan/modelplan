@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import Foundation
 import OSLog
+import CoreGraphics
 import ModelPlanEngineStore
 import ModelPlanEngineClient
 import ModelPlanWire
@@ -163,6 +164,7 @@ public struct EngineMenuRefreshResult {
         adapter = EngineDockContentProvider(source: provider)
         dock = ProductionDockFactory.community(createsNativePanels: createsNativePanels, nativeEnvironment: dockEnvironment, currentDate: { clock.now() }, edition: edition)
         adapter.bindDockMenuTracking(dock)
+        dock.newsClock = adapter.newsClock
         _ = pairedProjection
         // G3-136: the empty ring's one line comes from the same admitted rows as the menu.
         dock.emptyStationReason = { [weak self] in
@@ -312,6 +314,19 @@ public struct EngineMenuRefreshResult {
         } else if live {
             base=ProfileRoot.current.modelPlanSupport
         } else { base=FileManager.default.temporaryDirectory.appendingPathComponent("modelplan-s4-"+UUID().uuidString,isDirectory:true);resetScratch=base }
+        // D466: the news clock survives a restart (one small JSON beside the notification ledger); the content provider
+        // ticks it and the Dock host records looks on the same instance.
+        if live, isolatedLedger == nil {
+            let clock = DockNewsClockStore(url: base.appendingPathComponent("news-clock.json"))
+            adapter.newsClock = clock; dock.newsClock = clock
+            // Present = awake (refreshes only run then) and the screen unlocked, in the console session.
+            adapter.isPresent = {
+                guard let session = CGSessionCopyCurrentDictionary() as? [String: Any] else { return true }
+                if (session["CGSSessionScreenIsLocked"] as? Bool) == true { return false }
+                if let onConsole = session["kCGSSessionOnConsoleKey"] as? Bool, !onConsole { return false }
+                return true
+            }
+        }
         do {
             let notifier=try EngineResetNotifier.recovering(composition:self,settings:settings,cacheURL:isolatedLedger ?? base.appendingPathComponent("reset-notifications.json"),deliverToSystem:live && isolatedLedger == nil)
             resetNotifier=notifier;notifier.start()

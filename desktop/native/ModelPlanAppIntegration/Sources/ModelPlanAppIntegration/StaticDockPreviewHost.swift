@@ -295,6 +295,14 @@ struct DockHelpInteraction: Equatable {
     private var lastPlacementObservation: PlacementObservation?
     private let appearance: Appearance?
     private var attention = DockAttentionState()
+    /// D466 / DOCK-3.7-05: the shared news clock; the host records the first look at an item (widget reveal, a card that
+    /// shows it, the cockpit opening). The content provider owns the ticking and reads the same instance.
+    public var newsClock: DockNewsClockStore?
+    private func recordNewsLook(ids: [String]? = nil) {
+        guard let newsClock else { return }
+        let keys = attentionSignals.filter { ids?.contains($0.id) ?? true }.compactMap { $0.reset?.newsKey }
+        newsClock.look(keys, at: currentDate())
+    }
     private var attentionSignals: [DockSubscriptionSignal] = []
     private var attentionWasExpanded = false
     private var locateLayer: CAShapeLayer?
@@ -2401,6 +2409,7 @@ struct DockHelpInteraction: Equatable {
     func acknowledgeDockReveal() {
         guard permitted, !retired else { return }
         try? attention.acknowledge(.dockRevealed, signals: attentionSignals, at: currentDate())
+        recordNewsLook()
         publishAttention()
     }
     /// D49: the widget stays in place while the cockpit is open; only its transient card and highlight go.
@@ -2452,6 +2461,7 @@ struct DockHelpInteraction: Equatable {
     public func acknowledgeCockpitOpening() {
         guard cockpitEntryEnabled, !retired else { return }
         try? attention.acknowledge(.cockpitOpening, signals: attentionSignals, at: currentDate())
+        recordNewsLook()
         publishAttention()
     }
     /// D204 (G3-94): the ignition toggles an attached cockpit and brings a detached one to the front (the app decides).
@@ -2521,7 +2531,7 @@ struct DockHelpInteraction: Equatable {
             additional.append(.init(id: "kept-cause", kind: .footnote, label: "", value: row.reason))
         }
         if !loading, !unreadable,
-           let alert = DockCardAlertRule.alert(input: projected, runOutTimes: row.runOutTimes, redBelow: effectiveRedBelow, now: now) {
+           DockCardAlertRule.alert(input: projected, runOutTimes: row.runOutTimes, redBelow: effectiveRedBelow, now: now) != nil {
             // DOCK-3.8-52: a reset the user can spend is the one thing to do now, so its reserve line brightens.
             if row.hasResetAvailable(at: now) {
                 additional = additional.map { r in
@@ -2530,12 +2540,10 @@ struct DockHelpInteraction: Equatable {
                         emphasised: true, pill: r.pill, hint: r.hint) : r
                 }
             }
-            // A used-up window already has its own D65 line under the readout; the footer does not say it twice.
-            if !alert.usedUp {
-                additional.append(.init(id: "alert", kind: .alert, label: "", value: Self.cardAlertSentence(alert, name: projected.name, now: now, language: language),
-                                        tone: alert.severity == .critical ? .critical : .warning))
-            }
         }
+        // D466 section 5: the footer sentence repeated the quota row above it. The card ends with the "接下来" block
+        // instead (the same lines as the cockpit strip hover: next timed items in 24 h).
+        if !loading, !unreadable, !kept { additional.append(contentsOf: row.cardNextRows(at: now, english: english)) }
         // "重新读取" belongs to an unreadable card only; the D41 Keychain button stays wherever it is needed.
         let readAgain = WidgetCardText.readAgain.value(language)
         var action = row.actionLabel
@@ -2560,18 +2568,6 @@ struct DockHelpInteraction: Equatable {
                                sourceAndAge: content.sourceAndAge, stateLabel: content.stateLabel, rows: placeholders, links: content.links,
                                enterLabel: content.enterLabel, dismissLabel: content.dismissLabel, actionLabel: content.actionLabel,
                                cockpitLabel: content.cockpitLabel, cockpitTarget: content.cockpitTarget)
-    }
-    /// DOCK-3.8-52: the footer is the shared alert sentence (ALR-50, WP-11 `AlertSentence`), the same words as the lamp,
-    /// the alert list and the menu line: "Claude 5h 9% · out ~40m · resets in 2h00".
-    static func cardAlertSentence(_ alert: DockCardAlert, name: String, now: Date, language: SettingsLanguage) -> String {
-        func minutes(_ date: Date?) -> Double? {
-            guard let date else { return nil }
-            let seconds = date.timeIntervalSince(now)
-            return seconds.isFinite && seconds > 0 ? ceil(seconds / 60) : nil
-        }
-        return AlertSentence.quota(subscription: SettingsText(name, name), window: SettingsText(alert.label, alert.label),
-                                   remaining: alert.remaining, runOutMinutes: minutes(alert.runOutAt),
-                                   resetMinutes: minutes(alert.resetsAt)).text.value(language)
     }
     /// G3-136 (owner 11-18): why the widget is an empty ring, from the composition ("Still reading", "<tool> · Reading
     /// permission needed", "No subscriptions yet"). Nil leaves the empty ring without a reason card.
@@ -2695,6 +2691,7 @@ struct DockHelpInteraction: Equatable {
         cardGeneration &+= 1
         let token = cardGeneration, feed = inputGeneration
         cardID = id; cardPresentedRevision = content.revision; cardPresentedGeneration = feed; card.isHidden = false
+        recordNewsLook(ids: [id])
         installOutsidePressMonitors()
         card.appearance = NSAppearance(named: (application?.effective.darkAppearance ?? true) ? .darkAqua : .aqua)
         card.permitsAction = { [weak self] id, revision in self?.cardIsCurrent(id, revision: revision, token: token, feed: feed) == true }

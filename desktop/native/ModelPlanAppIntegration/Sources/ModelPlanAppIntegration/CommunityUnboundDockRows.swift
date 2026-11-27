@@ -30,6 +30,10 @@ public struct DockContentRow: Sendable {
     public let cardReadingState: DockCardReadingState
     /// WP-15: a window's admitted run-out forecast (WP-03), before its reset; the card row says "约40m用完" instead.
     public let runOutTimes: [String: Date]
+    /// D466: this subscription's published peak windows (empty when the producer sends none); `hasPeakRules` is whether it
+    /// has peak rules at all, so "now off-peak" can be said.
+    public var peaks: [DockPeakWindow] = []
+    public var hasPeakRules = false
     public init(input: DockInstrumentInput, reason: String, nextStep: String, originalObservedAt: Date? = nil,
                 plan:String="",sourceName:String="",resetTimes:[String:Date]=[:],windowDescriptions:[String:String]=[:],additionalRows:[DockCardRow]=[],resetCountExpiry: Date? = nil,links:[DockCardLink]=[],windowObservations:[String:DockWindowObservation]?=nil,cardReadingState:DockCardReadingState?=nil,runOutTimes:[String:Date]=[:]) {
         self.input = input; self.reason = reason; self.nextStep = nextStep; self.runOutTimes = runOutTimes
@@ -91,6 +95,22 @@ public struct DockContentRow: Sendable {
             }
             result[window.id] = detail
         }
+    }
+    /// D466 section 5: the card's "接下来" block, the same lines as the cockpit strip hover. It replaces the footer alert
+    /// sentence, which repeated the quota row above it.
+    func cardNextRows(at now: Date, english: Bool, calendar: Calendar = .current) -> [DockCardRow] {
+        var facts = [DockNextFact]()
+        for window in input.windows where window.isGeneral {
+            guard let reset = resetTimes[window.id] ?? window.resetsAt, reset > now else { continue }
+            switch window.period {
+            case .fiveHour: facts.append(DockNextFact(kind: .fiveHourReset, at: reset))
+            case .week: facts.append(DockNextFact(kind: .weeklyReset, at: reset))
+            case .month: facts.append(DockNextFact(kind: .monthlyReset, at: reset))
+            case .day, .other: break
+            }
+        }
+        for (_, runOut) in runOutTimes where runOut > now { facts.append(DockNextFact(kind: .runOut, at: runOut)) }
+        return DockNextBlock.rows(facts: facts, peaks: peaks, hasPeakRules: hasPeakRules, now: now, english: english, calendar: calendar)
     }
     /// The reserve brightens under an alert only when a reset is there to use (V1-FINAL §2 item 5).
     /// macrevb-1051-2: judged at presentation time; a positive count whose earliest expiry has passed is not spendable.

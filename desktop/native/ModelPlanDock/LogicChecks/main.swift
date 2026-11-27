@@ -181,21 +181,22 @@ do {
             try expect(shared.region(at:CGPoint(x:wake.midX,y:wake.midY)) == .outside,"shared edge cannot wake")
         }}
     }
-    try test("notice priority, distinct shapes, no low-quota-only event") {
+    try test("D466 one dot meaning: blue reset news only; no amber forecast, reserve-expiry or white credits dot") {
         var s=fresh("a",.critical)
         try expect(DockNoticeProjection.selected(for:s,at:now)==nil,"low quota alone is not an event")
         s.drawingCredits=true;s.creditsKnown=true;s.exhaustedQuotaObserved=true
-        s.cards=[DockResetCardSignal(id:"card",expiresAt:now.addingTimeInterval(3600))];s.reset=reset()
+        s.cards=[DockResetCardSignal(id:"card",expiresAt:now.addingTimeInterval(3600))]
         s.forecast=DockForecastSignal(windowID:"5h",validUntil:now.addingTimeInterval(600))
-        try expect(DockNoticeProjection.candidates(for:s,at:now).map(\.key.kind)==[.forecast,.resetAnnounced,.cardsExpiring,.credits],"priority order")
-        s.forecast=nil;try expect(DockNoticeProjection.selected(for:s,at:now)?.key.kind == .cardsExpiring,"card expiry precedes announced reset")
-        let cards=s.cards;s.cards=[];let announced=DockNoticeProjection.selected(for:s,at:now)
-        try expect(announced?.shape == .hollow && announced?.tone == DockNotice.resetAnnouncedTone,"announced hollow, palette tone")
+        try expect(DockNoticeProjection.candidates(for:s,at:now).isEmpty,"forecast, reserve expiry and drawing credits draw no dot")
+        s.reset=reset()
+        let announced=DockNoticeProjection.selected(for:s,at:now)
+        try expect(DockNoticeProjection.candidates(for:s,at:now).count==1 && announced?.key.kind == .resetAnnounced,"only the reset news is a candidate")
+        try expect(announced?.shape == .hollow && announced?.tone == DockNotice.resetAnnouncedTone && announced?.tone == .blue,"announced = hollow blue")
         s.reset=reset(confirmed:true);let confirmed=DockNoticeProjection.selected(for:s,at:now)
-        try expect(confirmed?.tone == DockNotice.resetConfirmedTone && confirmed?.shape == .solid && confirmed?.tone != .white,"confirmed solid, palette tone, never credits white")
-        s.cards=cards;s.reset?.restartedReading=true;try expect(DockNoticeProjection.selected(for:s,at:now)?.key.kind == .cardsExpiring,"reading clears confirmed reset only")
-        s.cards=[];try expect(DockNoticeProjection.selected(for:s,at:now)?.tone == .white,"credits are white")
-        s.creditsKnown=false;try expect(DockNoticeProjection.selected(for:s,at:now)==nil,"unknown credits not fabricated")
+        try expect(confirmed?.tone == .blue && confirmed?.shape == .solid,"confirmed = solid blue")
+        s.reset?.restartedReading=true;try expect(DockNoticeProjection.selected(for:s,at:now)==nil,"a restarted reading clears a direct confirmed reset")
+        s.reset?.kind = .resetCredit;try expect(DockNoticeProjection.selected(for:s,at:now) != nil,"D466: a banked reset only adds to the reserve; a reading never clears it")
+        s.reset?.newsLive=false;try expect(DockNoticeProjection.selected(for:s,at:now)==nil,"a retired news clock removes the dot")
     }
     try test("D428 only a reset credit is banked: direct and legacy no-kind announcements are not") {
         var s=fresh("a",.critical)
@@ -216,10 +217,8 @@ do {
         s.reset?.confirmedDotUntil=now.addingTimeInterval(30*3600);try expect(DockNoticeProjection.selected(for:s,at:now.addingTimeInterval(24*3600-1)) != nil && DockNoticeProjection.selected(for:s,at:now.addingTimeInterval(24*3600))==nil,"D166: a later dot bound is capped at 24h")
         s.reset?.confirmedDotUntil=nil
         s.reset?.confirmedAt=now.addingTimeInterval(1);try expect(DockNoticeProjection.selected(for:s,at:now)==nil,"future confirmation withheld")
-        s.reset=nil;s.cards=[DockResetCardSignal(id:"expired",expiresAt:now),DockResetCardSignal(id:"boundary",expiresAt:now.addingTimeInterval(48*3600)),DockResetCardSignal(id:"late",expiresAt:now.addingTimeInterval(48*3600+1))]
-        try expect(DockNoticeProjection.selected(for:s,at:now)?.key.sourceIDs == ["boundary"],"card 48h inclusive, zero excluded")
-        s.forecast=DockForecastSignal(windowID:"5h",validUntil:now.addingTimeInterval(100));s.dataState = .stale
-        try expect(DockNoticeProjection.selected(for:s,at:now)==nil,"stale personal notices withheld")
+        s.reset=nil;s.dataState = .stale
+        try expect(DockNoticeProjection.selected(for:s,at:now)==nil,"no personal notices without a reset event")
         s.reset=reset();try expect(DockNoticeProjection.selected(for:s,at:now)?.key.kind == .resetAnnounced,"dated public reset does not fabricate personal quota")
     }
     try test("sliver quota state persists independently of one-shot acknowledgements") {
@@ -266,13 +265,10 @@ do {
         try expect(!state.firstAppearance(of:key,on:.sliver) && state.firstAppearance(of:key,on:.menu),"once per surface")
         _=try state.project([],stationBySubscription:[:],at:now);try expect(state.retainedKeyCount==0 && !state.firstAppearance(of:key,on:.sliver),"removed IDs cannot leak pulse/ack memory")
         try rejects(.invalidCatalogue) { _=try state.project([s,s],stationBySubscription:[:],at:now) }
-        s.cards=[DockResetCardSignal(id:"b",expiresAt:now.addingTimeInterval(5)),DockResetCardSignal(id:"a",expiresAt:now.addingTimeInterval(6))];s.reset=nil
-        let one=DockNoticeProjection.selected(for:s,at:now);s.cards.reverse()
-        try expect(one==DockNoticeProjection.selected(for:s,at:now),"card order does not invent a new event")
     }
     try test("acknowledged personal notices do not replay after transient stale reads") {
         var state=DockAttentionState(), s=fresh("a")
-        s.forecast=DockForecastSignal(windowID:"weekly",validUntil:now.addingTimeInterval(600))
+        s.reset=DockResetSignal(id:"weekly",status:.announced,announcedAt:now.addingTimeInterval(-100),scheduledThrough:now.addingTimeInterval(600))
         let key=try state.project([s],stationBySubscription:["a":"one"],at:now).dots[0].notice.key
         try expect(state.firstAppearance(of:key,on:.sliver),"initial semantic appearance")
         try state.acknowledgeDockOpen([s],at:now)
@@ -287,9 +283,9 @@ do {
     }
     try test("acknowledgement is per selected event; lower-priority event is not pre-acknowledged") {
         var state=DockAttentionState(), s=fresh("a")
-        s.reset=reset();s.forecast=DockForecastSignal(windowID:"5h",validUntil:now.addingTimeInterval(60))
+        s.reset=reset("seen")
         try state.acknowledgeDockOpen([s],at:now)
-        s.forecast=nil
+        s.reset=reset()
         let projection=try state.project([s],stationBySubscription:["a":"one"],at:now)
         try expect(projection.dots.first?.notice.key.kind == .resetAnnounced,"unseen reset remains discoverable")
         for i in 0..<1000 {

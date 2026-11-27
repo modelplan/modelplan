@@ -123,7 +123,7 @@ public enum EngineDeadlineFacts {
             includeDate(event.expiresAt)
             // D166: the confirmed dot ends before the event does; recompute then on the existing deadline path.
             if event.status == "confirmed" {
-                includeDate((event.confirmedAt ?? event.publishedAt).addingTimeInterval(DockResetSignal.confirmedDotLifetime))
+                includeDate((event.confirmedAt ?? event.publishedAt).addingTimeInterval(DockResetSignal.confirmedDotHardCap))
             } else if let through = event.scheduledThrough {
                 // The card turns to "awaiting confirmation" when the forecast window ends.
                 includeDate(through)
@@ -149,6 +149,19 @@ public enum EngineDeadlineFacts {
     /// Consumers must discard session placement and scope for these members on every refresh.
     public private(set) var memberInstability:[String:Bool] = [:]
     public var language="en"
+    /// D466 / DOCK-3.7-05: the shared news clock (also handed to the Dock host, which records looks). Every refresh ticks
+    /// it with the items drawn; an item it retired is left out of the dot, the card block and the alert row alike.
+    public var newsClock = DockNewsClockStore()
+    /// Whether the Mac is awake and unlocked now; presence is counted only while true.
+    public var isPresent: () -> Bool = { true }
+    /// The one question every surface asks (the cockpit's alert list and key dot ask it too): is this event still news?
+    public func isNews(eventID: String, status: String, anchor: Date, at now: Date) -> Bool {
+        newsClock.isLive(DockNewsClock.key(eventID: eventID, status: status), anchor: anchor, at: now)
+    }
+    /// The user looked at this event (opened the cockpit on it, or the alert list): its 30 minutes start.
+    public func recordNewsLook(eventID: String, status: String, at now: Date) {
+        newsClock.look([DockNewsClock.key(eventID: eventID, status: status)], at: now)
+    }
     private var english:Bool { language == "en" }
     private func text(_ value:RowsText) -> String { english ? value.en : value.zh }
     private func text(_ value:RowsName) -> String { english ? value.en : value.zh }
@@ -198,6 +211,8 @@ public enum EngineDeadlineFacts {
             }
         }
         var passSignals:[DockSubscriptionSignal] = []
+        var passNewsKeys:[String] = []
+        let wirePeaks=value.peaks
         for member in members {
             let row=member.row
             let input = makeInput(member, now: context.now)
@@ -223,9 +238,17 @@ public enum EngineDeadlineFacts {
                 (event.planIDs.map { $0.contains(member.account.plan.id) } ?? true)
             }
             let confirmedIDs=Set(memberEvents.filter{$0.status == "confirmed"}.compactMap(\.confirms))
-            let preferred=memberEvents.filter { $0.status != "announced" || !confirmedIDs.contains($0.id) }
+            let preferredCandidate=memberEvents.filter { $0.status != "announced" || !confirmedIDs.contains($0.id) }
                 .max { $0.publishedAt < $1.publishedAt }
             var signal=DockSubscriptionSignal(id:member.id);signal.dataState=input.dataState
+            // D466: the news clock retires an announcement 30 min after a look, after 3 present hours, or 24 h after it
+            // was confirmed (published, for an announcement). A retired event is not news on any surface.
+            var preferred=preferredCandidate
+            if let event=preferred {
+                let key=DockNewsClock.key(eventID:event.id,status:event.status)
+                let anchor=event.status == "confirmed" ? (event.confirmedAt ?? event.publishedAt):event.publishedAt
+                if newsClock.isLive(key,anchor:anchor,at:context.now) { passNewsKeys.append(key) } else { preferred=nil }
+            }
             if let event=preferred {
                 if event.status == "confirmed" {
                     let confirmedAt=event.confirmedAt ?? event.publishedAt
@@ -234,6 +257,8 @@ public enum EngineDeadlineFacts {
                     // A local reading that restarted after the confirmation is an observation, not proof of the
                     // public event (same predicate as the notification).
                     reset.restartedReading = event.restartedReading(in: member.account)
+                    // The clock, not the 3 h default, bounds the dot (D466); 24 h stays the hard cap.
+                    reset.confirmedDotUntil = confirmedAt.addingTimeInterval(DockResetSignal.confirmedDotHardCap)
                     signal.reset=reset
                 } else {
                     var reset=DockResetSignal(id:event.id,status:.announced,announcedAt:event.publishedAt,scheduledThrough:event.expiresAt,expiresAt:event.expiresAt)
@@ -246,7 +271,8 @@ public enum EngineDeadlineFacts {
                 let wording = EngineResetEventWording(english: english)
                 reserve.append(.init(id: "reset-event:" + event.id + ":" + event.status, kind: .notice,
                     label: wording.label(event), value: wording.title(event, now: context.now),
-                    detail: wording.detail(rose: signal.reset?.restartedReading == true),
+                    detail: event.isResetCredit && event.status == "confirmed" ? wording.bankedConfirmedDetail(event, now: context.now)
+                                                                                : wording.detail(rose: signal.reset?.readingRetiresDot == true),
                     pill: event.status == "confirmed" ? (english ? "Confirmed" : "已确认") : (english ? "Announced" : "已预告")))
             }
             if let today { reserve.append(today) }
@@ -345,12 +371,20 @@ public enum EngineDeadlineFacts {
             }
             let planName: String = account.plan.name.map { text($0) } ?? ""
             let linkList = preferred.map(resetEventLinks) ?? []
-            let presentation = DockContentRow(input: input, reason: reasonText, nextStep: nextStepText,
+            var presentation = DockContentRow(input: input, reason: reasonText, nextStep: nextStepText,
                 originalObservedAt: date(account.observedAt), plan: planName,
                 sourceName: sourceName(account.route), resetTimes: resets, windowDescriptions: descriptions,
                 additionalRows: reserve, resetCountExpiry: resetCount?.expiry, links: linkList,
                 windowObservations: observations, cardReadingState: cardState,
                 runOutTimes: runOutTimes(member, forecasts: value.forecasts, now: context.now))
+            let memberPeaks=wirePeaks.filter { $0.rowId == member.rowID }
+            presentation.peaks=memberPeaks.compactMap { peak in
+                guard let from=date(peak.startsAt) else { return nil }
+                let to=date(peak.endsAt)
+                if let to, to <= from { return nil }
+                return DockPeakWindow(from:from,to:to)
+            }
+            presentation.hasPeakRules = !memberPeaks.isEmpty || member.rowID.hasPrefix("declared:") || member.rowID == "zai"
             reasons[member.id] = presentation
             if needsKeychain { reasons[member.id]?.actionLabel = english ? "Allow reading" : "允许读取" }
             // DOCK-3.8-53 (WP-15; was D87 slice 9's Settings link): any other named cause offers one more read.
@@ -418,6 +452,7 @@ public enum EngineDeadlineFacts {
         }
         let content = DockContent(snapshot: .init(inputs: inputs, subscriptions: subscriptions + accountless,presentationRows: reasons),
                      menuStatusLines: lines.isEmpty ? [status] : lines, emptyText: status, signals:passSignals)
+        newsClock.tick(shown:passNewsKeys,present:isPresent(),at:context.now)
         verifiedWindows = passWindows; retainedWindows = passRetained; recomputeDeadline = passDeadline
         memberInstability = passInstability; signals = passSignals
         return .init(content: content, deadline: passDeadline, verifiedWindows: passWindows, retainedWindows: passRetained)

@@ -78,8 +78,8 @@ final class D166ResetCreditTests: XCTestCase {
         XCTAssertEqual(credit.confirmedAtBasis, "observed")
         let zh = EngineResetEventWording(english: false, calendar: shanghai), en = EngineResetEventWording(english: true, calendar: shanghai)
         let now = at("2026-11-12T11:00:00Z")
-        XCTAssertEqual(zh.title(credit, now: now), "已确认 · 18:20")
-        XCTAssertEqual(en.title(credit, now: now), "Confirmed · 18:20")
+        XCTAssertEqual(zh.title(credit, now: now), "已确认 · 今天 18:20")
+        XCTAssertEqual(en.title(credit, now: now), "Confirmed · Today 18:20")
         XCTAssertEqual(zh.notification(credit, rose: false).title, "Codex 额外重置已确认")
         XCTAssertEqual(zh.notification(credit, rose: false).body, "余量以本机读数为准。")
 
@@ -87,8 +87,8 @@ final class D166ResetCreditTests: XCTestCase {
         let reset = try decoded(liveShapedRows(direct))
         XCTAssertFalse(reset.isResetCredit)
         XCTAssertEqual(zh.label(reset), "↺ 额度重置")
-        XCTAssertEqual(zh.title(reset, now: now), "已确认 · 18:20 前", "a first-seen time is only an upper bound")
-        XCTAssertEqual(en.title(reset, now: now), "Confirmed by 18:20")
+        XCTAssertEqual(zh.title(reset, now: now), "已确认 · 今天 18:20", "D466: an absolute time, never \"18:20 前\"")
+        XCTAssertEqual(en.title(reset, now: now), "Confirmed · Today 18:20")
         XCTAssertEqual(en.notification(reset, rose: true).title, "Codex limit reset confirmed")
         XCTAssertEqual(zh.notification(reset, rose: true).body, "已生效：本机读数已回升。")
         XCTAssertEqual(zh.detail(rose: true), "本机读数已回升 · 余量以本机读数为准")
@@ -120,7 +120,7 @@ final class D166ResetCreditTests: XCTestCase {
         let event = EngineResetEvent(id: "event", rowID: "codex", provider: "openai", status: "confirmed",
             publishedAt: confirmed.addingTimeInterval(-3600), expiresAt: confirmed.addingTimeInterval(24 * 3600), planIDs: nil,
             confirms: "event", kind: "reset_credit", confirmedAt: confirmed, confirmedAtBasis: "published")
-        XCTAssertEqual(EngineResetEventWording(english: true, calendar: shanghai).title(event, now: confirmed), "Confirmed · 18:20")
+        XCTAssertEqual(EngineResetEventWording(english: true, calendar: shanghai).title(event, now: confirmed), "Confirmed · Today 18:20")
     }
 
     /// macrev2-862-3: a routine refresh of a window that began before the confirmation is not a restart;
@@ -218,10 +218,11 @@ final class D166ResetCreditTests: XCTestCase {
         XCTAssertEqual(titles, ["Codex banked resets confirmed"])
         row = try XCTUnwrap(notice())
         XCTAssertTrue(row.value.hasPrefix("Confirmed · "), row.value)
-        XCTAssertEqual(row.detail, "Your balance is the local reading")
+        XCTAssertTrue(row.detail.hasPrefix("Issued ") && row.detail.hasSuffix(": +1 reset, now in Reserve"), "D466: a banked reset only adds to the Reserve: \(row.detail)")
         let signal = try XCTUnwrap(entry.composition.resetSignals.first { $0.id == member })
         XCTAssertEqual(DockNoticeProjection.selected(for: signal, at: clock)?.tone, DockNotice.resetConfirmedTone)
-        XCTAssertNil(DockNoticeProjection.selected(for: signal, at: confirmedAt.addingTimeInterval(3 * 3600)), "the dot ends three hours after confirmation")
+        XCTAssertNotNil(DockNoticeProjection.selected(for: signal, at: confirmedAt.addingTimeInterval(3 * 3600)), "D466: the news clock, not a 3 h wall clock, retires the dot")
+        XCTAssertNil(DockNoticeProjection.selected(for: signal, at: confirmedAt.addingTimeInterval(24 * 3600)), "the hard cap is 24 h after confirmation")
         try await client.replaceRows(confirmed); try await Task.sleep(for: .milliseconds(50))
         XCTAssertEqual(titles.count, 1, "one notification per confirmation")
         await entry.composition.stop()
