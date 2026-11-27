@@ -86,7 +86,7 @@ register('host', {
   helpNote14: ['prose', '公共屏：页键切页，底键选项或返回原页。', 'Main screen: page keys change pages; bottom keys select or return.'],
   helpNote15: ['prose', '会话记录：运行中的在前，按一行查看详情。', 'Session record: running sessions come first; press a row for details.'],
   helpNote17: ['prose', '灯 = 有会话在跑', 'Lamp = a session is running'],
-  idleHead: ['line', '现在没有会话在跑 · 最近', 'No session running now · recent'],
+  idleHead: ['line', '现在没有会话在跑 · 最近', 'Nothing running · recent'],
   helpNote16: ['prose', '喷口光：表示这个订阅正在用，不表示额度告警。', 'Glow: this subscription is working now; it does not mean an alert.'],
   alStale: ['alert', '{s} · 上次读数', '{s} · Last reading'],
   alStaleAge: ['alert', '{s} · 上次读数 {age}前', '{s} · Last reading {age} ago'],
