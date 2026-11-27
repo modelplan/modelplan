@@ -4,6 +4,7 @@ import Foundation
 import XCTest
 @testable import ModelPlanCockpitWeb
 import ModelPlanSettings
+@_spi(DockResourceChecks) import ModelPlanDock
 @testable import ModelPlanAppIntegration
 
 #if MODELPLAN_TEST_ONLY_SPI
@@ -82,6 +83,30 @@ extension CommunityCockpitEntryTests {
     private var screenScript: String { "document.querySelector('.dk-mfd .pl-screen[data-plugin=\"placeholder\"]')!==null" }
     /// Pinned plugins sit right after the subscriptions on page 1; the shown page's plugin keys in order.
     private var keyOrderScript: String { "[...document.querySelectorAll('.eng-keys .pl-key')].map(k=>k.dataset.plugin).join(',')" }
+
+    /// macrev2-1289-8 (CKP-PLG-62, D466): on the shipped path the calendar is a fixed cockpit tab only. The live widget has
+    /// no calendar dial, Settings › Plugins lists no calendar control, and the entry stays catalogued and enabled inside
+    /// (so a saved state and a card's `pluginScreen {id:'calendar'}` stay valid).
+    @MainActor func testCalendarDialAndControlStayRetiredOnTheNormalEntry() async throws {
+        try await withPluginCockpit { entry, plugins, _, _ in
+            XCTAssertTrue(plugins.model.preferences.enabledIDs().contains("calendar"), "kept and on internally")
+            XCTAssertTrue(CockpitPluginCatalogue.builtIn.contains { $0.id == "calendar" })
+            let readings = entry.composition.dock.dockView.presentedReadingsForChecks
+            XCTAssertFalse(readings.keys.contains { $0 == "plugin:calendar" || $0 == "calendar" }, "no calendar dial on the widget: \(readings.keys.sorted())")
+            XCTAssertFalse(readings.values.contains { $0.pluginRing != nil && $0.subscriptionID.hasSuffix("calendar") })
+            await entry.settingsHost.present(paneID: "plugins")
+            let pane = try XCTUnwrap(entry.settingsHost.cockpitPluginsViewForChecks, "the normal entry attaches the Plugins pane")
+            pane.layoutSubtreeIfNeeded()
+            func node(_ root: NSView, _ id: String) -> NSView? {
+                if root.accessibilityIdentifier() == id { return root }
+                for child in root.subviews { if let found = node(child, id) { return found } }
+                return nil
+            }
+            XCTAssertNotNil(node(pane, "settings.cockpitPlugins.resources.enabled"), "the pane lists the user-facing plugins")
+            XCTAssertNil(node(pane, "settings.cockpitPlugins.calendar.enabled"), "no calendar control in Settings")
+            XCTAssertNil(node(pane, "settings.cockpitPlugins.calendar.name"))
+        }
+    }
 
     /// The bridge journey that needs no real click: state in, running out, readings in, Settings edits live, reopen.
     @MainActor func testPluginChoicesReachTheNormalEntryPageAndDriveItsColumn() async throws {

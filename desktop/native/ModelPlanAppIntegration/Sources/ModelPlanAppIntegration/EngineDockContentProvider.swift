@@ -163,6 +163,19 @@ public enum EngineDeadlineFacts {
     /// With a store, a ring exists only for a member seen before or with a good reading now; nil (previews, tests that
     /// do not install it) keeps every member, as the cockpit page does without a `seen` message.
     public var seenSubscriptions: DockSeenSubscriptionsStore?
+    /// The one event a member's widget slot, card news block and pointer dots show (D466), from its admitted events:
+    /// an announcement already confirmed gives way to its confirmation; a confirmed direct reset whose window reading
+    /// has restarted is no longer news (macrev2-1289-4, DOCK-3.7-03; a banked reset never is); a retired item is filtered
+    /// out before the newest is chosen (macrev2-1289-2), so a still-live older event takes the slot.
+    static func newsEvent(_ events: [EngineResetEvent], account: RowsAccount, clock: DockNewsClockStore, at now: Date) -> EngineResetEvent? {
+        let confirmedIDs = Set(events.filter { $0.status == "confirmed" }.compactMap(\.confirms))
+        return events.filter { event in
+            guard event.status != "announced" || !confirmedIDs.contains(event.id) else { return false }
+            if event.status == "confirmed", !event.isResetCredit, event.restartedReading(in: account) { return false }
+            let anchor = event.status == "confirmed" ? (event.confirmedAt ?? event.publishedAt) : event.publishedAt
+            return clock.isLive(DockNewsClock.key(eventID: event.id, status: event.status), anchor: anchor, at: now)
+        }.max { $0.publishedAt < $1.publishedAt }
+    }
     /// The one question every surface asks (the cockpit's alert list and key dot ask it too): is this event still news?
     public func isNews(eventID: String, status: String, anchor: Date, at now: Date) -> Bool {
         newsClock.isLive(DockNewsClock.key(eventID: eventID, status: status), anchor: anchor, at: now)
@@ -252,18 +265,15 @@ public enum EngineDeadlineFacts {
                 event.rowID == member.rowID && event.publishedAt <= context.now && context.now < event.expiresAt &&
                 (event.planIDs.map { $0.contains(member.account.plan.id) } ?? true)
             }
-            let confirmedIDs=Set(memberEvents.filter{$0.status == "confirmed"}.compactMap(\.confirms))
-            let preferredCandidate=memberEvents.filter { $0.status != "announced" || !confirmedIDs.contains($0.id) }
-                .max { $0.publishedAt < $1.publishedAt }
             var signal=DockSubscriptionSignal(id:member.id);signal.dataState=input.dataState
             // D466: the news clock retires an announcement 30 min after a look, after 3 present hours, or 24 h after it
             // was confirmed (published, for an announcement). A retired event is not news on any surface.
-            var preferred=preferredCandidate
-            if let event=preferred {
-                let key=DockNewsClock.key(eventID:event.id,status:event.status)
-                let anchor=event.status == "confirmed" ? (event.confirmedAt ?? event.publishedAt):event.publishedAt
-                if newsClock.isLive(key,anchor:anchor,at:context.now) { passNewsKeys.append(key) } else { preferred=nil }
-            }
+            // macrev2-1289-2: retired items are filtered out before the newest is chosen, so a still-live older event
+            // takes the slot once its newer neighbour retires.
+            // macrev2-1289-4 (DOCK-3.7-03, C19): a confirmed direct reset whose window reading has restarted is no longer
+            // news, on the dot and the card alike (the cockpit's news-clock.ts does the same); a banked reset never is.
+            let preferred=Self.newsEvent(memberEvents, account: member.account, clock: newsClock, at: context.now)
+            if let event=preferred { passNewsKeys.append(DockNewsClock.key(eventID:event.id,status:event.status)) }
             if let event=preferred {
                 if event.status == "confirmed" {
                     let confirmedAt=event.confirmedAt ?? event.publishedAt

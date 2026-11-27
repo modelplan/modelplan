@@ -28,9 +28,19 @@ public struct DockNewsClock: Codable, Equatable, Sendable {
         public var presentSeconds: TimeInterval
     }
     public private(set) var entries: [String: Entry] = [:]
+    /// The present span: in memory only (macrev2-1289-3). A relaunch starts a new span, so the time the app was closed
+    /// (asleep, quit) is never counted.
     private var lastTick: Date?
     private var lastPresent = false
     public init() {}
+    private enum CodingKeys: String, CodingKey { case entries }
+    public init(from decoder: Decoder) throws {
+        entries = try decoder.container(keyedBy: CodingKeys.self).decode([String: Entry].self, forKey: .entries)
+    }
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(entries, forKey: .entries)
+    }
 
     public static func key(eventID: String, status: String) -> String { eventID + "#" + status }
 
@@ -42,7 +52,9 @@ public struct DockNewsClock: Codable, Equatable, Sendable {
         var changed = false
         var gap: TimeInterval = 0
         if let last = lastTick, lastPresent, present { gap = min(max(now.timeIntervalSince(last), 0), Self.maxCountedGap) }
-        for key in keys {
+        // macrev2-1289-3: presence is per event, however many surfaces or accounts draw it in this refresh.
+        var seen = Set<String>()
+        for key in keys where seen.insert(key).inserted {
             if var entry = entries[key] {
                 if gap > 0 { entry.presentSeconds += gap; entries[key] = entry; changed = true }
             } else {
@@ -74,7 +86,11 @@ public struct DockNewsClock: Codable, Equatable, Sendable {
     public mutating func look(_ keys: [String], at now: Date) {
         guard now.timeIntervalSinceReferenceDate.isFinite else { return }
         for key in keys {
-            guard var entry = entries[key] else { continue }
+            // macrev2-1289-2: a look at an item this clock has not drawn yet (the cockpit's alert list shows every live
+            // event) starts its entry at that look, so the 30 minutes apply to it too.
+            guard var entry = entries[key] else {
+                entries[key] = Entry(firstShown: now, firstLooked: now, presentSeconds: 0); continue
+            }
             if entry.firstLooked == nil { entry.firstLooked = now; entries[key] = entry }
         }
     }

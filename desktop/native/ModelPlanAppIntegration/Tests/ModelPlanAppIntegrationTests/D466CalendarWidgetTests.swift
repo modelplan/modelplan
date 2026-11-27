@@ -180,6 +180,45 @@ final class D466CalendarWidgetTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(clock.entries[key]).presentSeconds, 1200, accuracy: 0.001)
     }
 
+    /// macrev2-1289-3: presence is counted once per event however many accounts draw it; 90 minutes are 90 minutes, and
+    /// the 3 present hours end at 180.
+    func testNewsClockCountsPresenceOncePerEvent() throws {
+        let confirmed = at("2026-11-26T08:00:00Z")
+        var clock = DockNewsClock()
+        var now = confirmed
+        clock.tick(shown: [key, key], present: true, at: now)
+        for _ in 0..<9 { now = now.addingTimeInterval(600); clock.tick(shown: [key, key], present: true, at: now) }
+        XCTAssertEqual(try XCTUnwrap(clock.entries[key]).presentSeconds, 90 * 60, accuracy: 0.001, "two accounts, one event")
+        XCTAssertTrue(clock.isLive(key, anchor: confirmed, at: now))
+        for _ in 0..<9 { now = now.addingTimeInterval(600); clock.tick(shown: [key, key], present: true, at: now) }
+        XCTAssertFalse(clock.isLive(key, anchor: confirmed, at: now), "retired at 180 present minutes")
+    }
+
+    /// macrev2-1289-3: the present span is not persisted; the first tick after a relaunch counts nothing for the time the
+    /// app was closed, even under the 15-minute gap rule.
+    func testNewsClockDoesNotCountTheClosedTimeAfterARelaunch() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("news-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("news-clock.json")
+        let confirmed = at("2026-11-26T08:00:00Z")
+        let store = DockNewsClockStore(url: url)
+        store.tick(shown: [key], present: true, at: confirmed)
+        store.tick(shown: [key], present: true, at: confirmed.addingTimeInterval(120))
+        store.look([key], at: confirmed.addingTimeInterval(121)) // a look always saves
+        let reopened = DockNewsClockStore(url: url)
+        reopened.tick(shown: [key], present: true, at: confirmed.addingTimeInterval(121 + 600))
+        XCTAssertEqual(try XCTUnwrap(reopened.clock.entries[key]).presentSeconds, 120, accuracy: 0.001, "no closed time counted")
+    }
+
+    /// macrev2-1289-2: a look at an item the clock has not drawn yet (the cockpit's alert list shows every live event)
+    /// starts its 30 minutes; the host's answer then says so.
+    func testALookAtAnUndrawnItemStartsItsThirtyMinutes() {
+        let now = at("2026-11-26T20:00:00Z")
+        var clock = DockNewsClock()
+        clock.look([key], at: now)
+        XCTAssertEqual(clock.liveUntil(key, anchor: now.addingTimeInterval(-60), at: now), now.addingTimeInterval(DockNewsClock.lookGrace))
+    }
+
     func testNewsClockHardCapIsTwentyFourHoursAfterTheAnchor() {
         let confirmed = at("2026-11-26T08:00:00Z")
         var clock = DockNewsClock()
@@ -301,8 +340,15 @@ final class D466CalendarWidgetTests: XCTestCase {
         XCTAssertEqual(zh, ["接下来", "21:00 5 小时额度重置", "22:00 预估用完", "23:00 每周额度重置"])
     }
 
-    func testNextBlockIsEmptyWhenNothingIsKnown() {
-        XCTAssertTrue(DockNextBlock.rows(facts: [], peaks: [], hasPeakRules: false, now: at("2026-11-26T20:00:00Z"), english: true, calendar: utc).isEmpty)
+    /// macrev2-1289-6 (§3.2, approved): a normal card with no known reset, run-out or peak rule still says
+    /// "接下来 24 小时没有重置，也没有高峰"; only an alert card leaves the block out.
+    func testNextBlockSaysNothingFallsIn24HoursWhenNothingIsKnown() {
+        let now = at("2026-11-26T20:00:00Z")
+        XCTAssertEqual(DockNextBlock.rows(facts: [], peaks: [], hasPeakRules: false, now: now, english: false, calendar: utc).map(\.value),
+                       ["接下来 24 小时没有重置，也没有高峰"])
+        XCTAssertEqual(DockNextBlock.rows(facts: [], peaks: [], hasPeakRules: false, now: now, english: true, calendar: utc).map(\.value),
+                       ["No resets or peaks in the next 24 h"])
+        XCTAssertTrue(DockNextBlock.rows(facts: [], peaks: [], hasPeakRules: false, now: now, english: false, inAlert: true, calendar: utc).isEmpty)
     }
 
     /// The card row reads the same windows, reset times and run-out forecast as the quota rows above it.

@@ -339,6 +339,13 @@ public struct EngineMenuRefreshResult {
             // keys only, 0600, cleared with Forget and a privacy clear.
             let seen = DockSeenSubscriptionsStore(url: base.appendingPathComponent("seen-subscriptions.json"))
             adapter.seenSubscriptions = seen; seenSubscriptions = seen
+            // macrev2-1289-5: once the first delivery names the consent scope, the widget projects again with (or without)
+            // the saved memory.
+            seen.onScopeChange = { [weak self] in
+                guard let self else { return }
+                self.pairedProjection.invalidate()
+                if !self.deadlineLifecycleSuspended { self.deadlineDriver.replace() }
+            }
             seenBinding?.stop(); seenBinding = SeenSubscriptionsBinding(store: store, seen: seen)
         }
         do {

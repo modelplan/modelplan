@@ -44,31 +44,84 @@ public struct DockSeenSubscriptions: Codable, Equatable, Sendable {
     public func shows(_ key: String, goodNow: Bool) -> Bool { goodNow || contains(key) }
 }
 
+/// The consent scope the memory was written under: the engine store's privacy epoch and consent generation. A Forget
+/// advances the generation; a privacy clear (also one done with the CLI while the app is closed) changes the epoch.
+public struct DockSeenScope: Codable, Equatable, Sendable {
+    public let storeEpoch: String
+    public let generation: UInt64
+    public init(storeEpoch: String, generation: UInt64) { self.storeEpoch = storeEpoch; self.generation = generation }
+}
+
 /// The holder: one JSON file beside `news-clock.json`, written 0600 under the app support directory. A missing or
 /// unreadable file starts empty (the next good readings fill it again).
+///
+/// macrev2-1289-5 (privacy): the file carries the consent scope it was written under. Until the engine's first delivery
+/// names the current scope (`adopt`), the saved keys qualify nothing and are not sent; a different scope, or a file
+/// without one, drops them from memory and disk. The same scope keeps them across a restart.
 public final class DockSeenSubscriptionsStore: @unchecked Sendable {
+    private struct File: Codable { var scope: DockSeenScope?; var ids: [String] }
+    /// The saved keys (only usable once `scope` is adopted and matches).
     public private(set) var value: DockSeenSubscriptions
     /// G3-135: a numbered fallback member (two unbound accounts on one route) names a list position, not an account, so it
     /// is remembered for this session only and never written to disk.
     public private(set) var session = DockSeenSubscriptions()
+    /// The current delivery's scope once known; nil before the first delivery.
+    public private(set) var scope: DockSeenScope?
+    private var savedScope: DockSeenScope?
+    /// Durable keys recorded before the scope was known; kept after adoption.
+    private var early = DockSeenSubscriptions()
     private let url: URL?
     /// Called after the set changed (a first good reading, or a clear), so the cockpit page gets a fresh `seen`.
     public var onChange: (() -> Void)?
+    /// Called when `adopt` changed what qualifies (the saved keys came into use, or were dropped), so the widget projects
+    /// again. Never called from `record` (that runs inside a projection).
+    public var onScopeChange: (() -> Void)?
     public init(url: URL? = nil) {
         self.url = url
-        if let url, let data = try? Data(contentsOf: url), let decoded = try? JSONDecoder().decode(DockSeenSubscriptions.self, from: data) {
-            value = DockSeenSubscriptions(ids: decoded.ids)
+        if let url, let data = try? Data(contentsOf: url), let decoded = try? JSONDecoder().decode(File.self, from: data) {
+            value = DockSeenSubscriptions(ids: decoded.ids); savedScope = decoded.scope
         } else { value = DockSeenSubscriptions() }
+        // A store without a file (previews, tests) has nothing to protect: it is in scope at once.
+        if url == nil { scope = DockSeenScope(storeEpoch: "", generation: 0); savedScope = scope }
     }
-    /// What the cockpit page is told (`seen {ids}`): the saved keys, then this session's, at most 64.
-    public var ids: [String] { Array((value.ids + session.ids.filter { !value.contains($0) }).prefix(DockSeenSubscriptions.maxIDs)) }
-    public func shows(_ key: String, goodNow: Bool) -> Bool { value.shows(key, goodNow: goodNow) || session.contains(key) }
+    private var adopted: Bool { scope != nil && scope == savedScope }
+    /// The engine delivered under `next`. A different scope than the file's (or none on file) drops the saved keys.
+    public func adopt(_ next: DockSeenScope) {
+        guard scope != next else { return }
+        let before = ids
+        scope = next
+        if savedScope != next {
+            value = DockSeenSubscriptions(); session = DockSeenSubscriptions()
+            if let url { try? FileManager.default.removeItem(at: url) }
+        }
+        savedScope = next
+        for key in early.ids { _ = value.insert(key) }
+        early = DockSeenSubscriptions()
+        if !value.ids.isEmpty { save() }
+        if ids != before { onChange?(); onScopeChange?() }
+    }
+    /// What the cockpit page is told (`seen {ids}`): the saved keys, then this session's, at most 64. Nothing before the
+    /// scope is known.
+    public var ids: [String] {
+        guard adopted else { return [] }
+        return Array((value.ids + session.ids.filter { !value.contains($0) }).prefix(DockSeenSubscriptions.maxIDs))
+    }
+    public func shows(_ key: String, goodNow: Bool) -> Bool {
+        goodNow || (adopted && (value.contains(key) || session.contains(key)))
+    }
     /// Records the members with a good reading now (`durable` false: session only); saves and notifies only on a change.
+    /// macrev2-1289-7: the session keys share the one 64-key bound with the saved ones, so the widget never keeps a
+    /// member the bridge would cut.
     public func record(_ keys: [(key: String, durable: Bool)]) {
+        guard adopted else {
+            for entry in keys where entry.durable { _ = early.insert(entry.key) }
+            return
+        }
         var saved = false, changed = false
         for entry in keys {
             if entry.durable { if value.insert(entry.key) { saved = true; changed = true } }
-            else if !value.contains(entry.key), session.insert(entry.key) { changed = true }
+            else if !value.contains(entry.key), value.ids.count + session.ids.count < DockSeenSubscriptions.maxIDs,
+                    session.insert(entry.key) { changed = true }
         }
         if saved { save() }
         if changed { onChange?() }
@@ -76,12 +129,12 @@ public final class DockSeenSubscriptionsStore: @unchecked Sendable {
     /// Forget / privacy clear: the memory goes with the readings.
     public func clear() {
         let had = !value.ids.isEmpty || !session.ids.isEmpty
-        value = DockSeenSubscriptions(); session = DockSeenSubscriptions()
+        value = DockSeenSubscriptions(); session = DockSeenSubscriptions(); early = DockSeenSubscriptions()
         if let url { try? FileManager.default.removeItem(at: url) }
         if had { onChange?() }
     }
     private func save() {
-        guard let url, let data = try? JSONEncoder().encode(value) else { return }
+        guard let url, let data = try? JSONEncoder().encode(File(scope: savedScope, ids: value.ids)) else { return }
         let directory = url.deletingLastPathComponent()
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         guard (try? data.write(to: url, options: .atomic)) != nil else { return }

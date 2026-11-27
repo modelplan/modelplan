@@ -73,10 +73,11 @@ public enum DockNextBlock {
         }
         let within = all.filter { $0.at <= now.addingTimeInterval(horizon) }
         let beyond = all.filter { $0.at > now.addingTimeInterval(horizon) }
-        guard !within.isEmpty || !beyond.isEmpty || !state.isEmpty else { return [] }
+        // An alert state with nothing in 24 h: the footer sentence already says it, so the block is left out (§3.2).
         if inAlert && within.isEmpty { return [] }
         var rows = [DockCardRow]()
         func line(_ text: String) { rows.append(DockCardRow(id: "next." + String(rows.count), kind: .event, label: "", value: text)) }
+        // macrev2-1289-6 (§3.2, approved): a normal card with nothing known still says so, in the strip hover's words.
         let suffix = state.isEmpty ? "" : " · " + state
         if within.isEmpty {
             // The heading is the sentence itself (the strip hover's words), then the next two items.

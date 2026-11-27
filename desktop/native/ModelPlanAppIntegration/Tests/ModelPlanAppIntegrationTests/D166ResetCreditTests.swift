@@ -155,6 +155,53 @@ final class D166ResetCreditTests: XCTestCase {
         XCTAssertEqual(zh.notification(direct, rose: direct.restartedReading(in: routine)).body, "余量以本机读数为准。")
     }
 
+    private func currentAccount(observed: Date, resets: Date, duration: Int64 = 18000) throws -> RowsAccount {
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
+        let projection = try XCTUnwrap(root["projection"] as? [String: Any])
+        var raw = try XCTUnwrap(((projection["rows"] as? [[String: Any]])?.first?["accounts"] as? [[String: Any]])?.first)
+        var window = try XCTUnwrap((raw["windows"] as? [[String: Any]])?.first)
+        let iso = ISO8601DateFormatter()
+        window.removeValue(forKey: "modelScope"); window["current"] = true; window["durationSeconds"] = duration
+        window["observedAt"] = iso.string(from: observed); window["resetsAt"] = iso.string(from: resets)
+        raw["valueState"] = "current"; raw["windows"] = [window]
+        return try WireDecoder.decode(RowsAccount.self, from: JSONSerialization.data(withJSONObject: raw))
+    }
+    private func event(_ id: String, kind: String, confirmed: Date) -> EngineResetEvent {
+        EngineResetEvent(id: id, rowID: "codex", provider: "openai", status: "confirmed", publishedAt: confirmed.addingTimeInterval(-60),
+            expiresAt: confirmed.addingTimeInterval(86400), planIDs: nil, confirms: id, kind: kind, confirmedAt: confirmed, confirmedAtBasis: "published")
+    }
+
+    /// macrev2-1289-4 (DOCK-3.7-03, C19): once the window reading restarts, a confirmed direct reset is no longer news on the
+    /// widget (dot and card block both come from this one choice), as in the cockpit; a banked reset stays news.
+    func testARestartedReadingRetiresDirectResetNewsButNotBankedNews() throws {
+        let confirmed = at("2026-11-12T10:00:00Z"), now = confirmed.addingTimeInterval(180)
+        let routine = try currentAccount(observed: confirmed.addingTimeInterval(60), resets: confirmed.addingTimeInterval(4 * 3600))
+        let restarted = try currentAccount(observed: confirmed.addingTimeInterval(120), resets: confirmed.addingTimeInterval(60 + 18000))
+        let clock = DockNewsClockStore()
+        let direct = event("direct", kind: "direct_reset", confirmed: confirmed), banked = event("banked", kind: "reset_credit", confirmed: confirmed)
+        XCTAssertEqual(EngineDockContentProvider.newsEvent([direct], account: routine, clock: clock, at: now)?.id, "direct")
+        XCTAssertNil(EngineDockContentProvider.newsEvent([direct], account: restarted, clock: clock, at: now), "restarted: the direct reset is not news")
+        XCTAssertEqual(EngineDockContentProvider.newsEvent([banked], account: restarted, clock: clock, at: now)?.id, "banked",
+                       "a banked reset never waits for or clears with a window restart")
+    }
+
+    /// macrev2-1289-2: a retired newer event gives the slot to a still-live older one.
+    func testAStillLiveOlderEventTakesTheSlotWhenTheNewerRetires() throws {
+        let confirmed = at("2026-11-12T10:00:00Z")
+        let account = try currentAccount(observed: confirmed.addingTimeInterval(60), resets: confirmed.addingTimeInterval(4 * 3600))
+        let older = event("older", kind: "reset_credit", confirmed: confirmed)
+        let newer = event("newer", kind: "reset_credit", confirmed: confirmed.addingTimeInterval(600))
+        let clock = DockNewsClockStore()
+        let now = confirmed.addingTimeInterval(900)
+        XCTAssertEqual(EngineDockContentProvider.newsEvent([older, newer], account: account, clock: clock, at: now)?.id, "newer")
+        clock.look([DockNewsClock.key(eventID: "newer", status: "confirmed")], at: now)
+        let later = now.addingTimeInterval(DockNewsClock.lookGrace)
+        XCTAssertEqual(EngineDockContentProvider.newsEvent([older, newer], account: account, clock: clock, at: later)?.id, "older",
+                       "the newer one retired 30 min after its look; the older, never looked at, is still news")
+    }
+
     /// macrev2-862-2 / -5: a reset credit through the normal entry: forecast card and ring with no notification,
     /// "awaiting confirmation" after the window on the existing deadline path, then confirmed in place once.
     @MainActor func testNormalEntryResetCreditForecastAwaitingAndConfirmation() async throws {

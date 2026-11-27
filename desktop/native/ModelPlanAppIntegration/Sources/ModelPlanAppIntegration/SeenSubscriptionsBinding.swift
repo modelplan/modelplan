@@ -20,6 +20,12 @@ import ModelPlanEngineClient
         guard invalidation.previous != nil,
               invalidation.reason == .generationAdvanced || invalidation.reason == .epochChanged else { return }
         seen.clear()
+        if let floor = invalidation.nextFloor { seen.adopt(DockSeenScope(storeEpoch: floor.storeEpoch, generation: floor.generation)) }
     }
-    func apply(_ snapshot: EngineStoreSnapshot) {}
+    /// macrev2-1289-5: every delivery names its consent scope; a scope the saved memory was not written under (a privacy
+    /// clear or Forget while the app was closed) drops it before any ring or `seen` uses it.
+    func apply(_ snapshot: EngineStoreSnapshot) {
+        guard let floor = snapshot.delivery?.floor else { return }
+        seen.adopt(DockSeenScope(storeEpoch: floor.storeEpoch, generation: floor.generation))
+    }
 }
