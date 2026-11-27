@@ -653,6 +653,9 @@ import ModelPlanWire
             // One sentence pair with the engine rows (rows.NotSignedInText): first run, Settings and the menu agree.
             return .init("Not signed in to " + name.english + ". ModelPlan reads it after you sign in.",
                          "未登录 " + name.chinese + "。登录后会自动读取。")
+        case .unsupportedLogin where ["zai", "zcode", "glm"].contains(tool):
+            // Owner 11-22: the pasted-key route still reads the quota (the row's "Paste key…" opens the D90 field).
+            return ReaderCauseTable.zcodeUnreadable.reason
         case .unsupportedLogin:
             // G3-155: ZCode's QR-code sign-in is readable behind its own opt-in (D369); this says only that no readable
             // sign-in was found, never "unsupported".
@@ -664,6 +667,10 @@ import ModelPlanWire
                          "这种账号登录方式暂不支持读取，因此不读取。")
         }
     }
+    /// D380: the same words as the engine row (rows.ZCodeKeychainText); a test pins them.
+    public static let zcodeKeychainLine = SettingsText(
+        "ZCode may keep its sign-in key in the Keychain. Allow ModelPlan to read it in Settings; when macOS asks, choose Always Allow.",
+        "ZCode 的登录密钥可能保存在钥匙串中。请在设置中允许 ModelPlan 读取；macOS 询问时请选择“始终允许”。")
     private func keychainAllowButton() -> ScopeConsentButton {
         button(.init("Allow reading", "允许读取"), id: "scope.keychain.allow", enabled: controller.canMutate) { [weak self] in await self?.controller.allowKeychain() }
     }
@@ -693,6 +700,12 @@ import ModelPlanWire
             label(.init("Keychain access needed to read Claude Code", "需要允许读取钥匙串"))
             arrangedSubviews.last?.setAccessibilityIdentifier("scope.keychain.needed")
             line([keychainAllowButton()])
+        }
+        if controller.needsZCodeKeychainAccess {
+            // D380: one sentence with the engine row (rows.ZCodeKeychainText), including the "Always Allow" hint.
+            label(Self.zcodeKeychainLine)
+            arrangedSubviews.last?.setAccessibilityIdentifier("scope.keychain.zcode.needed")
+            line([button(.init("Allow reading", "允许读取"), id: "scope.keychain.zcode.allow", enabled: controller.canMutate) { [weak self] in await self?.controller.allowKeychain(tool: "zai") }])
         }
         switch controller.notice {
         case .none: break
@@ -940,7 +953,7 @@ import ModelPlanWire
         guard let fix = row.fix, canPerformFix(row) else { return }
         fixNotices[row.id] = nil
         switch fix.target {
-        case .allowKeychain: Task { await controller.allowKeychain() }
+        case .allowKeychain: Task { await controller.allowKeychain(tool: row.tool) }
         case .retry: rowActions.retry?(row.tool)
         case .addKey:
             // Open the entry on this row, then put the cursor in its field.

@@ -39,7 +39,9 @@ func TestSampling1122SettingsGrantKeepsQRLoginWhenNoEnvironmentKey(t *testing.T)
 		t.Fatal(err)
 	}
 	state := consent.Capture().State()
-	_, err = b.Grant(context.Background(), wire.ConsentGrantParams{RequestID: "sampling-qr", ExpectStoreEpoch: state.StoreEpoch, ExpectGeneration: state.Generation, TextVersion: consent.TextVersion, Allow: []string{consent.ScopeZaiAccountUsageAPIKey, consent.ScopeZaiAccountUsageSavedLogin}})
+	_, err = b.Grant(context.Background(), wire.ConsentGrantParams{RequestID: "sampling-qr", ExpectStoreEpoch: state.StoreEpoch, ExpectGeneration: state.Generation, TextVersion: consent.TextVersion, Allow: []string{consent.ScopeZaiAccountUsageAPIKey, consent.ScopeZaiAccountUsageSavedLogin},
+		// D380 (macrev2-1162-1): every ZCode store also waits for the saved login's own Keychain choice.
+		Keychain: map[string]wire.KeychainChoice{consent.ScopeZaiAccountUsageSavedLogin: wire.KeychainAllow}})
 	if err != nil {
 		t.Fatal(err)
 	}

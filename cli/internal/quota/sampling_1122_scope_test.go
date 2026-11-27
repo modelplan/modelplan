@@ -17,7 +17,7 @@ func TestSampling1122ZCodeRefreshRespectsSelectedScope(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	writeZCodeLogin(t, home, zcodeFixture{family: "zai", kind: "individual-coding-plan", accountKey: true, jwt: zcodeTestJWT(time.Now().Add(time.Hour))})
 	z := newZCodeServer(t, zcodeQuotaBody, 200, "api.z.ai")
-	grantZCodeLogin(t)
+	grantZCodeKeychain(t, "allow") // D380: both choices; every store waits for the Keychain one
 	now := time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC)
 	p := ProductionPathsWithAdmission(t.TempDir(), "1.0.0", consent.Capture())
 	plan, err := PlanScopeRefresh(p, consent.ScopeZaiAccountUsageAPIKey, now)
@@ -82,7 +82,7 @@ func TestSampling1122ChangedLoginHidesPriorQuotaBeforeRefresh(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	dir := writeZCodeLogin(t, home, zcodeFixture{family: "zai", kind: "individual-coding-plan", accountKey: true, jwt: zcodeTestJWT(time.Now().Add(time.Hour))})
 	z := newZCodeServer(t, zcodeQuotaBody, 200, "api.z.ai")
-	grantZCodeLogin(t)
+	grantZCodeKeychain(t, "allow") // D380: both choices; every store waits for the Keychain one
 	now := time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC)
 	cache := t.TempDir()
 	paths := func() Paths { return ProductionPathsWithAdmission(cache, "1.0.0", consent.Capture()) }
@@ -126,7 +126,7 @@ func testSampling1122ForgetZaiScope(t *testing.T, scope string) {
 		writeZCodeProviders(t, home, zcodeTemplateProvider)
 	}
 	newZCodeServer(t, zcodeQuotaBody, 200, "api.z.ai")
-	grantZCodeLogin(t)
+	grantZCodeKeychain(t, "allow") // D380: both choices; every store waits for the Keychain one
 	cache := t.TempDir()
 	now := time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC)
 	p := ProductionPathsWithAdmission(cache, "1.0.0", consent.Capture())
@@ -215,7 +215,7 @@ func TestSampling1122ForgetKeyPreservesLoginReading(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	writeZCodeLogin(t, home, zcodeFixture{family: "zai", kind: "individual-coding-plan", accountKey: true})
 	z := newZCodeServer(t, zcodeQuotaBody, 200, "api.z.ai")
-	grantZCodeLogin(t)
+	grantZCodeKeychain(t, "allow") // D380: both choices; every store waits for the Keychain one
 	cache := t.TempDir()
 	now := time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC)
 	paths := func() Paths { return ProductionPathsWithAdmission(cache, "1.0.0", consent.Capture()) }
@@ -252,7 +252,7 @@ func TestSampling1122LoginSelectionChangeHidesPriorQuota(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	dir := writeZCodeLogin(t, home, zcodeFixture{family: "zai", kind: "individual-coding-plan", accountKey: true})
 	z := newZCodeServer(t, zcodeQuotaBody, 200, "api.z.ai")
-	grantZCodeLogin(t)
+	grantZCodeKeychain(t, "allow") // D380: both choices; every store waits for the Keychain one
 	now := time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC)
 	cache := t.TempDir()
 	paths := func() Paths { return ProductionPathsWithAdmission(cache, "1.0.0", consent.Capture()) }
@@ -284,7 +284,7 @@ func TestSampling1122LoginReplacementBetweenCachePublications(t *testing.T) {
 	fixture := zcodeFixture{family: "zai", kind: "individual-coding-plan", accountKey: true}
 	writeZCodeLogin(t, home, fixture)
 	z := newZCodeServer(t, zcodeQuotaBody, 200, "api.z.ai", "open.bigmodel.cn")
-	grantZCodeLogin(t)
+	grantZCodeKeychain(t, "allow") // D380: both choices; every store waits for the Keychain one
 	now := time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC)
 	cache := t.TempDir()
 	paths := func() Paths { return ProductionPathsWithAdmission(cache, "1.0.0", consent.Capture()) }
@@ -365,7 +365,7 @@ func TestSampling1122DeniedKeyStillAdmitsSavedLogin(t *testing.T) {
 	writeZCodeLogin(t, home, zcodeFixture{family: "zai", kind: "individual-coding-plan", accountKey: true})
 	writeZCodeProviders(t, home, zcodeStaleProviderFiles["no_selection"])
 	z := newZCodeServer(t, zcodeQuotaBody, 200, "api.z.ai")
-	grantZCodeLogin(t)
+	grantZCodeKeychain(t, "allow") // D380: both choices; every store waits for the Keychain one
 	samplingDenyZCodeKey(t)
 	old := zcodeProviderRead
 	defer func() { zcodeProviderRead = old }()
@@ -413,7 +413,7 @@ func TestSampling1122KeylessRouteResolvesUnderReaderLock(t *testing.T) {
 	writeZCodeLogin(t, home, zcodeFixture{family: "zai", kind: "individual-coding-plan", accountKey: true})
 	writeZCodeProviders(t, home, zcodeStaleProviderFiles["no_selection"])
 	z := newZCodeServer(t, zcodeQuotaBody, 200, "api.z.ai")
-	grantZCodeLogin(t)
+	grantZCodeKeychain(t, "allow") // D380: both choices; every store waits for the Keychain one
 	cache := t.TempDir()
 	now := time.Now()
 	paths := func() Paths { return ProductionPathsWithAdmission(cache, "1.0.0", consent.Capture()) }

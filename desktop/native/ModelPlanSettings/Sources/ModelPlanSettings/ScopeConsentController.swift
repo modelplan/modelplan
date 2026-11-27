@@ -311,11 +311,36 @@ public struct FirstRunReading: Sendable, Equatable {
         guard let scope = claudeSavedLogin, scope.keychain != .allow else { return false }
         return scope.keychain == .deny || claudeRowState == .needsKeychain
     }
+    /// D380: ZCode's saved-login path (its QR sign-in), when it is here and allowed. ZCode 3.19+ keeps the store's
+    /// key in the Keychain; the engine's row says needs-Keychain only for such a store, so a v1 store asks nothing.
+    private var zcodeSavedLogin: WireConsentScope? {
+        facts?.scopes.first {
+            $0.tool == "zai" && $0.route == .savedLoginApi && $0.detected && !$0.retired && $0.disabledReason == nil && !$0.cleanupPending
+        }
+    }
+    /// D380: the ZCode row needs the Keychain choice (unset, refused, or the prompt was not answered).
+    public var needsZCodeKeychainAccess: Bool {
+        guard let scope = zcodeSavedLogin, scope.state == .allowed else { return false }
+        return rowStates["zai"] == .needsKeychain
+    }
+    /// Which tool's Keychain button a press belongs to: Claude Code (D41) or ZCode (D380).
+    public func needsKeychainAccess(tool: String) -> Bool {
+        switch tool {
+        case "claude": return needsKeychainAccess
+        case "zai", "zcode", "glm": return needsZCodeKeychainAccess
+        default: return false
+        }
+    }
     public func chooseKeychainLater() { keychainLater = true; changed() }
     /// D41: the button is the consent, so no second confirmation. The engine's foreground read
     /// after this grant is what makes macOS show its dialog; nothing else may trigger it.
-    public func allowKeychain() async {
-        guard canMutate, let id = claudeSavedLogin?.scope else { return }
+    public func allowKeychain() async { await allowKeychain(tool: "claude") }
+    /// D380: the same single consent for ZCode's key. The button is the consent; the engine's foreground read
+    /// after this grant is the only thing that may make macOS show its dialog, and the user's own answer there
+    /// ("Always Allow") is what lets later background reads work. Nothing here pre-approves or bypasses it.
+    public func allowKeychain(tool: String) async {
+        let scope = ["zai", "zcode", "glm"].contains(tool) ? zcodeSavedLogin : claudeSavedLogin
+        guard canMutate, let id = scope?.scope else { return }
         let value = ScopeConsentConfirmation(id: UUID(), intent: .init(mutation: .allow(scopes: [id], keychain: [id])))
         phase = .confirmation(value)
         await confirm(value.id)
@@ -440,6 +465,8 @@ public struct FirstRunReading: Sendable, Equatable {
     /// The engine refuses an allow that names one together with any other scope. Off still refuses them.
     /// G3-154/155: ZCode's QR-code / OAuth sign-in (D369) is a credential read with its own scope, off by default.
     public static let separateOptInScopes: Set<String> = ["gemini.account_usage.token_refresh", ZCodeSavedLogin.scope]
+    /// D380: Keychain-capable scopes whose Keychain read depends on the tool's own store format (ZCode 3.19+ only).
+    public static let conditionalKeychainScopes: Set<String> = ["zai.account_usage.saved_login"]
     /// G3-45: each detected tool once, in the engine's order. Browser-session paths stay out:
     /// they ask on their own at first need (FR-9-05), never through this one consent.
     public var firstRunTools: [FirstRunTool] {
@@ -454,8 +481,10 @@ public struct FirstRunReading: Sendable, Equatable {
                 $0.route.isKnown && $0.route != .knownUnknown && $0.route != .browserSession && $0.disabledReason == nil && !$0.cleanupPending &&
                     !Self.separateOptInScopes.contains($0.scope)
             }
+            // D380: ZCode's saved-login scope has a Keychain choice that only a Keychain-bound store needs (its row
+            // says so), so it does not make first run promise a macOS prompt.
             return FirstRunTool(tool: tool, scopes: standard.map(\.scope), routes: standard.map(\.route), block: block(forTool: tool),
-                                promptsKeychain: standard.contains { $0.keychain != nil }, keyMissing: rowCodes[tool] == .keyMissing)
+                                promptsKeychain: standard.contains { $0.keychain != nil && !Self.conditionalKeychainScopes.contains($0.scope) }, keyMissing: rowCodes[tool] == .keyMissing)
         }
     }
     /// G3-59: Settings lists every tool first run would list (same rows, engine order), then each supported
