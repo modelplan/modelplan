@@ -63,13 +63,14 @@ private actor RowsEntryClient: EngineClient {
         return nil
     }
 
-    private func failedRows(state: String, code: String, accountless: Bool) throws -> WireRowsSnapshot {
+    private func failedRows(state: String, code: String, accountless: Bool, tool: String? = nil) throws -> WireRowsSnapshot {
         let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
         var projection = try XCTUnwrap(root["projection"] as? [String: Any])
         var rows = try XCTUnwrap(projection["rows"] as? [[String: Any]])
         rows[0]["surfaces"] = ["menu", "settings", "dock"]
+        if let tool { rows[0]["id"] = tool; rows[0]["name"] = ["en": "Antigravity", "zh": "Antigravity"] }
         rows[0]["state"] = state
         rows[0]["reason"] = ["code": code, "text": ["en": code, "zh": code]]
         rows[0].removeValue(forKey: "expiresAt"); rows[0].removeValue(forKey: "stateAfterExpiry")
@@ -381,6 +382,20 @@ private actor RowsEntryClient: EngineClient {
         XCTAssertEqual((settingNode(view, id: "subscriptions.status.codex") as? NSTextField)?.stringValue, "Node.js is required")
         XCTAssertEqual((settingNode(view, id: "subscriptions.fix.codex") as? NSButton)?.title, "Install Node.js")
         await app.composition.stop()
+    }
+
+    /// G3-218 (macrev2-1277-1): the native menu line for Antigravity runtime_missing says "not running", from the same cause
+    /// table as its card, not the engine's generic row text. Fails before: the menu line was the raw row reason ("runtime_missing").
+    func testMenuLineForAntigravityRuntimeMissingSaysNotRunning() async throws {
+        let rows = try failedRows(state: "failed", code: "runtime_missing", accountless: false, tool: "antigravity")
+        let store = EngineStore(), source = EngineDockMenuProvider(store: store)
+        let adapter = EngineDockContentProvider(source: source)
+        let fake = RowsEntryClient(store: store, rows: rows); _ = try await fake.start()
+        let content = adapter.makeContent(.init(snapshot: nil, diagnostics: .init(), now: Date()))
+        let line = (content.menuStatusLines ?? []).joined(separator: " · ")
+        XCTAssertTrue(line.contains("not running"), line)
+        XCTAssertFalse(line.contains("not installed"), line)
+        XCTAssertFalse(line.contains("runtime_missing"), line)
     }
 
     /// S9 (post-merge sampling 11-20, #1099 D322-2): a fresh $0 Grok Build balance (no usage percentage) is on the

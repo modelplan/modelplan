@@ -33,6 +33,8 @@ export interface CautionItem {
  readonly text:Both; readonly short?:Both;
  /** CKP-MFD-55: the alert list's second line (available resets, or the Settings action of a grey row). */
  readonly detail?:Both;
+ /** The row's tooltip, for an entry whose uncertainty the sentence cannot carry (a tentative published peak). */
+ readonly tip?:Both;
  /** CKP-MFD-56: a grey row opens Settings › Subscriptions instead of selecting the subscription. */
  readonly settings?:true;
  /** A grey row is either a retained (stale) reading or one that cannot be read at all (WP-12: only the latter merge). */
@@ -79,7 +81,7 @@ export function cautionItems(data:WireCockpitData,now:number,redBelow:number):Ca
   }
   if(account.valueState==='none'){
    const code=account.lastFailure?.code??null;
-   if(isUnreadable(code)){const s=alertSentence({kind:'unreadable',subscription:subscription(row),cause:code});grey.push({id:JSON.stringify(['unread',key,code]),stable:JSON.stringify(['unread',key]),level:'grey',kind:'unreadable',member:key,settings:true,detail:openSettingsAction(),text:s.text,short:s.short});}
+   if(isUnreadable(code)){const s=alertSentence({kind:'unreadable',subscription:subscription(row),cause:code,tool:row.id});grey.push({id:JSON.stringify(['unread',key,code]),stable:JSON.stringify(['unread',key]),level:'grey',kind:'unreadable',member:key,settings:true,detail:openSettingsAction(),text:s.text,short:s.short});}
    continue;
   }
   const extra=available(key,unstable),detail=extra?{detail:resetsAvailable(extra.partial?null:extra.n)}:{};
@@ -110,7 +112,7 @@ export function cautionItems(data:WireCockpitData,now:number,redBelow:number):Ca
    const code=account?.lastFailure?.code??row.reason.code;
    if(!isUnreadable(code))continue;
    taken.add(key);
-   const s=alertSentence({kind:'unreadable',subscription:subscription(row),cause:code});
+   const s=alertSentence({kind:'unreadable',subscription:subscription(row),cause:code,tool:row.id});
    grey.push({id:JSON.stringify(['unread',key,code]),stable:JSON.stringify(['unread',key]),level:'grey',kind:'unreadable',member:key,settings:true,detail:openSettingsAction(),text:s.text,short:s.short});
   }
  }
@@ -143,10 +145,12 @@ export function cautionItems(data:WireCockpitData,now:number,redBelow:number):Ca
   const m=members.find(x=>x.row.id===peak.rowId),start=Date.parse(peak.startsAt),end=peak.endsAt?Date.parse(peak.endsAt):NaN;
   if(!m||!Number.isFinite(start)||(Number.isFinite(end)&&end<=now))continue;
   const s=(lang:'en'|'zh-CN')=>lang==='en'?m.row.name.en:m.row.name.zh,id=JSON.stringify(['peak',peak.rowId,peak.startsAt]),stable=JSON.stringify(['peak',peak.rowId]);
-  if(start<=now){list.push({id,stable,level:'blue',member:m.key,text:{en:`${s('en')} ${tables.en['mfd.peak']} · ${tables.en['mfd.peakNow']}`,zh:`${s('zh-CN')} ${tables['zh-CN']['mfd.peak']} · ${tables['zh-CN']['mfd.peakNow']}`}});continue;}
+  // A peak the producer did not confirm (a tool-read ZCode subscription, or a tentative window) says so, in the sentence and the tooltip.
+  const tentative=peak.status!=='confirmed',tip=tentative?both('host.alPeakTip',()=>({})):undefined;
+  if(start<=now){list.push({id,stable,level:'blue',member:m.key,tip,text:tentative?both('host.alPeakNowT',lang=>({s:s(lang)})):{en:`${s('en')} ${tables.en['mfd.peak']} · ${tables.en['mfd.peakNow']}`,zh:`${s('zh-CN')} ${tables['zh-CN']['mfd.peak']} · ${tables['zh-CN']['mfd.peakNow']}`}});continue;}
   const wait=(start-now)/60000;
-  if(Number.isFinite(end))list.push({id,stable,level:'blue',member:m.key,text:both('alert.peak',lang=>({s:s(lang),in:dhm(wait),dur:dhm((end-start)/60000)}))});
-  else list.push({id,stable,level:'blue',member:m.key,text:both('host.alPeakOpen',lang=>({s:s(lang),in:dhm(wait)}))});
+  if(Number.isFinite(end))list.push({id,stable,level:'blue',member:m.key,tip,text:both(tentative?'host.alPeakT':'alert.peak',lang=>({s:s(lang),in:dhm(wait),dur:dhm((end-start)/60000)}))});
+  else list.push({id,stable,level:'blue',member:m.key,tip,text:both(tentative?'host.alPeakOpenT':'host.alPeakOpen',lang=>({s:s(lang),in:dhm(wait)}))});
  }
  // CKP-MFD-55: tightest first within a colour: the lowest remaining, then the soonest reset.
  lamp.sort((a,b)=>rank[a.item.level]-rank[b.item.level]||a.remaining-b.remaining||a.resetAt-b.resetAt);

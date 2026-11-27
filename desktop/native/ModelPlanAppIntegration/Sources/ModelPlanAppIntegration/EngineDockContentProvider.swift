@@ -368,7 +368,10 @@ public enum EngineDeadlineFacts {
             let row=member.row
             let reading = try? DockInstrumentProjection.evaluate(makeInput(member, now: context.now), now: context.now)
             let number = reading?.remainingPercent.map { " · \(Int($0.rounded()))%" } ?? ""
-            return member.name(english:english) + number + " · " + text(message(row, now: context.now).0.text)
+            // G3-218: the menu line names the cause the way the card does (ReaderCauseTable: Antigravity "not running",
+            // not the engine's generic runtime sentence), from the same causeLine. Keychain rows keep the engine text.
+            let cause = row.id == "claude" && row.state == .needsKeychain ? nil : causeLine(member, now: context.now)?.reason
+            return member.name(english:english) + number + " · " + (cause ?? text(message(row, now: context.now).0.text))
         }
         // S9 (#1099 D322-2): a row on the Settings surface only (a free $0 Grok Build balance) has accounts but no
         // Dock member; its Settings line comes from the same account projection, from the Settings surface.
@@ -607,7 +610,16 @@ public enum EngineDeadlineFacts {
         }
         return (row.reason, row.nextStep)
     }
-    private func quotaLabel(_ role:RowsRole) -> String {
+    /// D417: an extra window is named by what it is (MCP, Opus, Fable), from the engine's own short label, never "Other".
+    /// Only a window the engine names (a model scope or the MCP allowance) takes that label; the rest keep the role heading.
+    private func quotaLabel(_ window:RowsWindow) -> String {
+        Self.rowLabel(role: window.role, limitKey: window.limitKey, scoped: window.modelScope != nil, name: text(window.label), english: english)
+    }
+    static func rowLabel(role:RowsRole, limitKey:String, scoped:Bool, name:String, english:Bool) -> String {
+        if (scoped || limitKey == "mcp") && name.count <= 6 { return name }
+        return quotaLabel(role, english: english)
+    }
+    private static func quotaLabel(_ role:RowsRole, english:Bool) -> String {
         switch role {
         case .session:return english ? "5h":"5小时"
         case .weekly:return english ? "Weekly":"每周"
@@ -637,7 +649,7 @@ public enum EngineDeadlineFacts {
                 case .monthly: period = .month
                 case .other,.unknown: period = .other
                 }
-                var projected=DockQuotaWindowInput(id: window.id, period: period, label: quotaLabel(window.role),
+                var projected=DockQuotaWindowInput(id: window.id, period: period, label: quotaLabel(window),
                     remainingPercent: current ? window.remainingPercent : nil,
                     resetsAt: current ? date(window.resetsAt) : nil,
                     durationSeconds: window.durationSeconds.map { Double($0) })

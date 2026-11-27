@@ -111,10 +111,10 @@ test('D323/D328: the calendar draws its column and screen, and falls back to D29
  assert.deepEqual(waiting.cells.map(c=>c.tag.full),['plugin.calendarWaiting']);assert.equal(waiting.foot,null);assert.equal(waiting.draw,null);
 });
 
-test('D328: a user with no peak rules gets D293 cells and "Peak: no peak rules", and no strip',()=>{
+test('D406: a user with no peak rules (Codex only) still gets the day view: reset chips, now line and the no-rules note; cells stay the host fallback',()=>{
  const codexOnly={...week,peakRules:'no',subs:[week.subs[1]],peaks:[],resets:[{sub:0,at:local(2026,11,11,14,10),kind:'5h'},{sub:0,at:local(2026,11,13,6),kind:'week'}],spans:[]};
  const column=calendarPlugin.column(calendarPlugin.accept(codexOnly,undefined),context);
- assert.equal(column.draw,null,'column() returns no draw without peak data');
+ assert.equal(typeof column.draw,'function','column() always draws the day view when there is a reading');
  assert.deepEqual(column.cells.map(c=>c.tag.full),['plugin.calendarReset','plugin.calWeekReset']);
  assert.equal(column.cells[0].big,'14:10');assert.equal(column.cells[0].side.full,'plugin.calIn{"t":"2h50"}');
  assert.equal(column.cells[1].big,'06:00');assert.equal(column.cells[1].subline.text.short,'Codex');
@@ -204,6 +204,9 @@ test('macrevc-844-4: missing peak data, no window and known no-rules are three s
  // Feed present, empty, only tool rows (no declared plan): no peak rules.
  const noRules=structuredClone(data);noRules.details.peaks=[];noRules.subscriptions=[];noRules.projection.rows=noRules.projection.rows.filter(r=>!r.id.startsWith('declared:'));
  assert.equal(calendarFromCockpit(noRules,NOW).peakRules,'no');
+ // A tool-read ZCode row (no declared plan) with no window in the horizon: its provider has peak rules, so not "No rules" (D328/D406).
+ const zai=structuredClone(noRules);{const row=structuredClone(zai.projection.rows[0]);row.id='zai';row.name={en:'ZCode',zh:'ZCode'};row.vendorKey='glm';zai.projection.rows.push(row);}
+ assert.equal(calendarFromCockpit(zai,NOW).peakRules,'yes');
  const column=peakRules=>calendarPlugin.column(calendarPlugin.accept({...week,peaks:[],peakRules},undefined),context).foot.value.full;
  assert.equal(column('no'),'plugin.calNoRules');
  assert.notEqual(column('yes'),'plugin.calNoRules');assert.equal(column('yes'),'plugin.calendarNone');

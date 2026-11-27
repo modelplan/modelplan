@@ -14,7 +14,7 @@ import {HOUR,WEEK_DAYS,addDays,dayOffset,dayPieces,dayWindow,hhmm,hourMarks,isWe
 
 // Every word the calendar draws comes from the plugin string table (strings/plugins.js, `plugin.cal*`), in the locale
 // of the draw context; nothing here picks a language's text inline.
-const WORDS=['now','allDay','peak','cont','r5','week5','weekly','weeklyLong','wk','cards','cardsFull','credit','direct','until','announced','confirmed','effective','empty','waiting','zoomed','tentative','announcedOn','winWeek','win5'] as const;
+const WORDS=['now','allDay','peak','cont','r5','week5','weekly','weeklyLong','wk','cards','cardsFull','credit','direct','until','announced','confirmed','effective','empty','waiting','zoomed','tentative','announcedOn','winWeek','win5','noRules'] as const;
 type Words={readonly [k in typeof WORDS[number]]:string}&{readonly days:readonly string[];readonly weekdays:readonly string[];readonly narrow:readonly string[]};
 function wordsOf(context:PluginContext):Words {
  const word=(key:string)=>context.words('plugin.'+key).full,out:Record<string,unknown>={};
@@ -112,17 +112,20 @@ function paintStrip(context:PluginDrawContext,reading:CalendarData) {
  }
  // Now: the line, with the time in the gutter to its left.
  const line=el('div','cal-nl');line.style.top='0%';axis.append(line,el('div','cal-nt',hhmm(now)));
- if(!pieces.length&&!chips.length&&!rows.length)axis.append(el('p','cal-empty',w.empty));
+ if(!data.peaks.length&&data.peakRules==='no')axis.append(el('p','cal-note',w.noRules));
+ if(!pieces.length&&!chips.length&&!rows.length&&!axis.querySelector('.cal-note'))axis.append(el('p','cal-empty',w.empty));
  settleChips(axis);
 }
 /** Reset chips and moved-out peak times never overlap: one that would sit on the one above moves down (the axis is
  *  measured when drawn). */
+/** The no-rules note's own band at the foot of the axis (11 px line + 3 px offset): chips settle above it. */
+const NOTE_ROOM=14;
 function settleChips(axis:HTMLElement) {
- const h=axis.clientHeight||160,chips=[...axis.querySelectorAll<HTMLElement>('.cal-ch,.cal-pkt')].sort((a,b)=>Number(a.dataset.y)-Number(b.dataset.y)),ch=12,gap=1;
+ const h=axis.clientHeight||160,floor=axis.querySelector('.cal-note')?h-NOTE_ROOM:h,chips=[...axis.querySelectorAll<HTMLElement>('.cal-ch,.cal-pkt')].sort((a,b)=>Number(a.dataset.y)-Number(b.dataset.y)),ch=12,gap=1;
  const ys=chips.map(c=>Number(c.dataset.y)*h-ch/2);
  for(let i=0;i<ys.length;i++)ys[i]=Math.max(ys[i]!,i?ys[i-1]!+ch+gap:0);
  // Pushed past the bottom: settle upwards from the end instead (they only overlap when the axis cannot hold them all).
- for(let i=ys.length-1;i>=0;i--)ys[i]=Math.max(0,Math.min(ys[i]!,i===ys.length-1?h-ch:ys[i+1]!-ch-gap));
+ for(let i=ys.length-1;i>=0;i--)ys[i]=Math.max(0,Math.min(ys[i]!,i===ys.length-1?floor-ch:ys[i+1]!-ch-gap));
  chips.forEach((c,i)=>{c.style.top=`${ys[i]!.toFixed(1)}px`;});
 }
 /** "2h50", "35m": a duration the way the bottom line writes it. */
@@ -344,9 +347,9 @@ export const calendarPlugin:CockpitPlugin=Object.freeze({
  nextDeadline:(_state:unknown,now:number)=>now?nextMinute(now):null,
  column(state:unknown,context:PluginContext){
   const data=readingOf(state);
-  // D328: no peak rules (only Codex, say): the D293 cells and "Peak: no peak rules", no strip, unless a public reset notice
-  // is current: its all-day line must not be lost.
-  const strip=data&&(data.peaks.length||data.spans.some(x=>x.kind!=='cards'))?(c:PluginDrawContext)=>paintStrip(c,data):null;
+  // D406: one style for everyone. The day view is drawn whenever there is a reading; with no peak rules it holds the
+  // reset chips, the now line and a quiet "no rules" note. The cells stay only as the host's fallback if drawing fails.
+  const strip=data&&context.now?(c:PluginDrawContext)=>paintStrip(c,data):null;
   return {cells:fallbackCells(data,context),foot:footOf(data,context),draw:strip};
  },
  screen(state:unknown,context:PluginContext){

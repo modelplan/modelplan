@@ -518,6 +518,9 @@ func (b *SharedBackend) Grant(ctx context.Context, p wire.ConsentGrantParams) (G
 	if !b.config.Offline && receipt.Committed && !receipt.Replayed && keychain[consent.ScopeClaudeAccountUsageSavedLogin] == "allow" {
 		result.Credentials = []CredentialNeed{{Provider: "claude", Scope: consent.ScopeClaudeAccountUsageSavedLogin, Interactive: true}}
 	}
+	if !b.config.Offline && receipt.Committed && !receipt.Replayed && keychain[consent.ScopeZaiAccountUsageSavedLogin] == "allow" {
+		result.Credentials = append(result.Credentials, CredentialNeed{Provider: "zai", Scope: consent.ScopeZaiAccountUsageSavedLogin, Interactive: true})
+	}
 	if receipt.Committed && !receipt.Replayed && b.config.Granted != nil {
 		b.config.Granted()
 	}
