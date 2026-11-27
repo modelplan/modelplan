@@ -79,7 +79,7 @@ function reserve(col,m,ui){
   const left=r.warn&&r.firstExpiry!=null?until(r.firstExpiry,ui.now):null;
   const words=r.cards==null?'':t(r.cards===1?'eng.resetWordOne':'eng.resetsWords',{n:r.cards}),compact=r.cards==null?'':t(r.cards===1?'eng.resetCompactOne':'eng.resetsCompact',{n:r.cards});
   const exp=left?t('eng.expires',{t:left}):'',expShort=left?t('eng.expiresShort',{t:left}):'';
-  const plus=r.plus>0?`<b class="qrv-plus" aria-hidden="true">+${r.plus}</b>`:'';
+  const plus=r.plus>0?`<b class="qrv-plus" aria-hidden="true" data-news="${esc(r.plusMarks||'')}">+${r.plus}</b>`:'';
   // G3-109: a money balance arrives formatted and escaped; it reads "Balance $12.34", or the value alone when narrow.
   const points=r.money?t('eng.balance',{v:r.money}):r.credits==null?'':t('eng.points',{v:formatCredits(r.credits,ui.lang).replace('<','&lt;')});
   const aria=[words,r.plus>0?t('eng.plusAria',{n:r.plus}):'',exp,points].filter(Boolean).join(' · ');
@@ -109,7 +109,7 @@ function column(col,m,ui,changed){
  const cells=col.state==='error'&&!m.rows.some(r=>col.cells[r])?{...col.cells,[m.rows[0]]:UNREAD}:col.cells;
  return `<div class="ec${col.tint?' tint-'+col.tint:''}${col.grey?' grey':''}${col.off?' dimmed':''}" data-col="${esc(col.id)}" data-state="${esc(col.state)}">`+
  m.rows.map(r=>col.state==='loading'?placeholder(col,r):cells[r]?cell(col,cells[r],r,m,ui,changed.has(`${col.id}:${r}`),m.rows.find(x=>cells[x])):`<div class="qcell none" data-row="${r}"></div>`).join('')+today(col,m)+(m.reserve?reserve(col,m,ui):'')+(m.rich?detail(col,ui):'')+'</div>';}
-const key=col=>`<button class="ek bd-r${col.on?' on':''}${col.off?' off':''}" data-sub="${esc(col.id)}" data-col="${esc(col.id)}" data-mat="part" title="${esc(col.name)}" aria-pressed="${col.on}" aria-label="${esc(t('eng.keyAria',{name:col.name,k:col.key}))}"><span class="ek-identity"><img class="lamp" src="assets/brands/${esc(col.logo)}" alt=""><span class="ek-name" data-full="${esc(col.short)}" data-short="${esc(col.alias||col.short)}" title="${esc(col.name)}">${esc(col.short)}</span></span><i class="bl" style="--v:${esc(col.colour)}"></i><span class="ki">${col.key}</span>${col.news?`<i class="ek-news ${col.news==='confirmed'?'solid':'hollow'}" role="img" aria-label="${esc(t(col.news==='confirmed'?'eng.newsConfirmed':'eng.newsAnnounced'))}"></i>`:''}</button>`;
+const key=col=>`<button class="ek bd-r${col.on?' on':''}${col.off?' off':''}" data-sub="${esc(col.id)}" data-col="${esc(col.id)}" data-mat="part" title="${esc(col.name)}" aria-pressed="${col.on}" aria-label="${esc(t('eng.keyAria',{name:col.name,k:col.key}))}"><span class="ek-identity"><img class="lamp" src="assets/brands/${esc(col.logo)}" alt=""><span class="ek-name" data-full="${esc(col.short)}" data-short="${esc(col.alias||col.short)}" title="${esc(col.name)}">${esc(col.short)}</span></span><i class="bl" style="--v:${esc(col.colour)}"></i><span class="ki">${col.key}</span>${col.news?`<i class="ek-news ${col.news==='confirmed'?'solid':'hollow'}" data-news="${esc(col.newsMarks||'')}" role="img" aria-label="${esc(t(col.news==='confirmed'?'eng.newsConfirmed':'eng.newsAnnounced'))}"></i>`:''}</button>`;
 // D417: the third row's heading names what its cells are when every column agrees (MCP, Opus, ...); mixed columns
 // carry their own names in the cells and the heading says only that these are extra windows, never a bare "Other".
 export function otherHeading(m) {

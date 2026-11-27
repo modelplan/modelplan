@@ -105,3 +105,17 @@ test('macrevb-1290-1 drawnNews keeps only announcements of shown subscriptions',
  try{assert.deepEqual(drawnNews(d).map(e=>e.id),[],'its only subscription is hidden');}finally{setHiddenMembers([]);}
  assert.deepEqual(drawnNews(d).map(e=>e.id),['h1'],'shown again');
 });
+// macrevb-1290-1 round 2: what the surfaces mark is what the clock may treat as looked at.
+test('macrevb-1290-1 marks: observe reports a first look; renderedMarks reads only laid-out marks; alert rows carry the mark',async()=>{
+ const {newsMark,renderedMarks}=await import('../../../cockpit/.tmp/compiled/src/news-clock.js');
+ const c=createNewsClock();
+ assert.equal(c.observe([confirmed],T0+MIN,true),true);assert.equal(c.observe([confirmed],T0+2*MIN,true),false);
+ assert.equal(newsMark({id:'a b#c',status:'confirmed'}),'a%20b%23c#confirmed');
+ const el=(news,rects)=>({isConnected:true,dataset:{news},getClientRects:()=>({length:rects}),closest:()=>null});
+ const root={querySelectorAll:()=>[el('x#confirmed y#announced',1),el('z#confirmed',0)]};
+ assert.deepEqual([...renderedMarks(root)],['x#confirmed','y#announced']);
+ newsClock.reset();
+ const d=capture(),row=d.projection.rows[0];
+ d.details.resetEvents=[{version:1,id:'m1',rowId:row.id,provider:'openai',status:'announced',publishedAt:iso(T0),expiresAt:iso(T0+7*24*H),source:{kind:'publication',publicationId:'p'}}];
+ assert.equal(cautionItems(d,T0+MIN,25).find(x=>x.id.includes('reset')).news,'m1#announced');
+});

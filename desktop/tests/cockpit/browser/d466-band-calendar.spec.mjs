@@ -185,7 +185,7 @@ test('D466 the agenda news line and the key dot retire together at the look dead
  const {send,receive}=await open(page,{data});
  await page.locator('.mfd-pk .pk[data-mfd="page:calendar"]').click();
  const news=page.locator('.pg-calendar .cal-news');
- await expect(news).toHaveCount(1);await expect(news).toContainText('+1');
+ await expect(news).toHaveCount(1);await expect(news).toContainText('+1');await expect(news).toHaveAttribute('data-news','codex-banked-1127#confirmed');
  await expect(page.locator('.eng-keys .ek[data-sub] .ek-news')).toHaveCount(1);
  expect(await receive(send('tick',{nowUnixMs:String(NOW+30*60_000),reason:'deadline'}))).toBe(true);
  await expect(page.locator('.pg-calendar .cal-news')).toHaveCount(0);

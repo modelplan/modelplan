@@ -39,6 +39,8 @@ export function itemTime(x:CalItem):string {
  if(x.allDay)return t('cal.allDay');
  return x.kind==='peak'?`${hhmm(x.at)}–${x.end===null?'…':hhmm(x.end)}`:hhmm(x.at);
 }
+/** D466: rendered news carries its mark, so the news clock records a look only for what is on screen. */
+const marked=(e:HTMLElement,x:CalItem)=>{if(x.news&&x.mark)e.dataset.news=x.mark;return e;};
 const tone=(x:CalItem)=>x.kind==='peak'?'peak':x.kind==='runout'?'warn':x.kind==='official'||x.kind==='credit'?(x.news?'news':'past'):x.kind==='reserve'?'reserve':'reset';
 
 // --- the 24 h strip ------------------------------------------------------------------------------------------------
@@ -56,7 +58,7 @@ export function paintStrip(column:HTMLElement,model:CalModel,sub:number,locale:L
  for(const x of own){
   if(x.kind==='peak'){const p=mark('st-peak'+(x.tentative?' tent':''),Math.max(x.at,span.from),Math.min(x.end??span.to,span.to));p.style.setProperty('--c',model.subs[sub]!.colour);}
   else if(x.kind==='runout')mark('st-run',x.at);
-  else if(x.kind==='official'||x.kind==='credit')mark('st-off',x.at);
+  else if(x.kind==='official'||x.kind==='credit')marked(mark('st-off',x.at),x);
   else mark('st-reset',x.at);
  }
  mark('st-now',now);
@@ -64,9 +66,9 @@ export function paintStrip(column:HTMLElement,model:CalModel,sub:number,locale:L
  return hit;
 }
 /** The hover card's lines for one subscription: the next 24 h, else "nothing" and the next two items after it. */
-export function nextLines(model:CalModel,sub:number,locale:Locale):{title:string;now:string|null;lines:{time:string;text:string;tone:string}[];empty:boolean} {
+export function nextLines(model:CalModel,sub:number,locale:Locale):{title:string;now:string|null;lines:{time:string;text:string;tone:string;mark:string|null}[];empty:boolean} {
  const now=model.now,s=model.subs[sub]!,mine=model.items.filter(x=>x.sub===sub&&!x.allDay&&!x.projected);
- const soon=within(mine,now,now+24*HOUR).sort((a,b)=>a.at-b.at),line=(x:CalItem)=>({time:itemTime(x),text:itemWords(x,locale),tone:tone(x)});
+ const soon=within(mine,now,now+24*HOUR).sort((a,b)=>a.at-b.at),line=(x:CalItem)=>({time:itemTime(x),text:itemWords(x,locale),tone:tone(x),mark:x.news?x.mark:null});
  let state:string|null=null;
  if(s.rules){const live=mine.find(x=>x.kind==='peak'&&x.at<=now&&(x.end===null||x.end>now));state=live?t('cal.inPeak',{t:live.end===null?'…':hhmm(live.end)}):t('cal.offPeak');}
  const upcoming=soon.filter(x=>!(x.kind==='peak'&&x.at<=now));
@@ -81,7 +83,7 @@ export function stripCard(host:HTMLElement,anchor:HTMLElement,model:CalModel,sub
  card.append(el('span','h',n.title));
  if(n.now){const r=el('span','ln now');r.append(el('b','',`${t('cal.nowLabel')} ${hhmm(model.now)}`),el('em','',n.now));card.append(r);}
  if(n.empty)card.append(el('span','ln quiet',t('cal.nothing24')));
- for(const [i,x] of n.lines.entries()){const r=el('span','ln '+x.tone);r.append(el('b','',(n.empty&&!i?`${t('cal.later')} `:'')+x.time),el('em','',x.text));card.append(r);}
+ for(const [i,x] of n.lines.entries()){const r=el('span','ln '+x.tone);if(x.mark)r.dataset.news=x.mark;r.append(el('b','',(n.empty&&!i?`${t('cal.later')} `:'')+x.time),el('em','',x.text));card.append(r);}
  const link=el('button','ln link',t('cal.open7'));link.type='button';link.onclick=e=>{if(e.isTrusted)open();};card.append(link);
  host.append(card);
  const box=host.getBoundingClientRect(),r=anchor.getBoundingClientRect(),w=card.offsetWidth,h=card.offsetHeight;
@@ -108,7 +110,7 @@ export function paintCalendarPage(page:HTMLElement,model:CalModel,o:CalendarPage
 }
 function newsLine(box:HTMLElement,model:CalModel,o:CalendarPageOptions){
  const news=model.items.filter(x=>x.news);if(!news.length)return;
- const x=news[news.length-1]!,line=el('p','cal-news');line.append(el('i','al-dot '+(x.status==='confirmed'?'solid':'hollow')),el('span','',`${nameOf(model,x.sub,o.locale)} ${itemWords(x,o.locale)} · ${x.allDay?monthDay(x.at):hhmm(x.at)}`));
+ const x=news[news.length-1]!,line=el('p','cal-news');marked(line,x);line.append(el('i','al-dot '+(x.status==='confirmed'?'solid':'hollow')),el('span','',`${nameOf(model,x.sub,o.locale)} ${itemWords(x,o.locale)} · ${x.allDay?monthDay(x.at):hhmm(x.at)}`));
  box.append(line);
 }
 /** 今天: the strips enlarged, one lane per subscription, with one line of words per item at its time. */
@@ -120,7 +122,7 @@ function agenda(box:HTMLElement,head:HTMLElement,model:CalModel,o:CalendarPageOp
  for(const h of hourMarks(span,6)){const g=el('i','ag-h',h.hour===0?`00 ${weekday(h.at)}`:String(h.hour).padStart(2,'0'));g.style.top=pct(Y(h.at));axis.append(g);}
  model.subs.forEach((s,i)=>{const lane=el('div','ag-lane');lane.dataset.sub=String(i);lane.title=nameOf(model,i,o.locale);
   for(const x of within(model.items,span.from,span.to).filter(x=>x.sub===i&&!x.allDay)){
-   const m=el('i',x.kind==='peak'?'st-peak':x.kind==='runout'?'st-run':x.kind==='official'||x.kind==='credit'?'st-off':'st-reset');
+   const m=marked(el('i',x.kind==='peak'?'st-peak':x.kind==='runout'?'st-run':x.kind==='official'||x.kind==='credit'?'st-off':'st-reset'),x);
    m.style.top=pct(Y(Math.max(x.at,span.from)));if(x.kind==='peak'){m.style.height=pct(Y(Math.min(x.end??span.to,span.to))-Y(Math.max(x.at,span.from)));m.style.setProperty('--c',s.colour);}lane.append(m);
   }
   const nowBar=el('i','st-now');nowBar.style.top='0%';lane.append(nowBar);lanes.append(lane);});
@@ -130,7 +132,7 @@ function agenda(box:HTMLElement,head:HTMLElement,model:CalModel,o:CalendarPageOp
  const nowLine=el('p','ag-w now');nowLine.append(el('b','',`${t('cal.nowLabel')} ${hhmm(now)}`),el('span','',state.map((v,i)=>v?`${many?nameOf(model,i,o.locale)+' ':''}${v}`:'').filter(Boolean).join(' · ')));
  lines.push({y:0,e:nowLine});
  for(const x of within(model.items,span.from,span.to).filter(x=>!x.allDay&&!(x.kind==='peak'&&x.at<=now))){
-  const p=el('p','ag-w '+tone(x));p.append(el('b','',itemTime(x)),el('span','',`${many?nameOf(model,x.sub,o.locale)+' ':''}${itemWords(x,o.locale)}`));lines.push({y:Y(x.at),e:p});
+  const p=marked(el('p','ag-w '+tone(x)),x);p.append(el('b','',itemTime(x)),el('span','',`${many?nameOf(model,x.sub,o.locale)+' ':''}${itemWords(x,o.locale)}`));lines.push({y:Y(x.at),e:p});
   if(x.kind==='peak'&&x.end!==null&&x.end<span.to){const q=el('p','ag-w reset');q.append(el('b','',hhmm(x.end)),el('span','',`${many?nameOf(model,x.sub,o.locale)+' ':''}${t('cal.offPeakAt')}`));lines.push({y:Y(x.end),e:q});}
  }
  lines.sort((a,b)=>a.y-b.y);for(const l of lines){l.e.dataset.y=String(l.y);words.append(l.e);}
@@ -172,7 +174,7 @@ function week(box:HTMLElement,head:HTMLElement,model:CalModel,o:CalendarPageOpti
  for(const x of inWeek.filter(x=>x.allDay)){
   const i=dayOffset(now,x.at);if(i<0||i>=DAYS)continue;
   const chip=el('span','w7-chip '+x.kind+(x.news?' news':x.kind==='official'||x.kind==='credit'?' past':''),x.kind==='reserve'?t('cal.reserveChip'):x.kind==='credit'?t('cal.creditChip'):t('cal.officialChip'));
-  chip.style.setProperty('--c',model.subs[x.sub]!.colour);place(chip,i);if(lanes[i])chip.style.top=`${1+lanes[i]!*13}px`;lanes[i]!++;
+  marked(chip,x);chip.style.setProperty('--c',model.subs[x.sub]!.colour);place(chip,i);if(lanes[i])chip.style.top=`${1+lanes[i]!*13}px`;lanes[i]!++;
   chip.title=`${nameOf(model,x.sub,o.locale)} ${itemWords(x,o.locale)}`;allDay.append(chip);
  }
  if(Math.max(...lanes)>1)allDay.style.height=`${3+13*Math.max(...lanes)}px`;
@@ -191,7 +193,7 @@ function week(box:HTMLElement,head:HTMLElement,model:CalModel,o:CalendarPageOpti
   if(x.kind==='reset5h'){if(i!==0||next5.has(String(x.sub)))continue;next5.add(String(x.sub));}
   if(x.kind==='runout'){const line=el('i','w7-run');line.style.top=pct(wallHours(x.at)/24);place(line,i);line.title=`${nameOf(model,x.sub,o.locale)} ${itemWords(x,o.locale)} ${hhmm(x.at)}`;body.append(line);continue;}
   const chip=el('span','w7-rc '+x.kind+(x.kind==='official'||x.kind==='credit'?(x.news?' news':' past'):''),x.kind==='resetWeek'?t('cal.weekChip'):x.kind==='resetMonth'?(x.label?(o.locale==='en'?x.label.en:x.label.zh):t('cal.monthly')):hhmm(x.at));
-  chip.style.setProperty('--c',model.subs[x.sub]!.colour);chip.style.top=pct(wallHours(x.at)/24);chip.style.left=`calc(${col(i)} + 2px)`;chip.style.maxWidth=`calc(${colW} - 4px)`;
+  marked(chip,x);chip.style.setProperty('--c',model.subs[x.sub]!.colour);chip.style.top=pct(wallHours(x.at)/24);chip.style.left=`calc(${col(i)} + 2px)`;chip.style.maxWidth=`calc(${colW} - 4px)`;
   chip.title=`${nameOf(model,x.sub,o.locale)} ${itemWords(x,o.locale)} ${hhmm(x.at)}`;body.append(chip);
  }
  const nowLine=el('i','w7-now');nowLine.style.top=pct(wallHours(now)/24);place(nowLine,0);body.append(nowLine);
@@ -202,7 +204,7 @@ function week(box:HTMLElement,head:HTMLElement,model:CalModel,o:CalendarPageOpti
  const dayItems=within(model.items,from,to).filter(x=>!(x.kind==='reset5h'&&pick>0)).sort((a,b)=>Number(b.allDay)-Number(a.allDay)||a.at-b.at);
  const seen5=new Set<number>();
  for(const x of dayItems){if(x.kind==='reset5h'){if(seen5.has(x.sub))continue;seen5.add(x.sub);}
-  const p=el('p','w7-li '+tone(x));const mark=el('i','w7-sw');mark.style.background=model.subs[x.sub]!.colour;p.append(mark,el('b','',x.kind==='peak'&&x.at<from?`… – ${x.end===null?'…':hhmm(x.end)}`:itemTime(x)),el('span','',`${many?nameOf(model,x.sub,o.locale)+' ':''}${itemWords(x,o.locale)}`));listBox.append(p);}
+  const p=marked(el('p','w7-li '+tone(x)),x);const mark=el('i','w7-sw');mark.style.background=model.subs[x.sub]!.colour;p.append(mark,el('b','',x.kind==='peak'&&x.at<from?`… – ${x.end===null?'…':hhmm(x.end)}`:itemTime(x)),el('span','',`${many?nameOf(model,x.sub,o.locale)+' ':''}${itemWords(x,o.locale)}`));listBox.append(p);}
  if(!dayItems.length)listBox.append(el('p','w7-li quiet',t('cal.nothingDay')));
  box.append(listBox);
 }
@@ -214,7 +216,7 @@ function list(box:HTMLElement,head:HTMLElement,model:CalModel,o:CalendarPageOpti
  const out=el('div','cal-30');let day=-1;
  for(const x of items){
   const d=startOfDay(x.at);if(d!==day){day=d;out.append(el('p','c30-d',`${monthDay(d)} ${dayTitle(d,now)}`));}
-  const p=el('p','c30-li '+tone(x));const mark=el('i','w7-sw');mark.style.background=model.subs[x.sub]!.colour;p.append(mark,el('b','',itemTime(x)),el('span','',`${many?nameOf(model,x.sub,o.locale)+' ':''}${itemWords(x,o.locale)}`));out.append(p);
+  const p=marked(el('p','c30-li '+tone(x)),x);const mark=el('i','w7-sw');mark.style.background=model.subs[x.sub]!.colour;p.append(mark,el('b','',itemTime(x)),el('span','',`${many?nameOf(model,x.sub,o.locale)+' ':''}${itemWords(x,o.locale)}`));out.append(p);
  }
  if(!items.length)out.append(el('p','c30-li quiet',t('cal.nothingRange')));
  box.append(out);

@@ -12,7 +12,7 @@ import {esc} from './fmt.js';
 export const bullet = x => x.dot ? `<i class="al-dot ${x.dot === 'hollow' ? 'hollow' : 'solid'}" aria-hidden="true"></i>` : '<i aria-hidden="true"></i>';
 
 export function alertsPage(items, {back, mark = null, flash = false, ack = false}) {
-  const rows = items.map((x, i) => `<li class="al-${x.level}${mark !== null && x.stable === mark ? ' al-mark' + (flash ? ' al-flash' : '') : ''}"><button type="button" class="al-row" data-al="${i}" data-al-id="${esc(x.stable)}" data-al-member="${esc(x.member ?? '')}"${x.tip ? ` title="${esc(x.tip)}"` : ''}${x.settings ? ' data-al-settings=""' : ''}>${bullet(x)}<span class="al-l1">${esc(x.text)}</span>${x.detail ? `<span class="al-l2">${esc(x.detail)}</span>` : ''}</button></li>`).join('');
+  const rows = items.map((x, i) => `<li class="al-${x.level}${mark !== null && x.stable === mark ? ' al-mark' + (flash ? ' al-flash' : '') : ''}"${x.news ? ` data-news="${esc(x.news)}"` : ''}><button type="button" class="al-row" data-al="${i}" data-al-id="${esc(x.stable)}" data-al-member="${esc(x.member ?? '')}"${x.tip ? ` title="${esc(x.tip)}"` : ''}${x.settings ? ' data-al-settings=""' : ''}>${bullet(x)}<span class="al-l1">${esc(x.text)}</span>${x.detail ? `<span class="al-l2">${esc(x.detail)}</span>` : ''}</button></li>`).join('');
   return `<button type="button" class="mfd-back" data-mfd="back" aria-label="${esc(back.aria)}">${esc(back.label)}</button>`
     + `<p class="al-head">${esc(t('mfd.alertsCount', {n: items.length}))}</p>`
     + `<ul class="mfd-alerts all${ack ? ' ack' : ''}">${rows || `<li class="al-none">${esc(t('mfd.noAlerts'))}</li>`}</ul>`;

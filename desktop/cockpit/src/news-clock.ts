@@ -42,10 +42,10 @@ export function newsCap(e:NewsEvent):number|null {
 }
 
 export interface NewsClock {
- /** A render or tick at `now`; `present` is true while the cockpit is visible (open and not occluded). `looked` (default:
+ /** A render or tick at `now` (returns whether a first look was recorded); `present` is true while the cockpit is visible (open and not occluded). `looked` (default:
   *  `present`) says the user looked at the drawn items: in the cockpit an open page is a look; a surface that is shown
   *  without being looked at (the widget before a hover) passes false and is bounded by the present hours instead. */
- observe(events:readonly NewsEvent[],now:number,present:boolean,looked?:boolean):void;
+ observe(events:readonly NewsEvent[],now:number,present:boolean,looked?:boolean):boolean;
  /** The cockpit's visibility changed at `now`. */
  present(value:boolean,now:number):void;
  /** Whether the event is news at `now`. */
@@ -67,7 +67,7 @@ export function createNewsClock():NewsClock {
  const endOf=(x:Entry,cap:number,now:number,present:boolean)=>Math.min(cap,x.firstLooked===null?Infinity:x.firstLooked+NEWS_LOOK_MS,present?now+Math.max(0,NEWS_PRESENT_MS-x.present):Infinity);
  const clock:NewsClock={
   observe(events,now,present,looked=present){
-   if(!Number.isFinite(now)||now<=0)return;
+   if(!Number.isFinite(now)||now<=0)return false;
    shown=present;
    const live=new Set<string>(),looks:{id:string;status:NewsEvent['status']}[]=[];
    for(const e of events){
@@ -86,6 +86,7 @@ export function createNewsClock():NewsClock {
    for(const [key,x] of entries)if(!live.has(key)&&x.end<=now)entries.delete(key);
    while(entries.size>MAX_ENTRIES){const first=entries.keys().next().value;if(first===undefined)break;entries.delete(first);}
    if(looks.length&&reporter){try{reporter(looks);}catch{/* reporting never breaks a render */}}
+   return looks.length>0;
   },
   present(value,now){
    for(const x of entries.values()){
@@ -123,6 +124,18 @@ export function createNewsClock():NewsClock {
 export function drawnNews(data:WireCockpitData):WireResetEvent[] {
  const members=cockpitMembers(data);
  return (data.details?.resetEvents??[]).filter(e=>members.some(m=>m.row.id===e.rowId&&(!e.planIds?.length||e.planIds.includes(m.account.plan.id))));
+}
+/** D466 (macrevb-1290-1 round 2): the mark a surface puts on what it draws for an announcement (`data-news`, space
+ *  separated). The clock records a look only for marks rendered on screen in this paint. */
+export const newsMark=(e:Pick<NewsEvent,'id'|'status'>)=>`${encodeURIComponent(e.id)}#${e.status}`;
+/** The marks rendered inside `root` now: connected, laid out (not hidden, not on another page or bank). */
+export function renderedMarks(root:ParentNode):Set<string> {
+ const out=new Set<string>();
+ for(const e of root.querySelectorAll<HTMLElement>('[data-news]')){
+  if(!e.isConnected||!e.getClientRects().length||e.closest('[hidden]'))continue;
+  for(const mark of (e.dataset.news??'').split(' '))if(mark)out.add(mark);
+ }
+ return out;
 }
 /** The page's one clock: every cockpit surface reads it, and only the view (render, tick, visibility) moves it. */
 export const newsClock:NewsClock=createNewsClock();

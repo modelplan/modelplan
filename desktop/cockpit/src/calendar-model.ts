@@ -10,7 +10,7 @@ import type {WireCockpitData} from '../generated/wire.js';
 import {cockpitMembers} from './members.js';
 import {calendarFromCockpit,effectiveAt,LIMITS} from './calendar-data.js';
 import {currentWindow} from './prototype-data-adapter.js';
-import {newsClock} from './news-clock.js';
+import {newsClock,newsMark} from './news-clock.js';
 import {addDays,startOfDay} from './calendar-time.js';
 
 export const DAY=86_400_000;
@@ -27,6 +27,8 @@ export interface CalItem {
  /** Announcements: their status, and whether they are news now (the news clock). */
  readonly status:'announced'|'confirmed'|null;
  readonly news:boolean;
+ /** The announcement's news mark (data-news), drawn only while it is news so the clock sees only rendered news. */
+ readonly mark:string|null;
  /** The monthly window's own name ("MCP"), for the 30-day list. */
  readonly label:{readonly en:string;readonly zh:string}|null;
  /** A weekly reset projected past the next one (the window's fixed length), for the 7- and 30-day views. */
@@ -35,7 +37,7 @@ export interface CalItem {
 export interface CalModel {readonly now:number;readonly subs:readonly CalSub[];readonly items:readonly CalItem[]}
 
 const ms=(v:string|null|undefined)=>{const t=v?Date.parse(v):NaN;return Number.isFinite(t)?t:null;};
-const item=(x:Partial<CalItem>&Pick<CalItem,'sub'|'kind'|'at'>):CalItem=>({end:null,allDay:false,tentative:false,status:null,news:false,label:null,projected:false,...x});
+const item=(x:Partial<CalItem>&Pick<CalItem,'sub'|'kind'|'at'>):CalItem=>({end:null,allDay:false,tentative:false,status:null,news:false,mark:null,label:null,projected:false,...x});
 
 /** Every time item of the user's own subscriptions from `now` on (and today's earlier all-day items), `horizon` days ahead. */
 export function calendarModel(data:WireCockpitData,now:number,horizon=31):CalModel {
@@ -68,7 +70,7 @@ export function calendarModel(data:WireCockpitData,now:number,horizon=31):CalMod
   const timed=e.schedule&&e.schedule.precision!=='date'?effectiveAt(e.schedule):null;
   const day=e.status==='confirmed'?ms(e.confirmedAt)??published:e.schedule?effectiveAt(e.schedule)??published:published;
   const at=timed??day;if(at>=end)continue;
-  items.push(item({sub,kind:e.kind==='reset_credit'?'credit':'official',at,allDay:timed===null,status:e.status,news:newsClock.isNews(e,now)}));
+  items.push(item({sub,kind:e.kind==='reset_credit'?'credit':'official',at,allDay:timed===null,status:e.status,news:newsClock.isNews(e,now),mark:newsMark(e)}));
  }
  // The reserve's expiry: one all-day item on that day (never a bar from now to it).
  for(const s of shaped.spans)if(s.kind==='cards'&&s.to!==null&&s.to<end)items.push(item({sub:s.sub,kind:'reserve',at:s.to,allDay:true}));

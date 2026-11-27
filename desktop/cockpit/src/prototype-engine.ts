@@ -15,7 +15,7 @@ import {cautionItems,cautionLevel,lights} from './caution.js';
 import {prototypeEngineSupplement,currentWindow,displayWindow,runOutMinutes,runOutFields,forecastOf,moneyText} from './prototype-data-adapter.js';
 import {engineModel,statusBySub,widthClass} from '../study/rocket-r1/engine-model.js';
 import {pluginHostOf} from './plugin-host.js';
-import {newsClock} from './news-clock.js';
+import {newsClock,newsMark} from './news-clock.js';
 import {calendarModel,type CalModel} from './calendar-model.js';
 import {paintStrip,stripCard} from './calendar-page.js';
 import {pageOfSubscription,type LayoutPage} from './plugin-layout.js';
@@ -85,7 +85,7 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
   // G3-109: a money balance (Grok Build) has no credits/points; the reserve row shows it in its reported currency.
   const money=moneyText(account.credits,locale);
   const detail=prototypeEngineSupplement(account,data), cards=detail.resetCards?.map(c=>({count:c.count,expiresAt:c.expiresAt?Date.parse(c.expiresAt):null}))??[];
-  return {id:esc(key),name:esc(label),short:esc(keyNames.get(key)??label),alias:esc(keyNames.get(key)??name),colour:brand?.colour??NEUTRAL,logo:brand?brand.logo:'../../neutral.png',state:accountState(account,unavailableZCodeMember(row,account)?row.state:undefined),ageMin:(()=>{const at=account.observedAt?Date.parse(account.observedAt):NaN;return Number.isFinite(at)?Math.max(0,Math.floor((now-at)/60000)):null;})(),...rangeFields(account,data,detail,range()),usage7:null,windows,extras,forecast:forecastOf(windows),news:news.some(e=>e.status==='confirmed')?'confirmed':news.length?'announced':null,plus,cards,credits:detail.reserveCredits&&['credits','points'].includes(detail.reserveCredits.unit)&&finite(detail.reserveCredits.balance)!==null?{balance:detail.reserveCredits.balance,drawing:false}:money!==null?{balance:account.credits!.balance,drawing:false,money:esc(money)}:null};
+  return {id:esc(key),name:esc(label),short:esc(keyNames.get(key)??label),alias:esc(keyNames.get(key)??name),colour:brand?.colour??NEUTRAL,logo:brand?brand.logo:'../../neutral.png',state:accountState(account,unavailableZCodeMember(row,account)?row.state:undefined),ageMin:(()=>{const at=account.observedAt?Date.parse(account.observedAt):NaN;return Number.isFinite(at)?Math.max(0,Math.floor((now-at)/60000)):null;})(),...rangeFields(account,data,detail,range()),usage7:null,windows,extras,forecast:forecastOf(windows),news:news.some(e=>e.status==='confirmed')?'confirmed':news.length?'announced':null,newsMarks:news.map(newsMark).join(' '),plus,plusMarks:news.filter(e=>e.status==='confirmed'&&e.kind==='reset_credit').map(newsMark).join(' '),cards,credits:detail.reserveCredits&&['credits','points'].includes(detail.reserveCredits.unit)&&finite(detail.reserveCredits.balance)!==null?{balance:detail.reserveCredits.balance,drawing:false}:money!==null?{balance:account.credits!.balance,drawing:false,money:esc(money)}:null};
  });
  // Owner D38: only red (at or below T) and forecast amber conditions wash a column or light the lamp.
  const items=cautionItems(data,now,redBelow());

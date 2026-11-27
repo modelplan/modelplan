@@ -356,6 +356,8 @@ export class CockpitBridge {
     if(action==='openHistory'?(!tool||!this.historyTools.has(tool)):tool!==undefined) return false;
     this.emit('action',this.requestId(),{action,...(tool?{tool}:{})});return true;
   }
+  /** D466: a look recorded outside a host message (paging, opening the alert list) changed the news deadline. */
+  deadlineChanged():void {if(this.context&&!this.ended)this.reportDeadline(this.requestId());}
   private newsNegotiated=false;
   /** D466: announcements first looked at in the cockpit (open with them drawn); the host records them in its shared news
    *  clock (`recordNewsLook`). Posted only to a host that sent a `news` message. */

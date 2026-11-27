@@ -19,7 +19,7 @@ import { createCautionMemory } from './caution-ack.js';
 import {currentWindow,withoutProjectNames} from './prototype-data-adapter.js';
 import {INITIAL_RANGE,nextCockpitRange,type CockpitRange} from './range.js';
 import {mountPluginHost,pluginHostOf,type PluginReports} from './plugin-host.js';
-import {newsClock,drawnNews} from './news-clock.js';
+import {newsClock,drawnNews,newsMark,renderedMarks} from './news-clock.js';
 const element=<K extends keyof HTMLElementTagNameMap>(tag:K,text?:string,className?:string):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(className)e.className=className;return e;};
 /** Controls focusable through their own tabindex that a pointer presses (B1): buttons, radios and sliders. */
 export const POINTER_UNFOCUSED='button,a[href],input,select,textarea,[tabindex],[role="button"],[role="radio"],[role="slider"]';
@@ -226,7 +226,18 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
   if(!target&&path&&key!=='data-al-id'){let e:Element|null=area;for(const i of path)e=e?.children.item(i)??null;if(e instanceof HTMLElement&&e.tagName===focused.tagName&&(key?e.getAttribute(key)===keyValue:e.className===focused.className))target=e;}
   if(target)restore(target);
  }
- function refreshDeadlines(now:number){if(!lastData||disposed)return;lastRenderedAt=now;newsClock.observe(drawnNews(lastData),now,present);preserveFocus(()=>{refreshEngine?.(now);deck.refresh(now);tape.refresh(now);syncCaution(lastData!,now);plugins.tick(now);});}
+ // D466 (macrevb-1290-1): the news clock records a look only for news whose mark is rendered on screen in this paint (a key
+ // dot on the shown page, a reserve +1, an alert line inside the overview budget or the open alert list). Called after
+ // every render and tick, and after the user's own clicks and keys (paging, the alert list), which repaint in place.
+ function noteNews(now:number):boolean{
+  if(!lastData||disposed)return false;const marks=renderedMarks(root);
+  return newsClock.observe(drawnNews(lastData).filter(e=>marks.has(newsMark(e))),now,present);
+ }
+ const noteAfterInput=()=>{if(noteNews(Math.max(lastRenderedAt,Date.now())))root.dispatchEvent(new CustomEvent('cockpit-deadline'));};
+ root.addEventListener('click',noteAfterInput);window.addEventListener('keyup',noteAfterInput);
+ // The strip's hover card shows its news lines: a hover is a look at them (D466 strip card).
+ const noteHover=(e:Event)=>{if(e.target instanceof Element&&e.target.closest('.ec-strip'))noteAfterInput();};root.addEventListener('pointerover',noteHover);root.addEventListener('focusin',noteHover);
+ function refreshDeadlines(now:number){if(!lastData||disposed)return;lastRenderedAt=now;preserveFocus(()=>{refreshEngine?.(now);deck.refresh(now);tape.refresh(now);syncCaution(lastData!,now);plugins.tick(now);});noteNews(now);}
  // Recovery contract: a render is transactional. If it throws, the last rendered data is painted again (or the page
  // returns to its waiting state when there was none) and the error goes back to the bridge, which refuses the display
  // and keeps the page. Whether that repaint succeeds or fails, the whole cockpit view is
@@ -281,8 +292,6 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
  function renderInto(data:WireCockpitData,now:number){
   preserveFocus(()=>{
    const previousData=lastData;lastData=data;lastRenderedAt=now;
-   // D466: the news clock moves on renders and ticks only; every surface drawn below reads it.
-   newsClock.observe(drawnNews(data),now,present);
    if(disposed)throw Error('closed');const before=displayedState();const priorPage=Number(frame.engine.querySelector('[data-page][aria-current="true"]')?.getAttribute('data-page')??0);const priorButton=frame.engine.querySelector<HTMLButtonElement>('.ek[aria-pressed="true"]');const selectedScope=nativeShell?.scope??priorButton?.dataset.scope??'all';const unstable=(previousData?cockpitMembers(previousData):[]).some(m=>m.key===selectedScope&&m.unstable)||cockpitMembers(data).some(m=>m.key===selectedScope&&m.unstable);const priorScope=unstable?'':selectedScope==='all'?'':selectedScope;if(unstable){retiredUnstableScopes.add(selectedScope);if(nativeShell)nativeShell={...nativeShell,scope:'all'};}applyScope=null;engineRange=null;pluginHostOf(root)?.hold();dropEngineTips();frame.engine.replaceChildren();
    const engine=renderPrototypeEngine(data,locale,root,priorScope,key=>{if(!active)return false;retiredUnstableScopes.delete(key);action('scopeSelect',key);if(nativeShell)nativeShell={...nativeShell,scope:key};updateScopeHud();deck.scope(key);return true;},()=>{if(!active)return false;action('openSettingsSubscriptions');return true;},priorPage,lastRenderedAt,redBelow,showUsed,key=>{if(!active)return false;action('refreshMember',key);return true;},()=>nativeShell?.range??INITIAL_RANGE);
    // No widget subscription yet (every row still lacks a dock surface): the engine says so, but admitted sessions and
@@ -294,6 +303,8 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
     setEmpty('empty',keep);if(keep){deck.scope('all');paintRecords(data,lastRenderedAt);}return;}root.dataset.engineEmpty='false';headerRange.dim(false);frame.engine.append(engine.table);engine.fit();plugins.display(data,now);applyScope=engine.applyScope;engineRange=engine.setRange;refreshEngine=engine.refresh;localiseEngine=engine.setLocale;quotaFocusIdentity=engine.focusIdentity;deck.scope(nativeShell?.scope??'all');paintRecords(data,lastRenderedAt);paintHud(frame.hud,data,locale,hudOptions());syncCaution(data,now);help.refresh();
    if(before!==displayedState())pulse();
   },true);
+  // D466: every surface has read the clock; now record looks for what this paint actually put on screen.
+  noteNews(now);
  }
  setEmpty('waiting');
  return {
@@ -318,6 +329,6 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
   plugins(raw){return plugins.applyHostState(raw);},
   pluginData(id,data){return plugins.deliver(id,data);},
   openPluginScreen(id){return plugins.openScreen(id,true);},
-  dispose(){if(disposed)return;disposed=true;shutterRun=null;plugins.dispose();base.dispose();unwireHud();document.removeEventListener('contextmenu',noMenu);root.removeEventListener('mousedown',pointerKeepsFocus,true);root.removeEventListener('focusin',pointerFocusStarts,true);window.removeEventListener('mouseup',pointerPressEnds,true);root.removeEventListener('focusout',pointerFocusEnds,true);pressed=null;window.removeEventListener('keydown',scopeShortcut);window.removeEventListener('keydown',rangeShortcut);caution.onclick=null;caution.removeEventListener('animationend',finishCaution);motionQuery.removeEventListener('change',motionChanged);applyScope=null;engineRange=null;refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;lastData=null;nativeShell=null;deck.dispose();help.dispose();stop();frame.settings.onclick=null;attach.onclick=null;shutter.onclick=null;shutter.onpointerdown=null;shutter.onpointermove=null;shutter.onpointerup=null;shutter.onpointercancel=null;shutter.onlostpointercapture=null;shutter.onkeydown=null;close.onclick=null;root.replaceChildren();root.removeAttribute('data-active');delete root.dataset.scope;},
+  dispose(){if(disposed)return;disposed=true;root.removeEventListener('click',noteAfterInput);root.removeEventListener('pointerover',noteHover);root.removeEventListener('focusin',noteHover);window.removeEventListener('keyup',noteAfterInput);shutterRun=null;plugins.dispose();base.dispose();unwireHud();document.removeEventListener('contextmenu',noMenu);root.removeEventListener('mousedown',pointerKeepsFocus,true);root.removeEventListener('focusin',pointerFocusStarts,true);window.removeEventListener('mouseup',pointerPressEnds,true);root.removeEventListener('focusout',pointerFocusEnds,true);pressed=null;window.removeEventListener('keydown',scopeShortcut);window.removeEventListener('keydown',rangeShortcut);caution.onclick=null;caution.removeEventListener('animationend',finishCaution);motionQuery.removeEventListener('change',motionChanged);applyScope=null;engineRange=null;refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;lastData=null;nativeShell=null;deck.dispose();help.dispose();stop();frame.settings.onclick=null;attach.onclick=null;shutter.onclick=null;shutter.onpointerdown=null;shutter.onpointermove=null;shutter.onpointerup=null;shutter.onpointercancel=null;shutter.onlostpointercapture=null;shutter.onkeydown=null;close.onclick=null;root.replaceChildren();root.removeAttribute('data-active');delete root.dataset.scope;},
  };
 }
