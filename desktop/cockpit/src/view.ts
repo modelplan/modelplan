@@ -86,7 +86,9 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
  const pointerKeepsFocus=(e:MouseEvent)=>{pressed=null;if(!e.isTrusted||!(e.target instanceof Element))return;const c=e.target.closest(POINTER_UNFOCUSED);if(c instanceof HTMLElement&&root.contains(c)){pressed=c;if(document.activeElement===c)c.dataset.pointerFocus='';}};
  const pointerFocusStarts=(e:FocusEvent)=>{if(pressed&&e.target===pressed)pressed.dataset.pointerFocus='';};
  const pointerPressEnds=()=>{pressed=null;};
- const pointerFocusEnds=(e:FocusEvent)=>{if(e.target instanceof HTMLElement)delete e.target.dataset.pointerFocus;};
+ // G3-153: a blur because the whole window stopped being key (the page is no longer the focused document) is not the user
+ // leaving the control: macOS refocuses it on reactivation and WebKit treats that as keyboard focus, so the mark stays.
+ const pointerFocusEnds=(e:FocusEvent)=>{if(!(e.target instanceof HTMLElement))return;if(e.relatedTarget===null&&!document.hasFocus())return;delete e.target.dataset.pointerFocus;};
  root.addEventListener('mousedown',pointerKeepsFocus,true);root.addEventListener('focusin',pointerFocusStarts,true);
  window.addEventListener('mouseup',pointerPressEnds,true);root.addEventListener('focusout',pointerFocusEnds,true);
  frame.settings.classList.add('s6-strip-key');attach.classList.add('s6-strip-key');close.classList.add('s6-strip-key');

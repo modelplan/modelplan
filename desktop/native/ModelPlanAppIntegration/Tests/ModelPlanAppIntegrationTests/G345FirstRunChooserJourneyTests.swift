@@ -178,7 +178,8 @@ private actor G345Engine: EngineClient {
         await app.restoreFirstRunIfNeeded()
         let window = try XCTUnwrap(NSApplication.shared.windows.first { !before.contains(ObjectIdentifier($0)) && $0.isVisible })
         addTeardownBlock { @MainActor in window.close() }
-        window.contentView?.layoutSubtreeIfNeeded()
+        // The consent view re-measures wrapping labels in layout() and invalidates them, so a second pass settles the heights.
+        window.contentView?.layoutSubtreeIfNeeded(); window.contentView?.layoutSubtreeIfNeeded()
         return window
     }
     private func find<T: NSView>(_ id: String, in window: NSWindow, as type: T.Type) throws -> T {

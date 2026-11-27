@@ -65,7 +65,7 @@ html[data-reduce-motion="true"] #cockpit .mfd-alerts li.al-mark.al-flash{animati
 @media(prefers-reduced-motion:reduce){#cockpit[data-active][data-shell] .caution.flash{animation:none!important}}
 
 /* D277 (CKP-STRIP-16): chip · tool · project · model + effort · elapsed · tokens · right end ("● 58 t/s" or "6m ago"). */
-.ck-tape .t-observed{grid-template-columns:6px 58px minmax(0,104px) minmax(0,1fr) 38px 40px 74px}
+.ck-tape .t-observed{grid-template-columns:6px 58px minmax(0,104px) minmax(0,1fr) 38px 40px 74px;grid-template-rows:16px}
 .ck-tape .t-elapsed,.ck-tape .t-tok{text-align:right;color:var(--lcd-muted)}
 .ck-tape .t-me .t-eff{color:var(--lcd-muted)}
 /* G3-134: an unlisted model reads by its prettified raw name with a dim "not listed" badge. */
@@ -191,7 +191,7 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
 .ck-afterglow{display:none}
 /* G3-47 review: a key's vendor mark sits beside its name, both centred on the key (layout measured on the study:
    flex row, centred, 5 px gap, 3 px from the key top). */
-.ck-eng .ek .ek-identity{position:absolute;left:50%;top:3px;transform:translateX(-50%);display:flex;align-items:center;gap:5px;width:max-content;max-width:calc(100% - 8px)}
+.ck-eng .ek .ek-identity{position:absolute;left:50%;top:3px;height:16px;transform:translateX(-50%);display:flex;align-items:center;gap:5px;width:max-content;max-width:calc(100% - 8px)}
 .ck-eng .ek .ek-identity .lamp{position:static;transform:none;flex:none}
 /* Hull walls (owner build 13), as the opus-r7 study composes them (canopy-h1 + canopy-c01 + strip-hull-unify): narrow
    at the top, wide at the bottom. Below the c01 canopy (the crown) an upper wall stands 8 px inside the 636 px hull,
@@ -562,3 +562,8 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .ck-eng .qrow-r .qrv-x.warn{color:var(--st-mid)}
 .ck-eng .qrow-r .qrv-sep{font-style:normal;flex:none}
 .ck-eng .qrow-r .qrv-plus{flex:none;padding:0 4px;border:1px solid var(--trial);border-radius:7px;color:var(--trial);font:600 9px/11px var(--f-lcd)}
+
+/* D411 nitpick 8: the subscription key row ends where the panels below end (632 px), not 2 px short. */
+.ck-eng .eng-keys{right:var(--eng-pr)}
+/* D411 nitpick 10: opaque rules in the engine panel, so crossing lines do not stack into a brighter dot. */
+:root[data-theme="night"] .ck-eng{--lcd-rule:#181b20}
