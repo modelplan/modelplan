@@ -13,6 +13,7 @@ import { mountPrototypeDeck } from './prototype-deck.js';
 import { paintHud,wireHud } from './prototype-hud.js';
 import { mountPrototypeTape } from './prototype-tape.js';
 import { cockpitMembers,setMemberOrder,setHiddenMembers } from './members.js';
+import { thrustState } from './thrust.js';
 import { mountPrototypeBase } from './prototype-base.js';
 import { cautionItems,lights,readWindows } from './caution.js';
 import { createCautionMemory } from './caution-ack.js';
@@ -29,10 +30,11 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  let nativeShell:ShellState|null=null;
  // D459 (owner, 2026-11-26): the engine flames are the cockpit's own thrust, not subscription output (the bells'
  // subscription glow is a separate layer). While the host ignites (the launch burn after a key detach or a drag
- // tear-off, a put-back flight, the approach in the catch zone) = full; detached and parked = short; docked = ember.
+ // tear-off, a put-back flight, the approach in the catch zone) = full; docked = ember. D468 (owner, 2026-11-26): detached and
+ // parked = out (the flame fades away after the burn and stays out; thrust.ts), replacing D459's short flame.
  // The host owns every timing (the page runs no timers); under Reduce Motion it never ignites.
  let ignited=false;
- function syncThrust(){root.dataset.thrust=ignited?'full':(nativeShell?.attached??true)?'ember':'short';}
+ function syncThrust(){root.dataset.thrust=thrustState(ignited,nativeShell?.attached??true);}
  syncThrust();
  // CKP-SHELL-50 / MENU-52: the range is the app's. A key or T asks for it and mirrors it at once, as a scope key does; the
  // host's shell echo is the same value, so nothing repaints twice.

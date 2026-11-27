@@ -5,9 +5,9 @@ import {visualFixture} from '../visual-fixture.mjs';
 
 // D454 (owner 2026-11-26): the official bells hang the owner's blue flame set. D459 (owner 2026-11-26, amended): two
 // layers per bell. The flame is the cockpit's own thrust, the same on every nozzle: docked = ember, the host igniting
-// (launch burn after a detach, put-back flight, catch-zone approach) = full thrust, detached and parked = short. The
+// (launch burn after a detach, put-back flight, catch-zone approach) = full thrust, detached and parked = out (D468 replaces D459's short flame: a ~0.4 s fade, then nothing, no ember). The
 // subscription's output is a soft glow in its own colour at the mouth, only while the cockpit is docked at rest (ember)
-// and that subscription works; under a short or full flame it is hidden. D450: nothing moves unless the page is active,
+// and that subscription works; under a full flame or when out it is hidden. D450: nothing moves unless the page is active,
 // open and not reduced.
 test.use({deviceScaleFactor:2});
 function data(){
@@ -57,7 +57,9 @@ test('D459 docked: ember on every nozzle, the working subscriptions glow in thei
  expect(bells[0].flame.z).toBeGreaterThan(bells[0].glow.z);
 });
 
-test('D459 launch, parked, landing: full while the host ignites, short when parked, ember once docked; the glow only docked',async({page})=>{
+const gone=page=>page.evaluate(()=>[...document.querySelectorAll('.ck-base :is(.bz,.bz-empty) .bz-flame')].every(f=>{const s=getComputedStyle(f);return s.visibility==='hidden'&&s.opacity==='0'&&s.animationName==='none'&&f.getAnimations().length===0;}));
+
+test('D459 launch, parked, landing: full while the host ignites, out when parked (D468), ember once docked; the glow only docked',async({page})=>{
  const host=await open(page);
  const state=async()=>{const v=await read(page);return {thrust:v.thrust,flames:[...new Set(v.nozzles.map(n=>kind(n.flame.image)))],glow:v.nozzles.filter(n=>n.glow?.shown).length};};
  // Launch: the host detaches and ignites the launch burn.
@@ -67,7 +69,12 @@ test('D459 launch, parked, landing: full while the host ignites, short when park
  expect(v.nozzles.every(n=>n.flame.anim.startsWith('cockpit-flame-flip'))).toBe(true);
  // The burn ends: parked detached.
  await host.ignite(false);
- expect(await state()).toEqual({thrust:'short',flames:['short'],glow:0});
+ expect((await state()).thrust).toBe('out');
+ // D468: the flame fades (0.4 s) and stays out: hidden, no ember, no glow, nothing animating, however long it stays parked.
+ await expect.poll(()=>gone(page),{timeout:5000}).toBe(true);
+ await page.waitForTimeout(2000);
+ expect(await gone(page)).toBe(true);
+ expect((await state()).glow).toBe(0);
  // Put back: the flight home burns full thrust, then the latch docks it.
  await host.ignite(true);
  expect(await state()).toEqual({thrust:'full',flames:['full'],glow:0});
@@ -86,11 +93,12 @@ test('D450 the flipbook stops under Reduce Motion and on a hidden cockpit, holdi
  expect(v.nozzles.every(n=>kind(n.flame.image)==='full'&&n.flame.anim==='none')).toBe(true);
 });
 
-test('D459 a page opened detached starts on the short parked flame',async({page})=>{
+test('D468 a page opened detached has its flame out: no short flame, no ember, no glow',async({page})=>{
  await open(page,{attached:false});
  const v=await read(page);
- expect(v.thrust).toBe('short');
- expect(v.nozzles.every(n=>kind(n.flame.image)==='short'&&!n.glow?.shown)).toBe(true);
+ expect(v.thrust).toBe('out');
+ expect(v.nozzles.every(n=>!n.glow?.shown)).toBe(true);
+ expect(await gone(page)).toBe(true);
 });
 
 const timing=page=>page.evaluate(()=>[...document.querySelectorAll('.ck-base :is(.bz,.bz-empty) .bz-flame')].map(f=>{const s=getComputedStyle(f),p=f.parentElement.style;
@@ -120,7 +128,7 @@ test('D454 per-nozzle dynamics: full thrust gives each nozzle its own subtle tim
  expect(await timing(page)).toEqual(t);
 });
 
-test('D454 short flame and ember stay static; per-nozzle dynamics are off under Reduce Motion and when hidden',async({page})=>{
+test('D454/D468 ember and a parked (out) flame stay static; per-nozzle dynamics are off under Reduce Motion and when hidden',async({page})=>{
  let host=await open(page);
  expect((await timing(page)).every(x=>x.names==='none')).toBe(true);
  await host.shell({attached:false});
