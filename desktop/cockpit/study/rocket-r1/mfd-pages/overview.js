@@ -8,6 +8,7 @@ import {chartPalette} from '../chart-colours.js';
 import {esc, tok, unit, md, mon, tip, fill} from './fmt.js';
 import {accountsIn, rangeKey} from './scope.js';
 import {statusItems,statusRow} from './public-helpers.js';
+import {bullet} from './alerts.js';
 
 // The same local wall time `back` calendar days earlier: a day across a DST change is 23 or 25 hours, so fixed 24-hour
 // steps would date a bucket a day off (audit F 6). The series are indexed by local calendar day (prototype-history.ts).
@@ -21,7 +22,7 @@ export function alertList(d, {max = 4} = {}) {
   if (grey.length >= 3) a = [...a.filter(x => !grey.includes(x)), {level: 'grey', kind: 'unreadable', text: t('mfd.ovUnreadN', {n: grey.length})}];
   if (!a.length) return '';
   const shown = a.length > max ? a.slice(0, max - 1) : a;
-  return `<ul class="mfd-alerts">${shown.map(x => statusRow(x)||`<li class="al-${x.level}" data-tip="${esc(x.text)}"><i>●</i><span>${esc(x.text)}</span></li>`).join('')}${
+  return `<ul class="mfd-alerts">${shown.map(x => statusRow(x)||`<li class="al-${x.level}" data-tip="${esc(x.text)}">${bullet(x)}<span>${esc(x.text)}</span></li>`).join('')}${
     a.length > shown.length ? `<li class="al-more"><button data-mfd="alerts">${t('mfd.moreAlerts', {n: a.length - shown.length})}</button></li>` : ''}</ul>`;
 }
 

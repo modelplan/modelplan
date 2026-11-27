@@ -20,12 +20,6 @@ register('eng', {
   rowMonth: ['lcd', '每月', 'Monthly'],
   todayBasis: ['aria', '今日输出；今日平均生成速度为可测速输出 token 总量除以生成秒数总量，不是实时速度；按当前来源关联，非历史账户归属', 'Today’s output; today’s average generation speed is summed eligible output tokens divided by summed generation seconds, not live speed; current source binding, not historical account attribution'],
   averageAria: ['aria', '今日平均生成速度 {n} token 每秒', {"one": "Today’s average generation speed {n} token per second", "other": "Today’s average generation speed {n} tokens per second"}],
-  resetAnn: ['line', '预告 {at} 重置', 'Reset {at} announced'],
-  resetAnnShort: ['lcd', '预告 {at}', 'Due {at}'],
-  resetAnnCompact: ['lcd', '预告{at}', 'Due{at}'],
-  resetDone: ['line', '已重置 · 等读数', 'Reset · awaiting reading'],
-  resetDoneShort: ['lcd', '已重置', 'Reset'],
-  resetTba: ['lcd', '预告待定', 'Reset TBA'],
   resetUnknownShort: ['lcd', '未知', '?'],
   resetWordOne: ['lcd', '重置 1 次', '1 reset'],
   resetCompactOne: ['lcd', '重置1次', '1 reset'],
@@ -84,6 +78,10 @@ register('eng', {
   credits: ['lcd', '{n}点', '{n} cr'],
   expires: ['lcd', '{t} 后到期', 'expires in {t}'], // CKP-ENG-52: what the reserve's time means
   expiresShort: ['lcd', '{t}后到期', 'exp {t}'],
+  // D466: the reserve's blue "+1" (a banked reset confirmed during its news clock) and the key's one blue news dot.
+  plusAria: ['aria', '新增 {n} 次', {"one": "{n} new", "other": "{n} new"}],
+  newsAnnounced: ['aria', '有重置公告（已预告）', 'Reset news (announced)'],
+  newsConfirmed: ['aria', '有重置公告（已确认）', 'Reset news (confirmed)'],
   points: ['lcd', '点数 {v}', 'Credits {v}'], // CKP-ENG-52: the reserve's credits say what they are
   hours: ['lcd', '{n}h', '{n}h'],
   days: ['lcd', '{n}天', '{n}d'],

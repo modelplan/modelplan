@@ -32,9 +32,7 @@ function note(col,c,ui) {
   if(col.state==='error') return {text:t('eng.unreadable'),dim:true};
   if(col.state==='error-lastgood') return {text:t('eng.failedAge',{a:t('age.hoursShort',{h:Math.round((col.ageMin||0)/60)})}),short:t('eng.failedShort')};
   if(col.grey) return {text:t('age.hoursShort',{h:Math.round((col.ageMin||0)/60)}),short:t('eng.ageCompact',{t:shortTime(col.ageMin||0)})};
-  if(c.event) return {text:c.event.status==='confirmed'?t('eng.resetDone'):c.event.at!=null?t('eng.resetAnn',{at:relativeMoment(c.event.at,ui)}):t('eng.resetTba'),
-    short:c.event.status==='confirmed'?t('eng.resetDoneShort'):c.event.at!=null?t('eng.resetAnnShort',{at:relativeMoment(c.event.at,ui)}):t('eng.resetTba'),
-    small:c.event.status==='announced'&&c.event.at!=null?t('eng.resetAnnCompact',{at:relativeMoment(c.event.at,ui)}):null,event:true};
+  // D466: no announcement in a cell ("已重置 · 等读数" and "预告 … 重置" are gone); the cell keeps its real reading and forecast.
   // CKP-ENG-50: a used-up window is a red 0% that says so; credits being drawn say that instead.
   if(c.drawing) return {text:t('eng.drawCell'),crit:true};
   if(c.remaining===0) return {text:t('eng.usedUp'),crit:true};
@@ -55,15 +53,15 @@ function cell(col,c,row,m,ui,fresh,lead){
   // CKP-ENG-22: a stale reading says how old it is, once per column on its first populated quota cell, from the row's own reading time; none known = no age.
   const age=col.state==='stale'&&col.ageMin!=null&&row===lead?ageText(col.ageMin):'';
   const meta=(txt,tg)=>[tg,txt,age,c.more?`+${c.more}`:''].filter(Boolean).join(' ');
-  const full=meta(n.warn&&m.cls==='narrow'?(n.short||n.text):n.text,tag), short=meta(n.event&&ui.lang==='zh-CN'?(n.short||n.text).replaceAll(' ',''):(n.short||n.text),shortTag);
+  const full=meta(n.warn&&m.cls==='narrow'?(n.short||n.text):n.text,tag), short=meta(n.short||n.text,shortTag);
   const smallest=[c.extra?(fitsNarrow(c)?narrowName(c):[...narrowName(c)][0]):tag,n.small||n.short||n.text,age].filter(Boolean).join(' ')+(c.more?`+${c.more}`:'');
   const tip=c.all?c.all.map(x=>title(col,x,ui)).join('\n'):title(col,c,ui);
   // Extras are focusable and carry their details; a reading whose reset time is unknown says so on hover (the line
   // itself stays empty, CKP-ENG-26), as its accessible name does.
   const focusable=c.extra||c.all?.some(x=>x.extra), unknownReset=c.value!=null&&c.resetIn==null&&!col.grey;
   const tipAttr=focusable?`tabindex="0" data-tip="${esc(tip)}"`:unknownReset?`data-tip="${esc(tip)}"`:'';
-  return `<div class="qcell lv-${c.level}${c.extra?' qx':''}${c.drawing?' used':''}${c.noData?' nodata':''}${c.event?' ev':''}" data-row="${row}" data-kind="${c.extra?'extra':c.kind}" data-tag="${esc(tag)}" data-more="${c.more||0}"${paint(c)} ${tipAttr} aria-label="${esc(tip)}">
-    <span class="qline"><b class="qnum${fresh?' lcd-in':''}"><span class="qvalue">${c.value==null?'--':Math.round(c.value)}</span>${c.value==null?'':'<small>%</small>'}</b><em class="qtxt${n.warn?' warn':''}${n.crit?' crit':''}${n.event?' qev':''}${n.dim?' dim':''}" data-full="${esc(full)}" data-short="${esc(short)}" data-small="${esc(smallest)}">${esc(full)}</em></span>${bar(c)}</div>`;
+  return `<div class="qcell lv-${c.level}${c.extra?' qx':''}${c.drawing?' used':''}${c.noData?' nodata':''}" data-row="${row}" data-kind="${c.extra?'extra':c.kind}" data-tag="${esc(tag)}" data-more="${c.more||0}"${paint(c)} ${tipAttr} aria-label="${esc(tip)}">
+    <span class="qline"><b class="qnum${fresh?' lcd-in':''}"><span class="qvalue">${c.value==null?'--':Math.round(c.value)}</span>${c.value==null?'':'<small>%</small>'}</b><em class="qtxt${n.warn?' warn':''}${n.crit?' crit':''}${n.dim?' dim':''}" data-full="${esc(full)}" data-short="${esc(short)}" data-small="${esc(smallest)}">${esc(full)}</em></span>${bar(c)}</div>`;
 }
 // CKP-ENG-53: the range row, ≈cost first and brightest, then tokens, then speed; the host drops speed and then tokens
 // when they do not fit (never a clipped "42/s"). No usage record at all: "quota only" (CKP-ENG-50).
@@ -75,12 +73,19 @@ function today(col,m){
  return `<div class="qrow qrow-t" aria-label="${esc(t(range==='today'?'eng.todayBasis':'eng.rangeBasis'))}">${parts||(col.noUsage?`<span class="qq">${t('eng.noUsage',{r:t('eng.noUsageRange'+cap(range))})}</span>`:col.quotaOnly?`<span class="qq">${t('eng.quotaOnly')}</span>`:'')}</div>`;}
 function reserve(col,m,ui){
   const r=col.reserve;if(!r)return '<div class="qrow qrow-r"></div>';
-  // CKP-ENG-52: the row names what it holds ("重置 2 次 · 30h 后到期", "点数 2,368"); the model leaves out zeros.
-  const left=r.firstExpiry==null?null:until(r.firstExpiry,ui.now);
-  const full=t(r.cards===1?'eng.resetWordOne':'eng.resetsWords',{n:r.cards})+(left?' · '+t('eng.expires',{t:left}):''), short=t(r.cards===1?'eng.resetCompactOne':'eng.resetsCompact',{n:r.cards})+(left?'·'+t('eng.expiresShort',{t:left}):'');
+  // D466 (round 1 of the band proposal, owner 11-26): one quiet line, "重置 1 次 · 点数 1,865". The expiry is written only
+  // within 72 h, in amber ("2d5h 后到期"); a banked reset confirmed during its news clock adds a blue "+1" chip.
+  const left=r.warn&&r.firstExpiry!=null?until(r.firstExpiry,ui.now):null;
+  const words=r.cards==null?'':t(r.cards===1?'eng.resetWordOne':'eng.resetsWords',{n:r.cards}),compact=r.cards==null?'':t(r.cards===1?'eng.resetCompactOne':'eng.resetsCompact',{n:r.cards});
+  const exp=left?t('eng.expires',{t:left}):'',expShort=left?t('eng.expiresShort',{t:left}):'';
+  const plus=r.plus>0?`<b class="qrv-plus" aria-hidden="true">+${r.plus}</b>`:'';
   // G3-109: a money balance arrives formatted and escaped; it reads "Balance $12.34", or the value alone when narrow.
   const points=r.money?t('eng.balance',{v:r.money}):r.credits==null?'':t('eng.points',{v:formatCredits(r.credits,ui.lang).replace('<','&lt;')});
-  return `<div class="qrow qrow-r" aria-label="${esc([r.cards!=null?full:'',points].filter(Boolean).join(' · '))}">${r.cards!=null?`<span class="qrv-c${r.warn?' warn':''}" data-full="${esc(full)}" data-short="${esc(short)}">${esc(full)}</span>`:''}${points?`<span class="qrv-p"${r.money?` data-full="${esc(points)}" data-short="${esc(r.money)}"`:''}>${esc(points)}</span>`:''}</div>`;
+  const aria=[words,r.plus>0?t('eng.plusAria',{n:r.plus}):'',exp,points].filter(Boolean).join(' · ');
+  const cards=words?`<span class="qrv-c" data-full="${esc(words)}" data-short="${esc(compact)}">${esc(words)}</span>`:'';
+  const expiry=left?`<span class="qrv-x warn" data-full="${esc(exp)}" data-short="${esc(expShort)}">${esc(exp)}</span>`:'';
+  const sep=(cards||plus||expiry)&&points?'<i class="qrv-sep" aria-hidden="true">·</i>':'';
+  return `<div class="qrow qrow-r" aria-label="${esc(aria)}">${cards}${plus}${expiry}${sep}${points?`<span class="qrv-p"${r.money?` data-full="${esc(points)}" data-short="${esc(r.money)}"`:''}>${esc(points)}</span>`:''}</div>`;
 }
 // Exactly two extra instruments in the wide-column prototype; missing history stays unplotted.
 function detail(col, ui) {
@@ -103,7 +108,7 @@ function column(col,m,ui,changed){
  const cells=col.state==='error'&&!m.rows.some(r=>col.cells[r])?{...col.cells,[m.rows[0]]:UNREAD}:col.cells;
  return `<div class="ec${col.tint?' tint-'+col.tint:''}${col.grey?' grey':''}${col.off?' dimmed':''}" data-col="${esc(col.id)}" data-state="${esc(col.state)}">`+
  m.rows.map(r=>col.state==='loading'?placeholder(col,r):cells[r]?cell(col,cells[r],r,m,ui,changed.has(`${col.id}:${r}`),m.rows.find(x=>cells[x])):`<div class="qcell none" data-row="${r}"></div>`).join('')+today(col,m)+(m.reserve?reserve(col,m,ui):'')+(m.rich?detail(col,ui):'')+'</div>';}
-const key=col=>`<button class="ek bd-r${col.on?' on':''}${col.off?' off':''}" data-sub="${esc(col.id)}" data-col="${esc(col.id)}" data-mat="part" title="${esc(col.name)}" aria-pressed="${col.on}" aria-label="${esc(t('eng.keyAria',{name:col.name,k:col.key}))}"><span class="ek-identity"><img class="lamp" src="assets/brands/${esc(col.logo)}" alt=""><span class="ek-name" data-full="${esc(col.short)}" data-short="${esc(col.alias||col.short)}" title="${esc(col.name)}">${esc(col.short)}</span></span><i class="bl" style="--v:${esc(col.colour)}"></i><span class="ki">${col.key}</span></button>`;
+const key=col=>`<button class="ek bd-r${col.on?' on':''}${col.off?' off':''}" data-sub="${esc(col.id)}" data-col="${esc(col.id)}" data-mat="part" title="${esc(col.name)}" aria-pressed="${col.on}" aria-label="${esc(t('eng.keyAria',{name:col.name,k:col.key}))}"><span class="ek-identity"><img class="lamp" src="assets/brands/${esc(col.logo)}" alt=""><span class="ek-name" data-full="${esc(col.short)}" data-short="${esc(col.alias||col.short)}" title="${esc(col.name)}">${esc(col.short)}</span></span><i class="bl" style="--v:${esc(col.colour)}"></i><span class="ki">${col.key}</span>${col.news?`<i class="ek-news ${col.news==='confirmed'?'solid':'hollow'}" role="img" aria-label="${esc(t(col.news==='confirmed'?'eng.newsConfirmed':'eng.newsAnnounced'))}"></i>`:''}</button>`;
 // D417: the third row's heading names what its cells are when every column agrees (MCP, Opus, ...); mixed columns
 // carry their own names in the cells and the heading says only that these are extra windows, never a bare "Other".
 export function otherHeading(m) {

@@ -548,3 +548,17 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .cal-wk .wk-adr.chip.pending span{border-style:dashed;background:transparent;color:var(--c)}
 /* Owner window pack: the title-edge decoration exists only for the official night skin (hull.css shows it); it is never a flex item here. */
 .ck-head>.mp-title-edge{display:none}
+/* D466: one blue dot means reset news (hollow = announced, solid = confirmed): the subscription key's right end and the
+   alert-list bullet. Rows without news carry no bullet. The reserve is one quiet line; its "+1" is the same blue. */
+.ck-eng .ek .ek-news{position:absolute;right:5px;top:50%;width:6px;height:6px;margin-top:-4px;border-radius:50%;box-sizing:border-box;pointer-events:none}
+.ck-eng .ek .ek-news.solid{background:var(--trial);box-shadow:0 0 4px color-mix(in srgb,var(--trial) 60%,transparent)}
+.ck-eng .ek .ek-news.hollow{border:1.4px solid var(--trial)}
+#cockpit .mfd-alerts li > i,#cockpit .mfd-alerts .al-row > i{display:inline-block;width:10px;height:10px;position:relative}
+#cockpit .al-dot::before{content:"";position:absolute;left:2px;top:3px;width:6px;height:6px;border-radius:50%;box-sizing:border-box}
+#cockpit .al-dot.solid::before{background:var(--trial)}
+#cockpit .al-dot.hollow::before{border:1.4px solid var(--trial)}
+.ck-eng .qrow-r{flex-direction:row;align-items:center;justify-content:flex-start;gap:4px;padding-top:0;color:var(--lcd-muted);white-space:nowrap;overflow:hidden}
+.ck-eng .qrow-r .qrv-c,.ck-eng .qrow-r .qrv-p,.ck-eng .qrow-r .qrv-x{display:inline-block;flex:0 1 auto;min-width:0;max-width:none;color:var(--lcd-muted)}
+.ck-eng .qrow-r .qrv-x.warn{color:var(--st-mid)}
+.ck-eng .qrow-r .qrv-sep{font-style:normal;flex:none}
+.ck-eng .qrow-r .qrv-plus{flex:none;padding:0 4px;border:1px solid var(--trial);border-radius:7px;color:var(--trial);font:600 9px/11px var(--f-lcd)}

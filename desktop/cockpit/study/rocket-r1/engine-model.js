@@ -70,30 +70,33 @@ const byLength = list => list.map((w, i) => [w, i]).sort((x, y) => (CYCLE_MIN[PE
 export function positional(a, ui, grey) {
   const runOutW = runOutWindow(a), general = byLength(a.windows || []);
   const first = general.find(w => PERIODS[w.kind] === '5h'), second = general.find(w => PERIODS[w.kind] === 'week');
-  const evW = a.event && !grey ? first || general[0] : null;
-  const cell = w => w ? {...cellOf(a, w, ui, runOutW, grey), event: w === evW ? a.event : null} : null;
+  // D466: a quota cell shows only its own facts (reading, reset time, forecast); a public reset announcement is never
+  // attached to a cell. Announcements are news on the key dot, the reserve "+1", the strip and the calendar.
+  const cell = w => w ? cellOf(a, w, ui, runOutW, grey) : null;
   const rest = [...general.filter(w => w !== first && w !== second).map(cell), ...(a.extras || []).map(w => extraCell(a, w, ui, grey))];
   const rank = c => c.remaining == null ? 1e9 : c.remaining, main = rest.reduce((m, c) => m && rank(m) <= rank(c) ? m : c, null);
-  // A public reset stays attached to its window even when that window moves into Other.
   return {first: cell(first), second: cell(second),
     other: main ? {...main, more: rest.length - 1, all: rest} : null};
 }
 function reserveOf(a, now) {
   const cards = a.cards || [], cr = a.credits;
-  if (!cards.length && !cr) return null;
+  if (!cards.length && !cr && !(a.plus > 0)) return null;
   const expiries = cards.map(c => c.expiresAt).filter(v => Number.isFinite(v));
   const first = expiries.length ? Math.min(...expiries) : null;
   const count = cards.some(c => c.count === null) ? null : cards.reduce((n,c) => n + (c.count ?? 1), 0);
   // CKP-ENG-52: a zero carries no information and is not shown; nothing left at all means no reserve.
   const credits = cr && cr.balance !== 0 ? cr.balance ?? null : null, money = cr?.money ?? null;
-  if (!(cards.length && count !== 0) && credits == null && money == null) return null;
-  return {cards: cards.length && count !== 0 ? count : null, warn: expiries.some(v => (v - now) / H <= 48), firstExpiry: first,
-    credits, money, drawing: !!cr?.drawing};
+  if (!(cards.length && count !== 0) && credits == null && money == null) return a.plus > 0 ? {cards: null, warn: false, firstExpiry: null, credits: null, money: null, drawing: false, plus: a.plus} : null;
+  // D466: the reserve is one quiet line; its expiry is shown only within 72 h, in amber. `plus` is the "+1" of a banked
+  // reset confirmed during its news clock (the only place a banked reset shows outside the calendar).
+  return {cards: cards.length && count !== 0 ? count : null, warn: first != null && (first - now) / H <= 72, firstExpiry: first,
+    credits, money, drawing: !!cr?.drawing, plus: a.plus > 0 ? a.plus : 0};
 }
 // CKP-ENG-50/54: a stale reading is drawn like a current one; only failed readings are grey. Neither washes its column.
 function columnOf(a, i, ui, status, now) {
   const quiet = GREY.has(a.state), grey = quiet && a.state !== 'stale', st = quiet ? null : status.get(a.id) || null;
-  return {id: a.id, name: a.name, short: a.short, alias:a.alias, colour: a.colour, logo: a.logo, key: i + 1,
+  // D466: `news` is the key's one blue dot (hollow = announced, solid = confirmed) while a reset announcement is news.
+  return {id: a.id, name: a.name, short: a.short, alias:a.alias, colour: a.colour, logo: a.logo, key: i + 1, news: a.news || null,
     on: ui.scope === a.id, off: !!ui.scope && ui.scope !== a.id,
     state: a.state, grey, ageMin: a.ageMin ?? null, status: st, tint: ui.tint && st ? st : null,
     quotaOnly: a.support === 'quota-only' && (a.state === 'ok' || a.state === 'stale'), noUsage: !!a.noUsage && a.support === 'quota-only' && (a.state === 'ok' || a.state === 'stale'), today: a.todayTokens ?? null,

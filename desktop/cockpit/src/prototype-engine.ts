@@ -15,6 +15,7 @@ import {cautionItems,cautionLevel,lights} from './caution.js';
 import {prototypeEngineSupplement,currentWindow,displayWindow,runOutMinutes,runOutFields,forecastOf,moneyText} from './prototype-data-adapter.js';
 import {engineModel,statusBySub,widthClass} from '../study/rocket-r1/engine-model.js';
 import {pluginHostOf} from './plugin-host.js';
+import {newsClock} from './news-clock.js';
 import {pageOfSubscription,type LayoutPage} from './plugin-layout.js';
 import {engineView,rowsTemplate} from '../study/rocket-r1/engine-view.js';
 import {setLanguage} from '../study/rocket-r1/i18n.js';
@@ -68,11 +69,14 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
   const convert=(w:WireWindow)=>({focusIdentity:validId(w)&&ids.get(w.id)===1&&meanings.get(semantics.get(w)!)===1?semantics.get(w)!:null,kind:role(w),remaining:displayWindow(account,w,now)?finite(w.remainingPercent):null,resetIn:displayWindow(account,w,now)&&w.resetsAt&&Number.isFinite(Date.parse(w.resetsAt))?Math.max(0,(Date.parse(w.resetsAt)-now)/60000):null,resetAt:null,resetText:null,elapsed:null,...runOutFields(runOut(w)),durationMinutes:w.durationSeconds===null?null:w.durationSeconds/60});
   const windows=account.windows.filter(general).map(convert);
   const extras=account.windows.filter(w=>!general(w)).map(w=>({...convert(w),period:role(w),named:!!w.modelScope||w.limitKey==='mcp',name:esc(locale==='en'?w.label.en:w.label.zh),label:esc(locale==='en'?w.label.en:w.label.zh),scope:{label:esc(locale==='en'?w.label.en:w.label.zh)}}));
-  const notice=data.details?.resetEvents.find(e=>e.rowId===row.id&&Date.parse(e.expiresAt)>now&&(!e.planIds?.length||e.planIds.includes(account.plan.id)));
+  // D466: a reset announcement is news on the key (one blue dot) and, once a banked reset is confirmed, a "+1" in the
+  // reserve, both for its news clock only (DOCK-3.7-05). It never reaches a quota cell.
+  const news=(data.details?.resetEvents??[]).filter(e=>e.rowId===row.id&&(!e.planIds?.length||e.planIds.includes(account.plan.id))&&newsClock.isNews(e,now));
+  const plus=news.filter(e=>e.status==='confirmed'&&e.kind==='reset_credit').length;
   // G3-109: a money balance (Grok Build) has no credits/points; the reserve row shows it in its reported currency.
   const money=moneyText(account.credits,locale);
   const detail=prototypeEngineSupplement(account,data), cards=detail.resetCards?.map(c=>({count:c.count,expiresAt:c.expiresAt?Date.parse(c.expiresAt):null}))??[];
-  return {id:esc(key),name:esc(label),short:esc(label),alias:esc(name),colour:brand?.colour??NEUTRAL,logo:brand?brand.logo:'../../neutral.png',state:accountState(account,unavailableZCodeMember(row,account)?row.state:undefined),ageMin:(()=>{const at=account.observedAt?Date.parse(account.observedAt):NaN;return Number.isFinite(at)?Math.max(0,Math.floor((now-at)/60000)):null;})(),...rangeFields(account,data,detail,range()),usage7:null,windows,extras,forecast:forecastOf(windows),event:notice?{status:notice.status,at:null}:null,cards,credits:detail.reserveCredits&&['credits','points'].includes(detail.reserveCredits.unit)&&finite(detail.reserveCredits.balance)!==null?{balance:detail.reserveCredits.balance,drawing:false}:money!==null?{balance:account.credits!.balance,drawing:false,money:esc(money)}:null};
+  return {id:esc(key),name:esc(label),short:esc(label),alias:esc(name),colour:brand?.colour??NEUTRAL,logo:brand?brand.logo:'../../neutral.png',state:accountState(account,unavailableZCodeMember(row,account)?row.state:undefined),ageMin:(()=>{const at=account.observedAt?Date.parse(account.observedAt):NaN;return Number.isFinite(at)?Math.max(0,Math.floor((now-at)/60000)):null;})(),...rangeFields(account,data,detail,range()),usage7:null,windows,extras,forecast:forecastOf(windows),news:news.some(e=>e.status==='confirmed')?'confirmed':news.length?'announced':null,plus,cards,credits:detail.reserveCredits&&['credits','points'].includes(detail.reserveCredits.unit)&&finite(detail.reserveCredits.balance)!==null?{balance:detail.reserveCredits.balance,drawing:false}:money!==null?{balance:account.credits!.balance,drawing:false,money:esc(money)}:null};
  });
  // Owner D38: only red (at or below T) and forecast amber conditions wash a column or light the lamp.
  const items=cautionItems(data,now,redBelow());
@@ -138,7 +142,7 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
  // The width watch starts once the table is in the page: WebKit reports nothing for a target observed while detached.
  function fit(){
   if(!watch&&host.isConnected&&typeof ResizeObserver!=='undefined'){watch=new ResizeObserver(fit);watch.observe(host);}
-  const entries=[...host.querySelectorAll<HTMLElement>('.qtxt[data-full],.qrv-p[data-full],.ek-name[data-full],.qrv-c[data-full],.pl-fit[data-full]')]
+  const entries=[...host.querySelectorAll<HTMLElement>('.qtxt[data-full],.qrv-p[data-full],.ek-name[data-full],.qrv-c[data-full],.qrv-x[data-full],.pl-fit[data-full]')]
    .filter(e=>e.isConnected&&e.clientWidth>0).map(e=>({e,forms:[e.dataset.full,e.dataset.short,e.dataset.small].filter((v):v is string=>!!v)}));
   // Batch writes and width reads: interleaving them forces a full layout for each label on a page switch.
   const setText=(e:HTMLElement,text:string)=>{if(e.textContent!==text)e.textContent=text;};

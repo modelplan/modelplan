@@ -14,6 +14,7 @@
 // Every red, amber and unreadable line is the one shared sentence (study/rocket-r1/alert-sentence.js, ALR-50).
 import type {WireCockpitData} from '../generated/wire.js';
 import {cockpitMembers} from './members.js';
+import {newsClock} from './news-clock.js';
 import {currentWindow,runOutMinutes} from './prototype-data-adapter.js';
 import {alertSentence,isUnreadable,openSettingsAction,resetsAvailable,type Both} from '../study/rocket-r1/alert-sentence.js';
 import {tables} from '../study/rocket-r1/i18n.js';
@@ -35,6 +36,9 @@ export interface CautionItem {
  readonly detail?:Both;
  /** The row's tooltip, for an entry whose uncertainty the sentence cannot carry (a tentative published peak). */
  readonly tip?:Both;
+ /** D466: the one blue dot of reset news (hollow = announced, solid = confirmed, or banked resets about to expire). Rows
+  *  without it carry no bullet: colour and words say the rest. */
+ readonly dot?:'hollow'|'solid';
  /** CKP-MFD-56: a grey row opens Settings › Subscriptions instead of selecting the subscription. */
  readonly settings?:true;
  /** A grey row is either a retained (stale) reading or one that cannot be read at all (WP-12: only the latter merge). */
@@ -119,15 +123,16 @@ export function cautionItems(data:WireCockpitData,now:number,redBelow:number):Ca
  // CKP-MFD-28 (study mfd-adapter.js resetAlert): an announced public reset is placed at its window's middle, to the
  // half hour; a date-only or missing schedule has no time to show. Never the user's own reset.
  for(const e of data.details?.resetEvents??[]){
-  if(!(Date.parse(e.expiresAt)>now))continue;const m=members.find(m=>m.row.id===e.rowId&&(!e.planIds?.length||e.planIds.includes(m.account.plan.id)));if(!m)continue;// a plan-scoped announcement belongs to that plan's subscription only (CKP-MFD-56)
+  // D466 / DOCK-3.7-05: an announcement is listed for its news clock only (30 min after a look, 3 present hours, 24 h).
+  if(!newsClock.isNews(e,now))continue;const m=members.find(m=>m.row.id===e.rowId&&(!e.planIds?.length||e.planIds.includes(m.account.plan.id)));if(!m)continue;// a plan-scoped announcement belongs to that plan's subscription only (CKP-MFD-56)
   const s=(lang:'en'|'zh-CN')=>lang==='en'?m.row.name.en:m.row.name.zh,id=JSON.stringify(['reset',e.id]),stable=id;
   // D166/D428: only reset_credit is a banked reset; a direct reset and a legacy event with no kind use the direct wording.
   const bank=e.kind==='reset_credit';
-  if(e.status==='confirmed'){list.push({id,stable,level:'blue',member:m.key,text:both(bank?'mfd.alBankedConf':'mfd.alResetConf',lang=>({s:s(lang)}))});continue;}
+  if(e.status==='confirmed'){list.push({id,stable,level:'blue',dot:'solid',member:m.key,text:both(bank?'mfd.alBankedConf':'mfd.alResetConf',lang=>({s:s(lang)}))});continue;}
   const from=e.schedule?Date.parse(e.schedule.from):NaN,through=e.schedule?Date.parse(e.schedule.through):NaN;
   const mid=e.schedule&&e.schedule.precision!=='date'&&Number.isFinite(from)?Number.isFinite(through)?(from+through)/2:from:null;
   const at=mid===null?null:Math.round(mid/(30*60000))*30*60000;
-  list.push({id,stable,level:'blue',member:m.key,text:at===null?both(bank?'mfd.alBankedSoon':'mfd.alResetSoon',lang=>({s:s(lang)})):both(bank?'mfd.alBankedAnn':'mfd.alResetAnn',lang=>({s:s(lang),at:relativeMoment(at,{now,lang})}))});
+  list.push({id,stable,level:'blue',dot:'hollow',member:m.key,text:at===null?both(bank?'mfd.alBankedSoon':'mfd.alResetSoon',lang=>({s:s(lang)})):both(bank?'mfd.alBankedAnn':'mfd.alResetAnn',lang=>({s:s(lang),at:relativeMoment(at,{now,lang})}))});
  }
  // D63: banked resets that expire within 48 hours, one blue line per subscription. Personal facts are joined
  // only through a verified reference, as the Subscription page joins them. List-only: they never light the lamp.
@@ -136,7 +141,7 @@ export function cautionItems(data:WireCockpitData,now:number,redBelow:number):Ca
   const f=cardFacts(m.key,false);if(!f)continue;
   const n=f.items.filter(c=>{const at=c.expiresAt?Date.parse(c.expiresAt):NaN;return Number.isFinite(at)&&at>now&&at-now<=48*3600e3;}).length;
   if(!n)continue;
-  list.push({id:JSON.stringify(['cards',m.key,n]),stable:JSON.stringify(['cards',m.key]),level:'blue',member:m.key,text:both(f.partial?'host.alCardsSome':n===1?'host.alCardsOne':'host.alCardsMany',lang=>({s:nameOf(m.row,lang),n:String(n)}))});
+  list.push({id:JSON.stringify(['cards',m.key,n]),stable:JSON.stringify(['cards',m.key]),level:'blue',dot:'solid',member:m.key,text:both(f.partial?'host.alCardsSome':n===1?'host.alCardsOne':'host.alCardsMany',lang=>({s:nameOf(m.row,lang),n:String(n)}))});
  }
  // D63: a declared plan's published peak-rate window (cockpitPeaksV1), from the same time-of-day windows the CLI's
  // advice reads. Blue and list-only; a peak already over is not listed. Unlike the reset-card loop above, unstable members

@@ -24,8 +24,8 @@ function cards(hours,state='complete'){
 }
 const blue=page=>page.locator('.pg-overview .mfd-alerts li.al-blue');
 for(const [name,hours,en,zh] of [
- ['one card inside 48 h',[30,72],'●Codex · 1 reset expires within 48 hours','●Codex · 重置次数中有 1 次将在 48 小时内到期'],
- ['two cards inside 48 h',[2,47.5,100],'●Codex · 2 resets expire within 48 hours','●Codex · 重置次数中有 2 次将在 48 小时内到期'],
+ ['one card inside 48 h',[30,72],'Codex · 1 reset expires within 48 hours','Codex · 重置次数中有 1 次将在 48 小时内到期'],
+ ['two cards inside 48 h',[2,47.5,100],'Codex · 2 resets expire within 48 hours','Codex · 重置次数中有 2 次将在 48 小时内到期'],
 ])test(`D63 banked resets expiring soon are listed: ${name}`,async({page})=>{
  const {send,receive}=await open(page,cards(hours));
  await expect(blue(page)).toHaveText(en);
@@ -43,7 +43,7 @@ test('D63 the lamp opens the full list with the expiring resets in it',async({pa
  await open(page,data);
  await page.locator('[data-caution]').click();
  await expect(page.locator('.mfd-alerts.all li.al-red')).toHaveCount(1);
- await expect(page.locator('.mfd-alerts.all li.al-blue')).toHaveText('●Codex · 1 reset expires within 48 hours');
+ await expect(page.locator('.mfd-alerts.all li.al-blue')).toHaveText('Codex · 1 reset expires within 48 hours');
 });
 test('D63 a subscription joined only by row and route gets no personal reset line',async({page})=>{
  const data=cards([30]);data.subscriptions=[];

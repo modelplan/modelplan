@@ -69,12 +69,15 @@ for(const [lang,tag] of [['en','MCP · mo'],['zh-CN','MCP · 月']])test(`CKP-EN
  assert.match(lines(html).at(-1).full,new RegExp(`^${tag} .* \\+1$`));
 });
 
-for(const [lang,cards,points] of [['en','2 resets · expires in 30h','Credits 2,368'],['zh-CN','重置 2 次 · 30h 后到期','点数 2,368']])
+// D466 (amends CKP-ENG-52): one quiet line; the expiry only within 72 h, in amber, as its own part; a later expiry is not drawn.
+for(const [lang,cards,expiry,points] of [['en','2 resets','expires in 30h','Credits 2,368'],['zh-CN','重置 2 次','30h 后到期','点数 2,368']])
  test(`CKP-ENG-52 the reserve row names what it holds and leaves out zeros (${lang})`,()=>{
   const html=view([account('a',[win('5h',75,90)],{cards:[{count:2,expiresAt:NOW+30*H}],credits:{balance:2368}}),
-   account('b',[win('5h',75,90)],{cards:[{count:0,expiresAt:NOW+30*H}],credits:{balance:0}})],lang);
-  const a=col(html,'a'),b=col(html,'b');
-  assert.match(a,new RegExp(`<span class="qrv-c[^"]*" data-full="${cards}"`));assert.match(a,new RegExp(`>${points}</span>`));
+   account('b',[win('5h',75,90)],{cards:[{count:0,expiresAt:NOW+30*H}],credits:{balance:0}}),
+   account('d',[win('5h',75,90)],{cards:[{count:1,expiresAt:NOW+96*H}]})],lang);
+  const a=col(html,'a'),b=col(html,'b'),d=col(html,'d');
+  assert.match(a,new RegExp(`<span class="qrv-c[^"]*" data-full="${cards}"`));assert.match(a,new RegExp(`<span class="qrv-x warn" data-full="${expiry}"`));assert.match(a,new RegExp(`>${points}</span>`));
+  assert.doesNotMatch(d,/qrv-x/,'an expiry more than 72 h away is not written');
   assert.doesNotMatch(b,/qrv-c|qrv-p/,'nothing that is zero is shown');
   // Nothing anywhere: no reserve row at all.
   assert.equal(model([account('c',[win('5h',75,90)],{cards:[{count:0,expiresAt:null}],credits:{balance:0}})],lang).reserve,false);
