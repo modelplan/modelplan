@@ -147,3 +147,13 @@ test('D474 a confirmed direct reset clears when the window restarted; a banked r
  const banked=withWeekly(T0+10*MIN,'reset_credit');
  assert.equal(newsRetired(banked.e,banked.data,T0+20*MIN),false,'a banked reset never clears this way');
 });
+// macrevb-1290-7: only a window whose current cycle began at or after the confirmation proves the direct reset happened;
+// the tolerance is clock skew only (NEWS_RESTART_SKEW_MS), so a cycle that began four minutes earlier keeps the news.
+const {NEWS_RESTART_SKEW_MS}=await import('../../../cockpit/.tmp/compiled/src/news-clock.js');
+test('macrevb-1290-7 a cycle that began before the confirmation is not the direct reset',()=>{
+ assert.ok(NEWS_RESTART_SKEW_MS>0&&NEWS_RESTART_SKEW_MS<=60_000,'clock-skew tolerance only');
+ for(const [start,retired] of [[T0-4*MIN,false],[T0-NEWS_RESTART_SKEW_MS-1000,false],[T0-NEWS_RESTART_SKEW_MS,true],[T0,true],[T0+MIN,true]]){
+  const x=withWeekly(start,'direct_reset');
+  assert.equal(newsRetired(x.e,x.data,T0+20*MIN),retired,`cycle start ${(start-T0)/1000}s from the confirmation`);
+ }
+});

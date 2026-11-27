@@ -26,20 +26,26 @@ var kiroReader = &nativeReader{Regions: []string{"local"}, Fetch: fetchKiro}
 
 const kiroTimeout = 20 * time.Second
 
-// kiroBin: $MODELPLAN_KIRO, PATH, then the usual install places. "" when none.
+// kiroInstall is the remedy whenever no standalone Kiro CLI can be run.
+const kiroInstall = "Kiro CLI not installed; install it from https://kiro.dev/cli/"
+
+// kiroBin: $MODELPLAN_KIRO, PATH, then the usual install places. "" when none. There is no
+// fallback into Kiro.app or Kiro CLI.app: ModelPlan never runs a program inside another app's
+// bundle (owner build-6 #14). The IDE's app/bin/kiro-cli is its launcher, not the ACP CLI, and
+// running either bundle's binary charged their self-updates to ModelPlan (App Management).
 var kiroBin = func() string {
 	if p := os.Getenv("MODELPLAN_KIRO"); p != "" && filepath.IsAbs(p) {
 		return p
 	}
 	home, _ := os.UserHomeDir()
-	return toolcli.Find(home, "kiro-cli", "/Applications/Kiro CLI.app/Contents/MacOS/kiro-cli", "/Applications/Kiro.app/Contents/Resources/app/bin/kiro-cli")
+	return toolcli.Find(home, "kiro-cli")
 }
 
 func fetchKiro(ctx context.Context, _ *http.Client, _, _ string, now time.Time) codexbarEntry {
 	e := codexbarEntry{Status: "error", ObservedAt: now.UTC()}
 	bin := kiroBin()
 	if bin == "" {
-		e.Error = "kiro-cli not found"
+		e.Error = kiroInstall
 		e.ErrorCode = "runtime_missing"
 		return e
 	}
@@ -47,6 +53,9 @@ func fetchKiro(ctx context.Context, _ *http.Client, _, _ string, now time.Time) 
 	if err != nil {
 		e.Error = err.Error()
 		e.ErrorCode = errorCode(err)
+		if errors.Is(err, toolcli.ErrInsideAppBundle) {
+			e.Error = kiroInstall
+		}
 		if errors.Is(err, toolcli.ErrRuntimeMissing) {
 			e.Status = toolcli.RuntimeMissing
 			e.Error = toolcli.RuntimeNextStep
@@ -73,13 +82,14 @@ func askKiro(ctx context.Context, bin string) (json.RawMessage, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := cmd.Start(); err != nil {
+	if err := toolcli.Start(cmd); err != nil {
 		if ctx.Err() != nil {
 			return nil, codeError(transportErrorCode(ctx.Err()), "Kiro read canceled")
 		}
 		return nil, codeError("runtime_missing", "kiro-cli did not start")
 	}
-	defer func() { _ = in.Close(); _ = cmd.Process.Kill(); _ = cmd.Wait() }()
+	// Stop the whole process group, not only kiro-cli: nothing it started outlives the read.
+	defer func() { _ = in.Close(); _ = toolcli.Finish(cmd) }()
 	send := func(v any) error { b, _ := json.Marshal(v); _, err := in.Write(append(b, '\n')); return err }
 	sc := bufio.NewScanner(out)
 	sc.Buffer(make([]byte, 0, 64<<10), 4<<20)

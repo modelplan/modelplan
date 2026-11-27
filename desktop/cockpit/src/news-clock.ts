@@ -120,11 +120,14 @@ export function createNewsClock():NewsClock {
 }
 /** D474 §5.1: an undated announcement (no schedule) that is never confirmed retires 48 h after publication. */
 export const NEWS_UNDATED_RETIRE_MS=48*3_600_000;
-/** A direct reset counts as applied when a window's current cycle began no earlier than this before its confirmation. */
-const RESTART_SLACK_MS=5*60_000;
+/** macrevb-1290-7: a direct reset counts as applied only when a window's current cycle began at or after its confirmation.
+ *  The only tolerance is clock skew between the provider's reset stamp and the confirmation stamp: reset times arrive at
+ *  whole-second or whole-minute precision, so 60 s covers rounding plus ordinary clock drift while a cycle that began
+ *  minutes before the confirmation (the previous cycle) never counts. */
+export const NEWS_RESTART_SKEW_MS=60_000;
 /** D474 §5.1 retirements beyond the clock itself: (a) an undated, never-confirmed announcement 48 h after publication;
  *  (b) a confirmed direct reset once the reading shows its window restarted (DOCK-3.7-03: a longer-than-5h window of that
- *  subscription whose current cycle started at or after the confirmation). A confirmed banked reset never clears this
+ *  subscription whose current cycle started at or after the confirmation, within NEWS_RESTART_SKEW_MS). A confirmed banked reset never clears this
  *  way: the credit stays in the reserve until it is used. */
 export function newsRetired(e:WireResetEvent,data:WireCockpitData,now:number):boolean {
  const published=ms(e.publishedAt);
@@ -136,7 +139,7 @@ export function newsRetired(e:WireResetEvent,data:WireCockpitData,now:number):bo
   for(const w of m.account.windows){
    const reset=ms(w.resetsAt),span=w.durationSeconds;
    if(!w.current||reset===null||span===null||span<=18000||reset<=now)continue;
-   if(reset-span*1000>=confirmed-RESTART_SLACK_MS)return true;
+   if(reset-span*1000>=confirmed-NEWS_RESTART_SKEW_MS)return true;
   }
  }
  return false;

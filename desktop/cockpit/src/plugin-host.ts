@@ -232,14 +232,15 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     const before=column.querySelector<HTMLElement>(':scope > .pl-draw');
     const area=typeof drawn.draw==='function'&&rows>0?(before&&before.dataset.plugin===plugin.id?before:el('div','pl-draw')):null;
     for(const old of column.querySelectorAll<HTMLElement>(':scope > .pl-draw'))if(old!==area)watch?.unobserve(old);
-    if(area){area.style.gridRow=`1 / span ${rows}`;area.dataset.plugin=plugin.id;}
+    const spanFoot=!!area&&drawn.drawFoot===true;// D465: the draw also covers the bottom-line row
+    if(area){area.style.gridRow=`1 / span ${rows+(spanFoot?1:0)}`;area.dataset.plugin=plugin.id;}
     const parts:HTMLElement[]=area?[area]:cells();
     const foot=el('div','qrow qrow-t pl-foot');
     if(drawn.foot){foot.setAttribute('role','group');foot.setAttribute('aria-label',[drawn.foot.label.full,drawn.foot.value?.full].filter(Boolean).join(' · '));foot.append(fitted('pl-foot-l',drawn.foot.label));if(drawn.foot.value){const v=fitted('pl-foot-v',drawn.foot.value);v.title=drawn.foot.value.full;foot.append(v);}}// D406: one line with an ellipsis (CSS); the tooltip holds the full text
-    parts.push(foot);if(reserve)parts.push(el('div','qrow qrow-r'));
+    if(!spanFoot)parts.push(foot);if(reserve)parts.push(el('div','qrow qrow-r'));
     column.replaceChildren(...parts);column.dataset.rows=String(rows);column.dataset.reserve=String(reserve);
     const ink=plugin.ink;if(ink)column.style.setProperty('--pl-ink',ink);else column.style.removeProperty('--pl-ink');
-    if(area){const ok=paint(area,plugin.id,drawn.draw!,false);column.dataset.draw=ok?'custom':'fallback';if(!ok){watch?.unobserve(area);area.replaceWith(...cells());}}
+    if(area){const ok=paint(area,plugin.id,drawn.draw!,false);column.dataset.draw=ok?'custom':'fallback';if(!ok){watch?.unobserve(area);area.replaceWith(...cells());if(spanFoot){const r=column.querySelector(':scope > .qrow-r');if(r)r.before(foot);else column.append(foot);}}}
     else delete column.dataset.draw;
     refocus(column,key);restoreHeld(column,plugin.id);
     if(column.isConnected)column.querySelectorAll<HTMLElement>('.pl-cell:not(.pl-cal)').forEach(fitIn);// a redrawn Resources cell (the calendar's cells and bottom line keep main's later fit) is measured at once (the table's own fit() only runs on a resize)

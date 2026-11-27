@@ -140,7 +140,10 @@ type turn struct {
 const (
 	Keep       = 28 * 24 * time.Hour
 	maxRows    = 3000
-	maxFile    = 2 << 20
+	maxFile    = 2 << 20  // the loader refuses a file above this
+	fileMargin = 64 << 10 // the writer stays this far under maxFile, so a write is never one byte from being unreadable
+	writeLimit = maxFile - fileMargin
+	recoverMax = 16 << 20         // an over-limit perf.json up to this size is still read by the writer, which then shrinks it
 	maxScan    = 8 << 20          // bytes read from one log per run
 	maxLine    = 4 << 20          // longer lines (huge tool output) are skipped unread
 	statusGap  = 15 * time.Second // the status line refreshes often; read at most this often from it

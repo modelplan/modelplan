@@ -51,3 +51,21 @@ for(const c of fixture.columns.cases)test(`seen columns: ${c.name}`,()=>{
   assert.deepEqual(unseenMembers(d).map(m=>m.key).sort(),c.members.map(m=>m.key).filter(k=>!c.shown.includes(k)).sort());
  }finally{setSeenSubscriptions(null);}
 });
+
+// macrevb-1290-6: a privacy clear drops the host's seen set. Until fresh seen state arrives, only a good reading gives a
+// column (the never-read rule still applies: the host negotiated it); an old key no longer authorizes anything.
+test('macrevb-1290-6 a privacy clear drops the seen set; fresh seen state authorizes again',async()=>{
+ const {forgetSeenSubscriptions}=await import('../../../cockpit/.tmp/compiled/src/members.js');
+ try{
+  const d=data([{key:'0000000000000001',valueState:'none'},{key:'0000000000000002',valueState:'current'}]);
+  setSeenSubscriptions(['0000000000000001']);
+  assert.deepEqual(cockpitMembers(d).map(m=>m.key),['0000000000000001','0000000000000002']);
+  forgetSeenSubscriptions();
+  assert.deepEqual(cockpitMembers(d).map(m=>m.key),['0000000000000002'],'the old key cannot authorize the column');
+  setSeenSubscriptions(['0000000000000001']);
+  assert.deepEqual(cockpitMembers(d).map(m=>m.key),['0000000000000001','0000000000000002']);
+  // A page that never got a seen set keeps today's rule across a clear.
+  setSeenSubscriptions(null);forgetSeenSubscriptions();
+  assert.deepEqual(cockpitMembers(d).map(m=>m.key),['0000000000000001','0000000000000002']);
+ }finally{setSeenSubscriptions(null);}
+});

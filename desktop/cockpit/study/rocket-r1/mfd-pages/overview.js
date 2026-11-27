@@ -112,8 +112,8 @@ export function overviewBars(d,ui,list){
 const importNote=(imp,v)=>imp>0&&imp<v?` · ${t('mfd.importedPart',{v:tok(imp)})}`:imp>0&&imp>=v?` · ${t('mfd.importedDay')}`:'';
 
 /* 点阵 (D390): the current range as a day-by-hour grid. Columns are the days of the range, rows are six four-hour bands
-   (Today: one row of 24 hours). Only hours the hourly series records have a cell; the wire keeps hourly rows for today and
-   yesterday, so older days draw nothing and a range without any hourly record says so. Neutral LCD ink in 全部, the vendor
+   (Today: one row of 24 hours). Only hours the hourly series records have a cell; the wire keeps hourly rows for 30 days (D402),
+   so 7天 and 30天 fill, and a range without any hourly record says so. Neutral LCD ink in 全部, the vendor
    colour in a subscription scope. Hover: the day, the hours and the tokens per subscription. */
 const BAND = 4;
 const hourlySeries = (d, ui) => accountsIn(d, ui).map(a => ({a, h: (d.hourlyLong || d.hourly || []).find(x => x.accountId === a.id)})).filter(x => x.h).map(x => ({a: x.a, instants: x.h.instants, values: x.h.values}));
@@ -140,7 +140,7 @@ const p2 = n => String(n).padStart(2, '0');
 function heatmap(d, ui) {
   const {w: AW, h: AH} = fill(ui, 'ov', {w: 300, h: 110}), g = heatCells(d, ui);
   if (!g.any) return `<p class="ov-heat-empty">${t('mfd.heatNoHours')}</p>`;
-  const gap = 2, top = 12, lab = g.today ? 0 : 16, note = 14;
+  const gap = 2, top = 12, lab = g.today ? 0 : 16, note = 0;
   const cw = Math.max(4, Math.min(g.today ? 18 : 28, Math.floor((AW - lab + gap) / g.cols - gap))), ch = Math.max(6, Math.min(g.today ? 24 : 20, Math.floor((AH - top - note + gap) / g.rows - gap)));
   const W = lab + g.cols * (cw + gap) - gap, H = top + g.rows * (ch + gap) - gap, x0 = Math.max(0, Math.floor((AW - W) / 2)), y0 = Math.max(0, Math.floor((AH - note - H) / 2));
   const colour = ui.scope ? accountsIn(d, ui)[0]?.colour : null, nowHour = new Date(d.now).getHours();
@@ -152,8 +152,7 @@ function heatmap(d, ui) {
   const label = (i, anchor) => `<text class="hm-m" x="${lab + i * (cw + gap) + (anchor === 'end' ? cw : 0)}" y="9" text-anchor="${anchor}">${esc(g.today ? `${p2(i)}h` : md(g.days[i], ui))}</text>`;
   const marks = g.today ? [0, 6, 12, 18].map(i => label(i, 'start')) : g.cols > 1 ? [label(0, 'start'), label(g.cols - 1, 'end')] : [label(0, 'start')];
   const bands = g.today ? '' : Array.from({length: g.rows}, (_, r) => `<text class="hm-m" x="0" y="${top + r * (ch + gap) + ch / 2 + 3}">${p2(r * BAND)}</text>`).join('');
-  return `<svg class="ov-heat ${colour ? 'vendor' : ''}" style="left:${x0}px;top:${y0}px;${colour ? `--hv:${colour}` : ''}" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${t(g.today ? 'mfd.heatAriaToday' : 'mfd.heatAria', {d: g.cols})}">${marks.join('')}${bands}${rects}</svg>
-    <p class="hm-since" style="left:${x0}px">${t('mfd.heatNote')}</p>`;
+  return `<svg class="ov-heat ${colour ? 'vendor' : ''}" style="left:${x0}px;top:${y0}px;${colour ? `--hv:${colour}` : ''}" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${t(g.today ? 'mfd.heatAriaToday' : 'mfd.heatAria', {d: g.cols})}">${marks.join('')}${bands}${rects}</svg>`;
 }
 
 
