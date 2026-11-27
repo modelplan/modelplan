@@ -8,12 +8,12 @@ import {visualFixture} from '../visual-fixture.mjs';
 test.beforeEach(async({page})=>excludePortholeFlicker(page));
 const NOW=new Date(2026,10,4,12).getTime(),H=36e5;
 const localDay=back=>{const d=new Date(2026,10,4-back);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
-async function open(page,data,locale='en'){
+async function open(page,data,locale='en',range){
  await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});
  await page.clock.setFixedTime(new Date(NOW));
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
- expect(await receive(send('load',{appearance:{...appearance,locale},shell,redBelow:25}))).toBe(true);
+ expect(await receive(send('load',{appearance:{...appearance,locale},shell:range?{...shell,range}:shell,redBelow:25}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('display',{data}))).toBe(true);
  return {send,receive};
@@ -32,8 +32,7 @@ function history(dailyFrom=localDay(39)){
 }
 const grid=page=>page.locator('[data-opt="chart"] b',{hasText:/^Grid$/}).click();
 
-// hourly rows (30 days on the wire, D402); a day without rows has no cell.
-// hourly rows (the wire keeps 30 days, D402); a day without rows has no cell.
+// Hourly rows: the wire keeps 30 days (D402); a day without rows has no cell.
 const hours=[[0,9,500],[0,10,300],[1,22,1000],[1,23,400],[1,14,0]];
 function hourly(){
  const data=history();
@@ -206,3 +205,17 @@ for(const [name,status,schedule,en,zh,kind] of [
  expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);
  await expect(blue(page)).toHaveText(zh);
 });
+
+// D402: the wire keeps 30 days of hourly rows, so the 7天 and 30天 Grid fill every day and no "only two days" note shows.
+for(const [range,days] of [['7d',7],['30d',30]])
+ for(const locale of ['en','zh-CN'])
+ test(`D402 the Grid fills ${days} days from 30 days of hourly rows (${range}, ${locale})`,async({page})=>{
+  const data=history();
+  data.history.hourly=Array.from({length:30*24},(_,i)=>({at:new Date(2026,10,4-29,i).toISOString(),source:'codex',origin:'live',observedOutputTokens:10})).filter(r=>new Date(r.at).getTime()<=NOW);
+  await open(page,data,locale,range);
+  await page.locator('[data-opt="chart"] b',{hasText:locale==='en'?/^Grid$/:/^点阵$/}).click();
+  const heat=page.locator('.pg-overview svg.ov-heat');await expect(heat).toBeVisible();
+  const columns=await heat.locator('rect.hm').evaluateAll(l=>new Set(l.map(e=>e.getAttribute('x'))).size);
+  expect(columns).toBe(days);
+  await expect(page.locator('.pg-overview')).not.toContainText(/today and yesterday|只保留今天和昨天/);
+ });
