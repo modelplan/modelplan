@@ -397,6 +397,65 @@ test("D169/D246 reverted: the owner Macs admit the merge queue for the GUI tasks
   assert.ok(second > 0 && TRUSTED_MAC_ROUTE.indexOf(extra) > second);
 });
 
+test("D480: gui-pool picks exactly one GUI pool; auto reads the org runners and fails safe to hosted", () => {
+  const text = fs.readFileSync(new URL("../../.github/workflows/desktop.yml", import.meta.url), "utf8");
+  const job = (name) => new RegExp(`^  ${name}:\\n((?:(?:    .*)?\\n)+)`, "m").exec(text)?.[1] ?? "";
+  const pool = job("gui-pool");
+  assert.match(pool, /\n    needs: gui-scope\n/);
+  assert.match(pool, /\n    permissions: \{\}\n/, "no GITHUB_TOKEN scopes");
+  assert.doesNotMatch(pool, /actions\/checkout|set -x|xtrace/, "no repository code and no tracing next to the token");
+  assert.equal([...text.matchAll(/secrets\.MAC_RUNNER_STATUS_TOKEN/g)].length, 1, "the token is named once, in gui-pool");
+  assert.match(pool, /GH_TOKEN: \$\{\{ secrets\.MAC_RUNNER_STATUS_TOKEN \}\}/);
+  // Exactly one side of the GUI leg runs for each pool value.
+  assert.match(job("native"), /&& needs\.gui-pool\.result == 'success' && needs\.gui-pool\.outputs\.pool == 'owner-mac' \}\}\n/);
+  for (const name of ["native-hosted", "native-owner-gui"])
+    assert.match(job(name), /&& needs\.gui-pool\.result == 'success' && needs\.gui-pool\.outputs\.pool == 'hosted' \}\}\n/, name);
+  assert.doesNotMatch(text, /vars\.MAC_CI_GUI_POOL == /, "the GUI jobs no longer read the variable directly");
+
+  const sh = /run: \|\n((?:          .*\n|\n)+)/.exec(pool)[1].replace(/^          /gm, "");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "d480-pool-"));
+  // gh answers the runners query with $RUNNERS (one page; filtered by the step's own --jq with real jq), or fails.
+  fs.writeFileSync(`${dir}/gh`, '#!/bin/bash\n[ -n "${GH_FAIL:-}" ] && { echo "HTTP 403" >&2; exit 1; }\n' +
+    'printf "%s\\n" "$*" >> "$CALLS"\nwhile [ $# -gt 0 ]; do [ "$1" = --jq ] && f="$2"; shift; done\nprintf "%s" "${RUNNERS:-null}" | jq -r "$f"\n', { mode: 0o755 });
+  const go = (env) => {
+    const out = `${dir}/out`, calls = `${dir}/calls`; fs.writeFileSync(out, ""); fs.writeFileSync(calls, "");
+    const r = spawnSync("bash", ["-c", sh], { env: { PATH: `${dir}:${process.env.PATH}`, GITHUB_OUTPUT: out, GITHUB_STEP_SUMMARY: `${dir}/summary`,
+      CALLS: calls, INPUT_POOL: "", VAR_POOL: "", ORG: "modelplan", GH_TOKEN: "tok-secret", ...env } });
+    assert.equal(r.status, 0, r.stderr.toString());
+    assert.doesNotMatch(r.stdout.toString() + r.stderr.toString(), /tok-secret/, "never prints the token");
+    return { pool: fs.readFileSync(out, "utf8").trim(), calls: fs.readFileSync(calls, "utf8").trim() };
+  };
+  const runner = (status, busy, labels) => ({ status, busy, labels: labels.map((name) => ({ name })) });
+  const R = (...r) => JSON.stringify({ total_count: r.length, runners: r });
+  const gui = ["self-hosted", "macOS", "ARM64", "modelplan-mac", "modelplan-mac-gui"], nongui = ["self-hosted", "macOS", "modelplan-mac-nongui"];
+  try {
+    // Today's values behave exactly as before and never call the API.
+    for (const VAR_POOL of ["", "something"]) assert.deepEqual(go({ VAR_POOL }), { pool: "pool=owner-mac", calls: "" }, `var ${VAR_POOL || "unset"}`);
+    assert.deepEqual(go({ VAR_POOL: "hosted" }), { pool: "pool=hosted", calls: "" });
+    // The dispatch input wins over the variable, auto included.
+    for (const VAR_POOL of ["", "hosted", "auto"]) {
+      assert.deepEqual(go({ VAR_POOL, INPUT_POOL: "hosted", RUNNERS: R(runner("online", false, gui)) }), { pool: "pool=hosted", calls: "" });
+      assert.deepEqual(go({ VAR_POOL, INPUT_POOL: "owner-mac" }), { pool: "pool=owner-mac", calls: "" });
+    }
+    assert.equal(go({ VAR_POOL: "hosted", INPUT_POOL: "default" }).pool, "pool=hosted", "gui_pool=default follows the variable");
+    // auto: an online, idle GUI runner -> owner Mac; anything else -> hosted.
+    const auto = (env) => go({ VAR_POOL: "auto", ...env });
+    const idle = auto({ RUNNERS: R(runner("online", true, nongui), runner("online", false, gui)) });
+    assert.equal(idle.pool, "pool=owner-mac");
+    assert.match(idle.calls, /^api --paginate orgs\/modelplan\/actions\/runners\?per_page=100 /);
+    assert.equal(auto({ RUNNERS: R(runner("online", true, gui)) }).pool, "pool=hosted", "busy");
+    assert.equal(auto({ RUNNERS: R(runner("offline", false, gui)) }).pool, "pool=hosted", "offline");
+    assert.equal(auto({ RUNNERS: R(runner("online", false, nongui)) }).pool, "pool=hosted", "idle but not a GUI runner");
+    assert.equal(auto({ RUNNERS: R() }).pool, "pool=hosted", "no runners");
+    assert.deepEqual(auto({ GH_TOKEN: "", RUNNERS: R(runner("online", false, gui)) }), { pool: "pool=hosted", calls: "" }, "missing secret (fork, unset)");
+    assert.equal(auto({ GH_FAIL: "1" }).pool, "pool=hosted", "API error");
+    assert.equal(auto({ RUNNERS: "not json" }).pool, "pool=hosted", "unreadable answer");
+    assert.equal(auto({ RUNNERS: JSON.stringify({ message: "Bad credentials" }) }).pool, "pool=hosted", "error body");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("D169: desktop.yml starts GUI legs only on dispatch, in the merge queue and on the nightly, and passes the selection", () => {
   const text = fs.readFileSync(new URL("../../.github/workflows/desktop.yml", import.meta.url), "utf8");
   const job = (name) => new RegExp(`^  ${name}:\\n((?:(?:    .*)?\\n)+)`, "m").exec(text)?.[1] ?? "";
@@ -406,7 +465,7 @@ test("D169: desktop.yml starts GUI legs only on dispatch, in the merge queue and
   assert.match(scope, /if: \$\{\{ !cancelled\(\) && !inputs\.mac_ci_probe && \(\(github\.event_name == 'workflow_dispatch' && inputs\.gui\) \|\| \(github\.event_name == 'merge_group' && needs\.queue-scope\.outputs\.gui == 'true'\) \|\| github\.event_name == 'schedule'\) \}\}/);
   for (const name of ["native", "native-hosted", "native-owner-gui"]) {
     const body = job(name);
-    assert.match(body, /needs: gui-scope\n/, name);
+    assert.match(body, /needs: \[gui-scope, gui-pool\]\n/, name);
     assert.match(body, /if: \$\{\{ !cancelled\(\) && github\.event_name != 'pull_request' && .*needs\.gui-scope\.result == 'success' && needs\.gui-scope\.outputs\.run == 'true'/, name);
     assert.match(body, /\n      gui_classes: \$\{\{ needs\.gui-scope\.outputs\.classes \}\}\n/, name);
   }

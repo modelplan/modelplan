@@ -479,14 +479,60 @@ jobs:
           echo "run=$run" >> "$GITHUB_OUTPUT"; echo "classes=$classes" >> "$GITHUB_OUTPUT"
           echo "GUI legs: run=$run, selection: $classes" | tee -a "$GITHUB_STEP_SUMMARY"
 
+  gui-pool:
+    # D480: which pool takes the GUI leg, read by the three GUI jobs below (exactly one side runs):
+    #   owner-mac -> native (the whole GUI leg on the owner's GUI Mac, label modelplan-mac-gui)
+    #   hosted    -> native-hosted (hosted macos-15) + native-owner-gui (only the ownerGui classes, still the GUI Mac)
+    # A gui_pool=hosted|owner-mac dispatch input wins. Otherwise MAC_CI_GUI_POOL: hosted -> hosted; auto -> owner-mac
+    # when an org runner labelled modelplan-mac-gui is online and not busy, else hosted; unset or any other value ->
+    # owner-mac (as before D480). auto fails safe to hosted on a missing secret or any API error. Race: the GUI Mac
+    # can turn busy between this read and the job's start; the native job then simply queues on it, which is accepted.
+    # No checkout here: the read-only runner-status token never shares a job with repository code.
+    needs: gui-scope
+    if: ${{ !cancelled() && needs.gui-scope.result == 'success' && needs.gui-scope.outputs.run == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions: {}
+    outputs:
+      pool: ${{ steps.pool.outputs.pool }}
+    steps:
+      - id: pool
+        env:
+          INPUT_POOL: ${{ inputs.gui_pool }}
+          VAR_POOL: ${{ vars.MAC_CI_GUI_POOL }}
+          ORG: ${{ github.repository_owner }}
+          GH_TOKEN: ${{ secrets.MAC_RUNNER_STATUS_TOKEN }}
+        run: |
+          set -euo pipefail
+          pool=owner-mac; why="MAC_CI_GUI_POOL unset or not hosted/auto"
+          if [ "$INPUT_POOL" = hosted ] || [ "$INPUT_POOL" = owner-mac ]; then
+            pool=$INPUT_POOL; why="gui_pool=$INPUT_POOL dispatch input"
+          elif [ "$VAR_POOL" = hosted ]; then
+            pool=hosted; why="MAC_CI_GUI_POOL=hosted"
+          elif [ "$VAR_POOL" = auto ]; then
+            pool=hosted
+            if [ -z "${GH_TOKEN:-}" ]; then
+              why="auto: MAC_RUNNER_STATUS_TOKEN not available"
+            elif idle=$(gh api --paginate "orgs/$ORG/actions/runners?per_page=100" --jq '[.runners[]
+                | select(.status == "online" and .busy == false and any(.labels[]; .name == "modelplan-mac-gui"))] | length' \
+                | awk '{ n += $1 } END { print n + 0 }') && [[ $idle =~ ^[0-9]+$ ]]; then
+              if [ "$idle" -gt 0 ]; then pool=owner-mac; why="auto: $idle idle GUI Mac runner(s)"
+              else why="auto: no online idle GUI Mac runner"; fi
+            else
+              why="auto: runner status unreadable"
+            fi
+          fi
+          echo "pool=$pool" >> "$GITHUB_OUTPUT"
+          echo "GUI pool: $pool ($why)" | tee -a "$GITHUB_STEP_SUMMARY"
+
   native:
     name: native (${{ matrix.os }})
     # The GUI-native job occupies the ONE GUI test machine (runner label modelplan-mac-gui), and GitHub
     # schedules that machine FIFO with everything else, so urgent runs (owner test builds, ledger fixes)
     # waited behind routine ones. When it runs is decided by gui-scope above. pull_request events never
     # start a GUI leg; the draft clause is redundant and kept for scripts/workflow-policy.mjs.
-    needs: gui-scope
-    if: ${{ !cancelled() && github.event_name != 'pull_request' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.gui-scope.result == 'success' && needs.gui-scope.outputs.run == 'true' && !(inputs.gui_pool == 'hosted' || (inputs.gui_pool != 'owner-mac' && vars.MAC_CI_GUI_POOL == 'hosted')) }}
+    needs: [gui-scope, gui-pool]
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.gui-scope.result == 'success' && needs.gui-scope.outputs.run == 'true' && needs.gui-pool.result == 'success' && needs.gui-pool.outputs.pool == 'owner-mac' }}
     strategy:
       fail-fast: false
       matrix:
@@ -502,9 +548,9 @@ jobs:
     name: native-hosted (${{ matrix.os }})
     # The GUI leg minus the ownerGui classes on hosted macos-15 (owner D62, 11-08), which has a real WindowServer
     # session, so several PRs' GUI legs run in parallel instead of queueing for the one GUI Mac. Selected by
-    # MAC_CI_GUI_POOL=hosted or a gui_pool=hosted dispatch; same triggers as the job above.
-    needs: gui-scope
-    if: ${{ !cancelled() && github.event_name != 'pull_request' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.gui-scope.result == 'success' && needs.gui-scope.outputs.run == 'true' && (inputs.gui_pool == 'hosted' || (inputs.gui_pool != 'owner-mac' && vars.MAC_CI_GUI_POOL == 'hosted')) }}
+    # gui-pool (MAC_CI_GUI_POOL=hosted, auto with no idle GUI Mac, or a gui_pool=hosted dispatch); same triggers as the job above.
+    needs: [gui-scope, gui-pool]
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.gui-scope.result == 'success' && needs.gui-scope.outputs.run == 'true' && needs.gui-pool.result == 'success' && needs.gui-pool.outputs.pool == 'hosted' }}
     strategy:
       fail-fast: false
       matrix:
@@ -520,8 +566,8 @@ jobs:
     name: native-owner-gui (macos-latest)
     # The ownerGui classes of native-test-partition.json (they cannot finish on a hosted Mac) on the owner's GUI Mac,
     # paired with native-hosted above: together they are exactly the GUI leg.
-    needs: gui-scope
-    if: ${{ !cancelled() && github.event_name != 'pull_request' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.gui-scope.result == 'success' && needs.gui-scope.outputs.run == 'true' && (inputs.gui_pool == 'hosted' || (inputs.gui_pool != 'owner-mac' && vars.MAC_CI_GUI_POOL == 'hosted')) }}
+    needs: [gui-scope, gui-pool]
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.gui-scope.result == 'success' && needs.gui-scope.outputs.run == 'true' && needs.gui-pool.result == 'success' && needs.gui-pool.outputs.pool == 'hosted' }}
     uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@f8b0dbc4795720ef51dcb86638c6156305ebbaa9
     with:
       task: native-owner-gui

@@ -124,6 +124,20 @@ listed suite and verifies each, so together they are exactly the old GUI leg. A 
 cannot finish on a hosted Mac, for example because it waits for a Keychain or activation prompt that nobody
 answers there. Unset, the whole GUI leg runs on the GUI Mac as before.
 
+`MAC_CI_GUI_POOL=auto` (owner D480, 2026-11-27) chooses per run. The `gui-pool` job in `desktop.yml` reads
+`GET /orgs/modelplan/actions/runners` and picks the owner's GUI Mac (the whole leg in `native`) when a runner
+labelled `modelplan-mac-gui` is online and not busy, otherwise the hosted split above. It falls back to the
+hosted split when the `MAC_RUNNER_STATUS_TOKEN` secret is missing (fork, not set up) or the API call fails. The
+runner can turn busy between that read and the job's start; the `native` job then queues on it, which is
+accepted. A `gui_pool=hosted` or `gui_pool=owner-mac` dispatch input still overrides the variable, and
+`modelplan-gates` passes on either pool (`native` green, or `native-hosted` and `native-owner-gui` both green;
+the other side is skipped). Note that the hosted split still runs the `ownerGui` classes on the GUI Mac.
+
+Owner setup for `auto`: create a fine-grained personal access token with resource owner `modelplan` and only the
+organization permission "Self-hosted runners: read" (no repository access), then run
+`gh secret set MAC_RUNNER_STATUS_TOKEN -R modelplan/modelplan` (it prompts for the value) and
+`gh variable set MAC_CI_GUI_POOL -R modelplan/modelplan --body auto`.
+
 ## Ordinary owner Macs for headless workflows
 
 `MAC_CI_NONGUI=enabled` (owner D62, 2026-11-08) moves the `u11-native` task of `trusted-mac.yml` to the
