@@ -143,7 +143,7 @@ import ModelPlanWire
                     if abs(pinned.constant - wrapped) > 0.5 { pinned.constant = wrapped }
                 } else {
                     let pinned = button.heightAnchor.constraint(equalToConstant: wrapped)
-                    pinned.isActive = true; wrappingButtonHeights[ObjectIdentifier(button)] = pinned
+                    pinned.isActive = true; self.wrappingButtonHeights[ObjectIdentifier(button)] = pinned
                 }
             }
         }
