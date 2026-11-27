@@ -1342,7 +1342,14 @@ struct StatusNoticePresentation {
         // Always present, hidden when the range has no figure, so an open menu can show or clear it (MENU-52).
         let total = rangeTotalLine(range, language: language)
         menuItems.append(.init(title: total ?? "", accessibilityID: "status.rangeTotal", hidden: total == nil))
-        let admitted = composition.presentedContent.snapshot.presentationRows
+        // Master spec S2 (D474, C30): the worst quota alert in the SHORT sentence form, under the total line.
+        let presented = composition.presentedContent
+        if !lifecyclePaused, content.status == .ready,
+           let alert = MenuAlertLine.text(presented, redBelow: Double(composition.latestSettings?.effective.redBelow ?? SettingsPreferences().redBelow),
+                                          now: composition.currentDate(), language: language) {
+            menuItems.append(.init(title: alert, accessibilityID: "status.alert"))
+        }
+        let admitted = presented.snapshot.presentationRows
         unavailableMemberRefreshes.formIntersection(Set(admitted.keys))
         // Some reader failures publish an admitted provider row without any
         // account. Such failures still need the same Diagnostics action.
@@ -1553,6 +1560,9 @@ struct StatusNoticePresentation {
     private var statusAccessibilityHelp: String?
     private var statusTooltipHidden: Bool { console?.isShowing == true }
     func refreshStatusTooltip() {
+        // Master spec §7.4 (D473): the ignition's tooltip says what its press does now.
+        composition.dock.ignitionCockpitState = console?.isShowing == true
+            ? (console?.isDetached == true ? .detachedOpen : .dockedOpen) : .closed
         // G3-62: a tip shown for the ignition key goes when the cockpit opens, and stays away while it is open.
         dockHelp?.setCockpitShowing(statusTooltipHidden)
         guard let button = status?.button else { return }

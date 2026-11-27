@@ -300,11 +300,12 @@ actor EntrySyntheticClient: EngineClient {
         for option in options {
             let threshold = try XCTUnwrap(Int(option))
             _ = try await editor.commit(SettingsB20Edit.redBelow(threshold))
-            XCTAssertEqual(try reading(first).status, threshold >= 25 ? .critical : .warning, option)
-            XCTAssertEqual(try reading(second).status, threshold >= 20 ? .critical : .warning, option)
+            // D474 decision 2: above the red line with no estimate the ring is normal, never "under 50 %" amber.
+            XCTAssertEqual(try reading(first).status, threshold >= 25 ? .critical : .normal, option)
+            XCTAssertEqual(try reading(second).status, threshold >= 20 ? .critical : .normal, option)
         }
         _ = try await editor.commit(SettingsB20Edit.redBelow(20))
-        XCTAssertEqual(try reading(first).status, .warning)
+        XCTAssertEqual(try reading(first).status, .normal)
         XCTAssertEqual(try reading(second).readout, "20%")
         XCTAssertEqual(try reading(second).status, .critical)
         _ = try await editor.commit(SettingsB20Edit.percentagePin(first, .fiveHour))
@@ -327,7 +328,7 @@ actor EntrySyntheticClient: EngineClient {
         let restored = try XCTUnwrap(relaunched.settingsHost.application.editor.snapshot)
         XCTAssertEqual(restored.preferences.redBelow, 20)
         let restoredReadings = relaunched.composition.dock.dockView.presentedReadingsForChecks
-        XCTAssertEqual(restoredReadings[first]?.status, .warning)
+        XCTAssertEqual(restoredReadings[first]?.status, .normal)
         XCTAssertEqual(restoredReadings[second]?.status, .critical)
         XCTAssertEqual(restoredReadings[first]?.readout, "75%")
 
@@ -357,7 +358,8 @@ actor EntrySyntheticClient: EngineClient {
             let card = try XCTUnwrap(dock.cardContent(for: id, at: wall), line: line)
             XCTAssertEqual(card.rows.first { $0.id == "quota:weekly:604800:main:main" }?.tone, expected, line: line)
         }
-        try assertBand(first, .warning)
+        // D474 decision 2: 50 % with no estimate is normal (amber only for a run-out before the reset).
+        try assertBand(first, .normal)
         try assertBand(second, .normal)
 
         let delivery = try XCTUnwrap(app.composition.store.snapshot.delivery)
@@ -373,7 +375,7 @@ actor EntrySyntheticClient: EngineClient {
         try assertBand(first, .critical)
         try assertBand(second, .critical)
         _ = try await editor.commit(SettingsB20Edit.redBelow(10))
-        try assertBand(first, .warning)
+        try assertBand(first, .normal)
         try assertBand(second, .critical)
 
         let saved = try XCTUnwrap(editor.snapshot)
@@ -385,7 +387,7 @@ actor EntrySyntheticClient: EngineClient {
             _ = try await editor.commit(SettingsB20Edit.redBelow(threshold))
             try await deliver(weekly: Double(threshold), secondWeekly: Double(threshold) + 1)
             try assertBand(first, .critical)
-            try assertBand(second, .warning)
+            try assertBand(second, .normal)
         }
     }
 

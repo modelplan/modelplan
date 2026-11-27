@@ -3,7 +3,7 @@ import Foundation
 import ModelPlanDock
 import ModelPlanCockpitWeb
 
-/// D466: the host side of the cockpit's news channel. The page cannot read the Swift clock, so this sends it the
+/// D466: the host side of the cockpit's news channel (and, D474, the `seen` memory). The page cannot read the Swift clock, so this sends it the
 /// answers (`news {items:[{id,status,untilUnixMs}]}`, at most 64) on load, with each display and whenever an answer
 /// changes, and records the page's first looks (`newsLook`) in the same shared `DockNewsClock`.
 @MainActor public final class CockpitNewsBridge {
@@ -34,6 +34,9 @@ import ModelPlanCockpitWeb
     }
     public func refresh() {
         coordinator?.newsItems = Self.items(events: events(), clock: provider.newsClock, now: now())
+        // D474 decision 3 (C45): the seen-subscriptions memory rides the same refresh tick (it changes only when a
+        // projection records a first good reading, or a Forget / privacy clear empties it). No store: nothing is sent.
+        if let seen = provider.seenSubscriptions { coordinator?.seenIDs = seen.ids }
     }
     private func record(_ looks: [CockpitNewsLookEvent]) {
         let at = now()

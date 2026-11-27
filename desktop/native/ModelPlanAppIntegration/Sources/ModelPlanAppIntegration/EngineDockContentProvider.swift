@@ -156,6 +156,10 @@ public enum EngineDeadlineFacts {
     public var isPresent: () -> Bool = { true }
     /// Called after every refresh ticked the clock; the cockpit's news bridge re-answers the page from it.
     public var onNewsTick: (() -> Void)?
+    /// Master spec decision 3 / C45 (D474): the members that had a good reading on this Mac (`seen-subscriptions.json`).
+    /// With a store, a ring exists only for a member seen before or with a good reading now; nil (previews, tests that
+    /// do not install it) keeps every member, as the cockpit page does without a `seen` message.
+    public var seenSubscriptions: DockSeenSubscriptionsStore?
     /// The one question every surface asks (the cockpit's alert list and key dot ask it too): is this event still news?
     public func isNews(eventID: String, status: String, anchor: Date, at now: Date) -> Bool {
         newsClock.isLive(DockNewsClock.key(eventID: eventID, status: status), anchor: anchor, at: now)
@@ -214,10 +218,16 @@ public enum EngineDeadlineFacts {
         }
         var passSignals:[DockSubscriptionSignal] = []
         var passNewsKeys:[String] = []
+        var passSeen:[(key:String,durable:Bool)] = []
         let wirePeaks=value.peaks
         for member in members {
             let row=member.row
             let input = makeInput(member, now: context.now)
+            // Decision 3: a good reading now (current or kept) records the member; one never read on this Mac has no
+            // ring (Settings and the grey line carry it). A numbered fallback is remembered for this session only.
+            let goodNow = value.status == .ready && (member.account.valueState == .current || member.account.valueState == .retained)
+            if goodNow { passSeen.append((member.id, member.isStable)) }
+            if let seen = seenSubscriptions, value.status == .ready, !seen.shows(member.id, goodNow: goodNow) { continue }
             inputs.append(input)
             let message = message(row, now: context.now)
             let account=member.account
@@ -454,6 +464,7 @@ public enum EngineDeadlineFacts {
         }
         let content = DockContent(snapshot: .init(inputs: inputs, subscriptions: subscriptions + accountless,presentationRows: reasons),
                      menuStatusLines: lines.isEmpty ? [status] : lines, emptyText: status, signals:passSignals)
+        seenSubscriptions?.record(passSeen)
         newsClock.tick(shown:passNewsKeys,present:isPresent(),at:context.now)
         onNewsTick?()
         verifiedWindows = passWindows; retainedWindows = passRetained; recomputeDeadline = passDeadline
@@ -677,6 +688,8 @@ public enum EngineDeadlineFacts {
         let account=member.account
             let accountCurrent = rowCurrent && account.valueState == .current && (date(account.freshUntil).map { now < $0 } ?? true)
             var currentReading = false, keptReading = false
+            // Decision 2 (D474): the admitted run-out of a current window (before its reset) is what turns a ring amber.
+            let runOuts = runOutTimes(member, forecasts: source.dockContent.forecasts, now: now)
             for window in account.windows {
                 let current = accountCurrent && window.current && (date(window.validUntil).map { now < $0 } ?? true)
                 let period:DockQuotaPeriod
@@ -697,6 +710,7 @@ public enum EngineDeadlineFacts {
                     (period == .week && ["main", "weekly"].contains(window.limitKey)) ||
                     (period == .month && ["main", "monthly"].contains(window.limitKey))
                 projected.isGeneral = window.modelScope == nil && window.poolKey == "main" && generalLimit
+                if current { projected.runOutAt = runOuts[window.id] }
                 if current { currentReading = currentReading || window.remainingPercent != nil }
                 else if let kept = retainedWindow(member, window, now: now) {
                     // DOCK-3.2-50: the earlier reading stays until its window resets; the host re-checks it.

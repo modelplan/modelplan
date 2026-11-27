@@ -350,11 +350,27 @@ do {
         }
     }
     try test("B06 boundary status and unknown/stale/passed resets are not invented fuel") {
-        for (r,expected) in [(0.0,DockQuotaStatus.critical),(25.0,.critical),(25.01,.warning),(26.0,.warning),(50.0,.warning),(50.01,.normal),(51.0,.normal),(100.0,.normal)] {
+        // Master spec decision 2 (D474, C9): amber is no longer "under 50 %"; without an estimate a window above the red
+        // line is normal.
+        for (r,expected) in [(0.0,DockQuotaStatus.critical),(25.0,.critical),(25.01,.normal),(26.0,.normal),(50.0,.normal),(50.01,.normal),(51.0,.normal),(100.0,.normal)] {
             let w=DockQuotaWindowInput(id:"five",period:.fiveHour,label:"5h",remainingPercent:r,resetsAt:nil,durationSeconds:nil)
             var i=DockInstrumentInput(id:"sub",name:"Synthetic",windows:[w]);i.dataState = .fresh
             let p=try DockInstrumentProjection.evaluate(i,now:now)
             try expect(p.status==expected && p.timeLeftFraction==nil,"quota threshold with unknown reset time")
+        }
+        // Amber only when the estimate runs out before the reset; at or after the reset, or already past, it stays normal.
+        for (runOut,reset,expected) in [(3600.0,7200.0,DockQuotaStatus.warning),(7200.0,7200.0,.normal),(9000.0,7200.0,.normal),(-60.0,7200.0,.normal)] {
+            var w=DockQuotaWindowInput(id:"five",period:.fiveHour,label:"5h",remainingPercent:80,resetsAt:now.addingTimeInterval(reset),durationSeconds:18000)
+            w.runOutAt=now.addingTimeInterval(runOut)
+            var i=DockInstrumentInput(id:"sub",name:"Synthetic",windows:[w]);i.dataState = .fresh
+            let p=try DockInstrumentProjection.evaluate(i,now:now)
+            try expect(p.status==expected && p.outer?.status==expected,"decision 2: amber = run-out before reset (\(runOut) vs \(reset))")
+        }
+        do {
+            var w=DockQuotaWindowInput(id:"five",period:.fiveHour,label:"5h",remainingPercent:20,resetsAt:now.addingTimeInterval(7200),durationSeconds:18000)
+            w.runOutAt=now.addingTimeInterval(600)
+            var i=DockInstrumentInput(id:"sub",name:"Synthetic",windows:[w]);i.dataState = .fresh
+            try expect(try DockInstrumentProjection.evaluate(i,now:now).status == .critical,"red wins over amber at or under the red line")
         }
         var w=DockQuotaWindowInput(id:"month",period:.month,label:"Monthly",remainingPercent:30,resetsAt:now.addingTimeInterval(5000),durationSeconds:nil)
         var i=DockInstrumentInput(id:"sub",name:"Synthetic",windows:[w]);i.dataState = .fresh
@@ -414,7 +430,7 @@ do {
                 for used in [false,true] {
                     input.showUsedPercent = used
                     let reading = try DockInstrumentProjection.evaluate(input,now:now,redBelow:threshold)
-                    let expected:DockQuotaStatus = remaining <= threshold ? .critical:.warning
+                    let expected:DockQuotaStatus = remaining <= threshold ? .critical:.normal
                     try expect(reading.status == expected && reading.outer?.status == expected,"readout mode never changes inclusive remaining threshold on a single-window ring")
                 }
             }

@@ -237,6 +237,8 @@ enum FlatReply {
     // The `plugins` body: objects, arrays and scalars, at most `nestedDepth` containers deep, `nestedKeys` unique keys per
     // object, `nestedItems` items per array and `nestedBytes` bytes. CockpitPluginWire.canonical then checks its shape.
     var nestedStart = 0
+    // Items per nested array; the `newsLook` events list may carry up to 64 (one per news item the host sent).
+    var nestedItemLimit = nestedItems
     func scalar() throws {
       let literal: (String) -> Bool = { word in
         let w = Array(word.utf8)
@@ -260,7 +262,7 @@ enum FlatReply {
       var names = Set<String>(), count = 0
       while true {
         count += 1
-        guard count <= (object ? nestedKeys : nestedItems) else { throw CockpitBridgeError.limit }
+        guard count <= (object ? nestedKeys : nestedItemLimit) else { throw CockpitBridgeError.limit }
         if object {
           white()
           let name = try string()
@@ -297,6 +299,13 @@ enum FlatReply {
         let start = i
         nestedStart = i
         try nested(1)
+        guard i - start <= nestedBytes else { throw CockpitBridgeError.limit }
+      } else if key == "events", i < a.count, a[i] == 91 {
+        // D466 `newsLook {events:[{id,status[,atUnixMs]}]}`: one array of small objects; `accept` checks the exact shape.
+        let start = i
+        nestedStart = i; nestedItemLimit = 64
+        try nested(1)
+        nestedItemLimit = nestedItems
         guard i - start <= nestedBytes else { throw CockpitBridgeError.limit }
       } else if key == "capabilities" || key == "ids", i < a.count, a[i] == 91 {
         // Flat arrays of strings only: the ready capabilities and the cautionAck identities (G3-56).
@@ -386,6 +395,8 @@ public final class CockpitBridgeState {
   public private(set) var pluginsSent = false
   /// D466: true once the host sent a `news` message; the page then posts `newsLook` actions.
   public private(set) var newsSent = false
+  /// D474 decision 3: true once the host sent a `seen` message (the page answers it with a fresh deadline report).
+  public private(set) var seenSent = false
   /// The clock a replayed look's `atUnixMs` is checked against (a test seam).
   var newsNow: () -> Date = { Date() }
   static let newsLookSkew: TimeInterval = 60, newsLookMaxAge: TimeInterval = 24 * 3600
@@ -619,6 +630,16 @@ public final class CockpitBridgeState {
     newsSent = true
     return raw
   }
+  /// D474 decision 3 (C13, C45; contract `desktop/tests/shared/seen-subscriptions.json`): the member keys that had a good
+  /// reading on this Mac. At most 64, no repeats, never "all", each a valid member key. No receipt: the page only reads it.
+  public func seen(_ ids: [String]) throws -> String {
+    guard ready, !blocked else { throw CockpitBridgeError.unavailable }
+    guard ids.count <= 64, Set(ids).count == ids.count,
+      ids.allSatisfy({ $0 != "all" && CockpitMemberScopes.isValidKey($0) }) else { throw CockpitBridgeError.invalidMessage }
+    let raw = try envelope("seen", extra: ["ids": ids])
+    seenSent = true
+    return raw
+  }
   /// Plugin columns: one reading for a running plugin. Only after `plugins`, and only to a visible, unoccluded page.
   public func pluginData(id: String, data: [String: Any]) throws -> String {
     guard ready, !blocked, pluginsSent, visibility.visible, !visibility.occluded else { throw CockpitBridgeError.unavailable }
@@ -733,7 +754,7 @@ public final class CockpitBridgeState {
       // D466: a host that sends `news` also takes the page's unsolicited deadline: the page recorded a news look from the
       // user's own input (paging, the alert list, a strip hover) and its next deadline moved. It has a fresh request id
       // (no pending reply of ours) and must not collide with a display receipt or an early deadline in flight.
-      if newsSent, pending[id] == nil, id != latestDisplayRequest, appearanceAwaitingAck != id,
+      if newsSent || seenSent, pending[id] == nil, id != latestDisplayRequest, appearanceAwaitingAck != id,
          earlyDeadline == nil, bufferedDeadline == nil {
         pageSequence = sequence
         return .unsolicitedDeadline(deadline)

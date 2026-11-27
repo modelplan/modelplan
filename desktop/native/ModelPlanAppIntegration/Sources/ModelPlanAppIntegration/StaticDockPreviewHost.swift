@@ -237,6 +237,20 @@ struct DockHelpInteraction: Equatable {
     public var showConsole: (() -> Void)?
     /// D204 (G3-94): the ignition's own press, with the screen point it came from. Nil falls back to `showConsole`.
     public var pressIgnition: ((CGPoint) -> Void)?
+    /// Master spec §7.4 (D473): what a press does now, said only by the tooltip and the accessibility label. The app sets
+    /// it on every cockpit visibility change (open, close, detach, put back).
+    public var ignitionCockpitState: IgnitionCockpitState = .closed {
+        didSet { if ignitionCockpitState != oldValue { applyIgnitionLabel() } }
+    }
+    private func applyIgnitionLabel() {
+        let text = ignitionCockpitState.text.value(preferences.language)
+        consoleButton.toolTip = text
+        consoleButton.setAccessibilityLabel(text)
+    }
+    /// The ignition's tooltip and accessibility label now (for checks).
+    var ignitionLabelForChecks: (toolTip: String?, accessibility: String?) {
+        (consoleButton.toolTip, consoleButton.accessibilityLabel())
+    }
     /// D204 (G3-94): the ignition's frame on screen while it is on the widget; the cockpit does not treat a press there
     /// as an outside click.
     public var ignitionScreenFrame: CGRect? {
@@ -295,12 +309,12 @@ struct DockHelpInteraction: Equatable {
     private var lastPlacementObservation: PlacementObservation?
     private let appearance: Appearance?
     private var attention = DockAttentionState()
-    /// D466 / DOCK-3.7-05: the shared news clock; the host records the first look at an item (widget reveal, a card that
-    /// shows it, the cockpit opening). The content provider owns the ticking and reads the same instance.
+    /// D466 / DOCK-3.7-05: the shared news clock; the host records the first look at an item when a card that shows it
+    /// opens (master spec §3.3: not on widget reveal, not on cockpit opening). The content provider owns the ticking.
     public var newsClock: DockNewsClockStore?
-    private func recordNewsLook(ids: [String]? = nil) {
+    private func recordNewsLook(ids: [String]) {
         guard let newsClock else { return }
-        let keys = attentionSignals.filter { ids?.contains($0.id) ?? true }.compactMap { $0.reset?.newsKey }
+        let keys = attentionSignals.filter { ids.contains($0.id) }.compactMap { $0.reset?.newsKey }
         newsClock.look(keys, at: currentDate())
     }
     private var attentionSignals: [DockSubscriptionSignal] = []
@@ -1192,7 +1206,7 @@ struct DockHelpInteraction: Equatable {
         consoleButton.target = self; consoleButton.action = #selector(ignitionPressed)
         consoleButton.setAccessibilityIdentifier("dock.ignition")
         consoleButton.onHelpFocusChanged = { [weak self] in self?.publishDockHelpInteraction() }
-        consoleButton.setAccessibilityLabel(EngineRowsText.openCockpit.value(preferences.language))
+        applyIgnitionLabel()
         // G3-23: the ignition cap shows the official red art at full strength, as in the prototype.
         // A disabled cockpit entry only disables the button; no dark veil is painted over it.
         container.addSubview(dockView); container.addSubview(consoleButton)
@@ -1322,7 +1336,7 @@ struct DockHelpInteraction: Equatable {
         for window in [panel, cardPanel, overflowPanel] { window?.collectionBehavior = panelCollectionBehavior }
         if value.effective.reduceMotion { locateLayer?.removeAnimation(forKey: "locate-pulse") }
         empty.stringValue = preferences.language == .english ? "No local subscriptions" : "暂无本地订阅"
-        consoleButton.setAccessibilityLabel(EngineRowsText.openCockpit.value(preferences.language))
+        applyIgnitionLabel()
         if !preferences.showDock { pendingUserReveal = false; clearLocateHighlight(); closeHeldCardEverywhere() }
         if preferences.revealMilliseconds != oldReveal {
             let saved = edge.preference
@@ -2409,7 +2423,8 @@ struct DockHelpInteraction: Equatable {
     func acknowledgeDockReveal() {
         guard permitted, !retired else { return }
         try? attention.acknowledge(.dockRevealed, signals: attentionSignals, at: currentDate())
-        recordNewsLook()
+        // Master spec C6 / §3.3 (D474): revealing the widget is not a look at the news (with D114 it is always revealed,
+        // so news would clear unseen). Only a card that shows the item records one (`showCard`).
         publishAttention()
     }
     /// D49: the widget stays in place while the cockpit is open; only its transient card and highlight go.
@@ -2461,7 +2476,8 @@ struct DockHelpInteraction: Equatable {
     public func acknowledgeCockpitOpening() {
         guard cockpitEntryEnabled, !retired else { return }
         try? attention.acknowledge(.cockpitOpening, signals: attentionSignals, at: currentDate())
-        recordNewsLook()
+        // Master spec C6 (D474): opening the cockpit is no blanket look; the page posts `newsLook` for the items drawn on
+        // its visible page or listed in the opened alert list (CockpitNewsBridge records them).
         publishAttention()
     }
     /// D204 (G3-94): the ignition toggles an attached cockpit and brings a detached one to the front (the app decides).
@@ -2530,8 +2546,9 @@ struct DockHelpInteraction: Equatable {
             // V1-FINAL §12: a kept reading says quietly why it is not new; no badge, no alert.
             additional.append(.init(id: "kept-cause", kind: .footnote, label: "", value: row.reason))
         }
-        if !loading, !unreadable,
-           DockCardAlertRule.alert(input: projected, runOutTimes: row.runOutTimes, redBelow: effectiveRedBelow, now: now) != nil {
+        let footerAlert = loading || unreadable ? nil
+            : DockCardAlertRule.alert(input: projected, runOutTimes: row.runOutTimes, redBelow: effectiveRedBelow, now: now)
+        if footerAlert != nil {
             // DOCK-3.8-52: a reset the user can spend is the one thing to do now, so its reserve line brightens.
             if row.hasResetAvailable(at: now) {
                 additional = additional.map { r in
@@ -2541,9 +2558,18 @@ struct DockHelpInteraction: Equatable {
                 }
             }
         }
-        // D466 section 5: the footer sentence repeated the quota row above it. The card ends with the "接下来" block
-        // instead (the same lines as the cockpit strip hover: next timed items in 24 h).
-        if !loading, !unreadable, !kept { additional.append(contentsOf: row.cardNextRows(at: now, english: english)) }
+        // D466 section 5: the "接下来" block (the same lines as the cockpit strip hover: next timed items in 24 h). In an
+        // alert state with nothing in 24 h it is left out, because the footer sentence already says it (§3.2).
+        if !loading, !unreadable, !kept {
+            additional.append(contentsOf: row.cardNextRows(at: now, english: english, inAlert: footerAlert != nil))
+        }
+        // Master spec C2 (D474; DOCK-3.8-52, DOCK-3.3-13, ALR-50): amber, red and used-up states end with the LONG alert
+        // sentence; the normal state has no footer. A used-up footer says what the D65 line said, so that line goes.
+        if let alert = footerAlert {
+            if alert.usedUp { additional.removeAll { $0.id == "usedUp:" + alert.windowID } }
+            additional.append(.init(id: "alert", kind: .alert, label: "", value: Self.cardAlertSentence(alert, name: projected.name, now: now, language: language),
+                                    tone: alert.severity == .critical ? .critical : .warning))
+        }
         // "重新读取" belongs to an unreadable card only; the D41 Keychain button stays wherever it is needed.
         let readAgain = WidgetCardText.readAgain.value(language)
         var action = row.actionLabel
@@ -2568,6 +2594,18 @@ struct DockHelpInteraction: Equatable {
                                sourceAndAge: content.sourceAndAge, stateLabel: content.stateLabel, rows: placeholders, links: content.links,
                                enterLabel: content.enterLabel, dismissLabel: content.dismissLabel, actionLabel: content.actionLabel,
                                cockpitLabel: content.cockpitLabel, cockpitTarget: content.cockpitTarget)
+    }
+    /// DOCK-3.8-52: the footer is the shared alert sentence (ALR-50, WP-11 `AlertSentence`, long form), the same words as
+    /// the lamp tooltip and the alert list: "Claude 5h 9% · est. out in 40m · resets in 2h00".
+    static func cardAlertSentence(_ alert: DockCardAlert, name: String, now: Date, language: SettingsLanguage) -> String {
+        func minutes(_ date: Date?) -> Double? {
+            guard let date else { return nil }
+            let seconds = date.timeIntervalSince(now)
+            return seconds.isFinite && seconds > 0 ? ceil(seconds / 60) : nil
+        }
+        return AlertSentence.quota(subscription: SettingsText(name, name), window: SettingsText(alert.label, alert.label),
+                                   remaining: alert.remaining, runOutMinutes: minutes(alert.runOutAt),
+                                   resetMinutes: minutes(alert.resetsAt)).text.value(language)
     }
     /// G3-136 (owner 11-18): why the widget is an empty ring, from the composition ("Still reading", "<tool> · Reading
     /// permission needed", "No subscriptions yet"). Nil leaves the empty ring without a reason card.

@@ -5,8 +5,10 @@ import Foundation
 /// dot, the sliver and menu-bar dot, the card block and the alert row). One entry per event id and status.
 ///
 /// An item is live until the first of
-///  1. 30 minutes after the user first looked at it (hover the card that shows it, reveal the widget, open the cockpit),
-///  2. 3 present hours (Mac awake and unlocked), counted from refresh timestamps (no timer, no wakeup),
+///  1. 30 minutes after the user first looked at it (hover the card that shows it, the cockpit page drawing it on its
+///     visible page or listing it in the opened alert list; revealing the widget or opening the cockpit is not a look),
+///  2. 3 present hours (Mac awake, unlocked and not idle for more than 5 minutes), counted from refresh timestamps (no
+///     timer, no wakeup; sleep, screen sleep and lock close the span at once),
 ///  3. 24 hours after its anchor (the confirmation time, or the publication time of an announcement).
 /// An item that has never been drawn is live (its clock starts when it is first drawn).
 ///
@@ -52,6 +54,20 @@ public struct DockNewsClock: Codable, Equatable, Sendable {
         if entries.count != before { changed = true }
         lastTick = now; lastPresent = present
         return changed
+    }
+
+    /// Master spec §5.3: the Mac went to sleep, the screens slept or the screen locked. The present span ends here, so the
+    /// gap up to the next refresh is never counted, however short it is (no timer: the next tick starts a new span).
+    public mutating func endPresence() { lastPresent = false }
+
+    /// Master spec §5.3: the user counts as present only with recent input. macOS has no idle notification, so the idle
+    /// seconds are read at the existing refresh tick; past this many seconds the Mac is idle.
+    public static let idleThreshold: TimeInterval = 5 * 60
+    /// Whether the Mac counts as present: awake, unlocked, in the console session and not idle.
+    public static func isPresent(locked: Bool, onConsole: Bool, idleSeconds: TimeInterval?) -> Bool {
+        if locked || !onConsole { return false }
+        if let idleSeconds, idleSeconds.isFinite, idleSeconds > idleThreshold { return false }
+        return true
     }
 
     /// The user looked at these items now (the first look only is kept).
@@ -101,6 +117,8 @@ public final class DockNewsClockStore: @unchecked Sendable {
         // At most one write a minute; a look always saves.
         if changed, lastSave.map({ now.timeIntervalSince($0) >= 60 }) ?? true { save(at: now) }
     }
+    /// Sleep, screen sleep or lock: close the present span (nothing to save; the span state is not persisted).
+    public func endPresence() { clock.endPresence() }
     public func look(_ keys: [String], at now: Date) {
         guard !keys.isEmpty else { return }
         let before = clock

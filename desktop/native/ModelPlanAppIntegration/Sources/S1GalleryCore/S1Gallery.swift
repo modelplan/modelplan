@@ -346,7 +346,8 @@ private struct S1FlameManifest: Decodable {
                         record["singleWindowCases"] = singleRows
                         let requiredInk = Set(expectedIDs.filter { $0 == "claude" || $0 == "cursor" })
                         let inkOK = Set(result.ink.keys) == requiredInk && result.ink.values.allSatisfy { $0 } && (requiredInk.isEmpty || result.maskedPixels > 0)
-                        let noticeInkOK = Set(result.noticeInk.keys) == expectedNoticeIDs && result.noticeInk.values.allSatisfy { $0 }
+                        // D466: no station draws a notice in this fixture, so no notice ink is expected either.
+                        let noticeInkOK = result.noticeInk.isEmpty
                         status = countOK && geometryOK && inkOK && noticeOK && noticeInkOK && zOK && p1OK && result.similarity >= 0.97 ? "partial: metric and fixture assertions pass; real reset-event provider and owner review pending" : "fail: metric, geometry, ink, notice, art or membership assertion"
                     } catch {
                         try png.write(to: output.appendingPathComponent(nativeName), options: .withoutOverwriting)

@@ -57,6 +57,53 @@ final class D466CalendarWidgetTests: XCTestCase {
         XCTAssertNil(projection.menuNotice); XCTAssertTrue(projection.dots.isEmpty)
     }
 
+    /// Master spec C6 / §3.3 (D474): revealing the widget and opening the cockpit are not looks. Only a card that shows the
+    /// item, the cockpit page's own `newsLook` (visible page or alert list) start the 30 minutes.
+    @MainActor func testRevealAndCockpitOpeningAreNotLooks() async throws {
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        var checked = false
+        _ = try await S4QuotaJourney.announcedMenuIndicator(capture: capture) { app in
+            let clock = try XCTUnwrap(app.composition.dock.newsClock, "the host shares the provider's clock")
+            XCTAssertFalse(clock.clock.entries.isEmpty, "the announced item was drawn, so its clock started")
+            app.composition.dock.acknowledgeDockReveal()
+            app.composition.dock.acknowledgeCockpitOpening()
+            XCTAssertTrue(clock.clock.entries.values.allSatisfy { $0.firstLooked == nil }, "no look from a reveal or an opening")
+            checked = true
+        }
+        XCTAssertTrue(checked)
+    }
+
+    // MARK: ignition tooltip (master spec §7.4, D473)
+
+    /// Three cockpit states, two languages; the short words only, the same text as the accessibility label.
+    func testIgnitionTooltipWordsPerCockpitState() {
+        let cases: [(IgnitionCockpitState, String, String)] = [
+            (.closed, "Open cockpit", "打开驾驶舱"), (.dockedOpen, "Close cockpit", "收起驾驶舱"), (.detachedOpen, "Show cockpit", "切到驾驶舱")]
+        for (state, en, zh) in cases {
+            XCTAssertEqual(state.text.value(.english), en)
+            XCTAssertEqual(state.text.value(.chinese), zh)
+        }
+    }
+
+    /// The key shows the state's words as its tooltip and accessibility label, and follows each change.
+    @MainActor func testIgnitionKeyFollowsTheCockpitState() async throws {
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        var checked = false
+        _ = try await S4QuotaJourney.announcedMenuIndicator(capture: capture) { app in
+            let dock = app.composition.dock
+            for state in [IgnitionCockpitState.dockedOpen, .detachedOpen, .closed] {
+                dock.ignitionCockpitState = state
+                let label = dock.ignitionLabelForChecks
+                XCTAssertTrue([state.text.value(.english), state.text.value(.chinese)].contains(label.toolTip ?? ""), "\(state): \(label)")
+                XCTAssertEqual(label.accessibility, label.toolTip, "the accessibility label says the same")
+            }
+            checked = true
+        }
+        XCTAssertTrue(checked)
+    }
+
     // MARK: news clock (fake clock)
 
     private let key = DockNewsClock.key(eventID: "banked-1", status: "confirmed")
@@ -99,6 +146,34 @@ final class D466CalendarWidgetTests: XCTestCase {
         clock.tick(shown: [key], present: true, at: confirmed.addingTimeInterval(7260 + 5 * 3600))
         XCTAssertEqual(try XCTUnwrap(clock.entries[key]).presentSeconds, DockNewsClock.maxCountedGap, accuracy: 0.001)
         XCTAssertTrue(clock.isLive(key, anchor: confirmed, at: confirmed.addingTimeInterval(7260 + 5 * 3600)))
+    }
+
+    /// Master spec §5.3: idle counts as not present (idle seconds read at the refresh tick), and a sleep, screen-sleep or
+    /// lock notification closes the present span so the next gap is never counted.
+    func testNewsClockIdleIsNotPresentAndSleepClosesTheSpan() throws {
+        XCTAssertTrue(DockNewsClock.isPresent(locked: false, onConsole: true, idleSeconds: 299))
+        XCTAssertTrue(DockNewsClock.isPresent(locked: false, onConsole: true, idleSeconds: 300), "exactly five minutes is still present")
+        XCTAssertFalse(DockNewsClock.isPresent(locked: false, onConsole: true, idleSeconds: 301), "idle past five minutes")
+        XCTAssertFalse(DockNewsClock.isPresent(locked: true, onConsole: true, idleSeconds: 0), "locked")
+        XCTAssertFalse(DockNewsClock.isPresent(locked: false, onConsole: false, idleSeconds: 0), "another user is on the console")
+        XCTAssertTrue(DockNewsClock.isPresent(locked: false, onConsole: true, idleSeconds: nil), "no idle reading: awake and unlocked")
+
+        let confirmed = at("2026-11-26T08:00:00Z")
+        var clock = DockNewsClock()
+        clock.tick(shown: [key], present: true, at: confirmed)
+        clock.tick(shown: [key], present: true, at: confirmed.addingTimeInterval(600))
+        XCTAssertEqual(try XCTUnwrap(clock.entries[key]).presentSeconds, 600, accuracy: 0.001)
+        // The Mac sleeps right after; it wakes 10 minutes later (under the 15-minute gap rule): not counted.
+        clock.endPresence()
+        clock.tick(shown: [key], present: true, at: confirmed.addingTimeInterval(1200))
+        XCTAssertEqual(try XCTUnwrap(clock.entries[key]).presentSeconds, 600, accuracy: 0.001, "the slept gap is not presence")
+        // The span restarts at that tick.
+        clock.tick(shown: [key], present: true, at: confirmed.addingTimeInterval(1800))
+        XCTAssertEqual(try XCTUnwrap(clock.entries[key]).presentSeconds, 1200, accuracy: 0.001)
+        // An idle tick (read as not present) breaks the span the same way.
+        clock.tick(shown: [key], present: false, at: confirmed.addingTimeInterval(2400))
+        clock.tick(shown: [key], present: true, at: confirmed.addingTimeInterval(3000))
+        XCTAssertEqual(try XCTUnwrap(clock.entries[key]).presentSeconds, 1200, accuracy: 0.001)
     }
 
     func testNewsClockHardCapIsTwentyFourHoursAfterTheAnchor() {
@@ -193,7 +268,9 @@ final class D466CalendarWidgetTests: XCTestCase {
                      DockNextFact(kind: .fiveHourReset, at: at("2026-11-27T05:00:00Z"))]
         let peaks = [DockPeakWindow(from: at("2026-11-26T22:00:00Z"), to: at("2026-11-27T02:00:00Z"))]
         let zh = DockNextBlock.rows(facts: facts, peaks: peaks, hasPeakRules: true, now: now, english: false, calendar: utc).map(\.value)
-        XCTAssertEqual(zh, ["接下来 · 高峰中 · 02:00 结束", "明天 01:30 预计用完", "明天 05:00 5 小时额度重置"])
+        XCTAssertEqual(zh, ["接下来 · 高峰中 · 02:00 结束", "明天 01:30 预估用完", "明天 05:00 5 小时额度重置"])
+        let en = DockNextBlock.rows(facts: facts, peaks: peaks, hasPeakRules: true, now: now, english: true, calendar: utc).map(\.value)
+        XCTAssertEqual(en, ["Next · In peak · ends 02:00", "Tomorrow 01:30 est. run-out", "Tomorrow 05:00 5-hour reset"])
     }
 
     func testNextBlockWithNothingIn24HoursListsTheNextTwoAfter() {
@@ -202,9 +279,22 @@ final class D466CalendarWidgetTests: XCTestCase {
                      DockNextFact(kind: .monthlyReset, at: at("2026-12-20T00:00:00Z")),
                      DockNextFact(kind: .fiveHourReset, at: at("2026-11-28T05:00:00Z"))]
         let zh = DockNextBlock.rows(facts: facts, peaks: [], hasPeakRules: false, now: now, english: false, calendar: utc).map(\.value)
-        XCTAssertEqual(zh, ["接下来", "24 小时内没有重置，也没有高峰", "之后 周六 05:00 5 小时额度重置", "之后 周三 05:42 每周额度重置"])
+        XCTAssertEqual(zh, ["接下来 24 小时没有重置，也没有高峰", "之后 周六 05:00 5 小时额度重置", "之后 周三 05:42 每周额度重置"])
         let en = DockNextBlock.rows(facts: facts, peaks: [], hasPeakRules: false, now: now, english: true, calendar: utc).map(\.value)
-        XCTAssertEqual(en, ["Next", "Nothing in the next 24 h", "Later Sat 05:00 5-hour reset", "Later Wed 05:42 weekly reset"])
+        XCTAssertEqual(en, ["No resets or peaks in the next 24 h", "Later Sat 05:00 5-hour reset", "Later Wed 05:42 weekly reset"])
+        // Master spec §3.2: in an alert state the footer sentence already says it, so the block is left out.
+        XCTAssertTrue(DockNextBlock.rows(facts: facts, peaks: [], hasPeakRules: false, now: now, english: false, inAlert: true, calendar: utc).isEmpty)
+    }
+
+    /// Master spec §3.2: at most three lines in the next 24 h; an alert state keeps them when something falls in 24 h.
+    func testNextBlockShowsAtMostThreeLinesIn24Hours() {
+        let now = at("2026-11-26T20:00:00Z")
+        let facts = [DockNextFact(kind: .fiveHourReset, at: at("2026-11-26T21:00:00Z")),
+                     DockNextFact(kind: .runOut, at: at("2026-11-26T22:00:00Z")),
+                     DockNextFact(kind: .weeklyReset, at: at("2026-11-26T23:00:00Z")),
+                     DockNextFact(kind: .monthlyReset, at: at("2026-11-27T01:00:00Z"))]
+        let zh = DockNextBlock.rows(facts: facts, peaks: [], hasPeakRules: false, now: now, english: false, inAlert: true, calendar: utc).map(\.value)
+        XCTAssertEqual(zh, ["接下来", "21:00 5 小时额度重置", "22:00 预估用完", "23:00 每周额度重置"])
     }
 
     func testNextBlockIsEmptyWhenNothingIsKnown() {
@@ -222,7 +312,7 @@ final class D466CalendarWidgetTests: XCTestCase {
         row.peaks = [DockPeakWindow(from: at("2026-11-26T22:00:00Z"), to: at("2026-11-27T02:00:00Z"))]
         row.hasPeakRules = true
         let values = row.cardNextRows(at: now, english: false, calendar: utc).map(\.value)
-        XCTAssertEqual(values, ["接下来 · 现在闲时", "21:04 5 小时额度重置", "22:00–02:00 高峰", "23:30 预计用完"])
+        XCTAssertEqual(values, ["接下来 · 现在闲时", "21:04 5 小时额度重置", "22:00–02:00 高峰", "23:30 预估用完"])
         XCTAssertTrue(row.cardNextRows(at: now, english: false, calendar: utc).allSatisfy { $0.kind == .event })
     }
 

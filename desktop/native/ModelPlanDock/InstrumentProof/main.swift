@@ -258,7 +258,10 @@ struct NativeFailure:Error {let message:String}
     let effectsSkin=try JSONDecoder().decode(DockInstrumentSkin.self,from:JSONSerialization.data(withJSONObject:combined))
     let working=try (0..<6).map{index->DockInstrumentReading in
         let id="work-\(index)"
-        var input=DockInstrumentInput(id:id,name:"Synthetic",windows:[DockQuotaWindowInput(id:"short",period:.fiveHour,label:"5h",remainingPercent:[70.0,30,10][index%3],resetsAt:nil,durationSeconds:nil)])
+        var window=DockQuotaWindowInput(id:"short",period:.fiveHour,label:"5h",remainingPercent:[70.0,30,10][index%3],resetsAt:nil,durationSeconds:nil)
+        // D474 decision 2: amber is an estimate that runs out before the reset (no longer "under 50 %").
+        if index%3 == 1 { window.runOutAt=instant.addingTimeInterval(3600) }
+        var input=DockInstrumentInput(id:id,name:"Synthetic",windows:[window])
         input.dataState = .fresh;input.working=DockWorkingSignal(subscriptionID:id,bindingVerified:true,fresh:true,observedOutput:true)
         return try DockInstrumentProjection.evaluate(input,now:instant)
     }

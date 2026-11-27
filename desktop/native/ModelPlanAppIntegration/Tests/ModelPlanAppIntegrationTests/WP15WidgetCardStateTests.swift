@@ -230,6 +230,21 @@ actor WP15Engine: EngineClient {
             .allSatisfy { DockNoticeProjection.candidates(for: $0, at: base).isEmpty })
     }
 
+    /// Master spec S2 / C30 (D474): the status menu's one alert line is the worst quota alert in the SHORT form, with
+    /// the reset time; a normal subscription adds none.
+    func testMenuAlertLineIsTheWorstShortSentence() async throws {
+        for language in [SettingsLanguage.english, .chinese] {
+            let (app, _) = try await launch([.tight, .keptRecent], language: language)
+            let line = MenuAlertLine.text(app.composition.presentedContent, redBelow: 25, now: base, language: language)
+            let expected = AlertSentence.quota(subscription: .init("Tight", "Tight"), window: language == .english ? .init("5h", "5h") : .init("5小时", "5小时"),
+                                               remaining: 9, runOutMinutes: 40, resetMinutes: 120).short.value(language)
+            XCTAssertEqual(line, expected)
+            XCTAssertEqual(line, language == .english ? "Tight 5h 9% · est. 40m · resets 2h00" : "Tight 5小时 9% · 预估40m · 2h00后重置")
+            let (calm, _) = try await launch([.keptRecent], language: language)
+            XCTAssertNil(MenuAlertLine.text(calm.composition.presentedContent, redBelow: 25, now: base, language: language), "a kept reading never alerts")
+        }
+    }
+
     /// DOCK-3.8-50, -51, -52 (board-3 "快用完，而且有储备"), English and Chinese.
     func testTightCardHasAgeHeaderRunOutRowTodayHalvesBrightReserveAndTheAlertSentence() async throws {
         for language in [SettingsLanguage.english, .chinese] {
@@ -336,7 +351,7 @@ actor WP15Engine: EngineClient {
         let (app, _) = try await launch([.tight, .tightExpiredReserve])
         XCTAssertEqual(try card(app, .tight).rows.first { $0.id == "reserve" }?.emphasised, true, "a usable reset is lit")
         let content = try card(app, .tightExpiredReserve)
-        XCTAssertFalse(content.rows.contains { $0.kind == .alert }, "D466: the footer alert sentence is gone")
+        XCTAssertTrue(content.rows.contains { $0.kind == .alert }, "master spec C2: the alert still shows")
         let reserve = try XCTUnwrap(content.rows.first { $0.id == "reserve" })
         XCTAssertTrue(reserve.detail.contains("expired"), reserve.detail)
         XCTAssertFalse(reserve.emphasised, "an expired reset is not the action to take")

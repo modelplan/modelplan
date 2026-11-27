@@ -17,14 +17,17 @@ public struct DockNextFact: Equatable, Sendable {
     public init(kind: Kind, at: Date, until: Date? = nil) { self.kind = kind; self.at = at; self.until = until }
 }
 
-/// D466 section 5: the widget card's "接下来" / "Next" block. The same lines as the cockpit strip hover: what falls in the
-/// next 24 hours (resets, peak windows, a forecast run-out); when nothing does, say so and list the next two items.
-/// A plan with peak rules also states the state now (off-peak, or in the peak and when it ends).
+/// D466 section 5 / master spec §3.2 (D474): the widget card's "接下来" / "Next" block. The same lines as the cockpit
+/// strip hover: what falls in the next 24 hours (resets, peak windows, an estimated run-out), at most `maxLines`; when
+/// nothing does, say so and list the next two items (`之后`). A plan with peak rules also states the state now (off-peak,
+/// or in the peak and when it ends). In an alert state (`inAlert`) the footer sentence already says what matters, so
+/// with nothing in 24 h the block is left out entirely.
 public enum DockNextBlock {
     public static let horizon: TimeInterval = 24 * 3600
+    public static let maxLines = 3
 
     public static func rows(facts: [DockNextFact], peaks: [DockPeakWindow], hasPeakRules: Bool, now: Date,
-                            english: Bool, calendar: Calendar = .current) -> [DockCardRow] {
+                            english: Bool, inAlert: Bool = false, calendar: Calendar = .current) -> [DockCardRow] {
         guard now.timeIntervalSinceReferenceDate.isFinite else { return [] }
         let clock: (Date) -> String = { date in
             let c = calendar.dateComponents([.hour, .minute], from: date)
@@ -50,7 +53,8 @@ public enum DockNextBlock {
             case .fiveHourReset: return head + (english ? " 5-hour reset" : " 5 小时额度重置")
             case .weeklyReset: return head + (english ? " weekly reset" : " 每周额度重置")
             case .monthlyReset: return head + (english ? " monthly reset" : " 每月额度重置")
-            case .runOut: return head + (english ? " forecast run-out" : " 预计用完")
+            // 预估 is our own estimate (预计 is kept for official times, §3.2).
+            case .runOut: return head + (english ? " est. run-out" : " 预估用完")
             case .peak:
                 let span = fact.until.map { clock(fact.at) + "–" + clock($0) } ?? clock(fact.at)
                 // The date prefix is whatever `stamp` adds before the clock ("Tomorrow ", "Wed "); today adds none.
@@ -64,19 +68,23 @@ public enum DockNextBlock {
         if hasPeakRules {
             if let current = peaks.first(where: { $0.from <= now && ($0.to.map { $0 > now } ?? true) }) {
                 state = english ? "In peak" : "高峰中"
-                if let end = current.to { state += (english ? " · ends " : " · ") + clock(end) + (english ? "" : " 结束") }
+                if let end = current.to { let at = clock(end); state += english ? " · ends \(at)" : " · \(at) 结束" }
             } else { state = english ? "Off-peak now" : "现在闲时" }
         }
         let within = all.filter { $0.at <= now.addingTimeInterval(horizon) }
         let beyond = all.filter { $0.at > now.addingTimeInterval(horizon) }
         guard !within.isEmpty || !beyond.isEmpty || !state.isEmpty else { return [] }
+        if inAlert && within.isEmpty { return [] }
         var rows = [DockCardRow]()
         func line(_ text: String) { rows.append(DockCardRow(id: "next." + String(rows.count), kind: .event, label: "", value: text)) }
-        line((english ? "Next" : "接下来") + (state.isEmpty ? "" : " · " + state))
-        for fact in within { line(words(fact, later: false)) }
+        let suffix = state.isEmpty ? "" : " · " + state
         if within.isEmpty {
-            line(english ? "Nothing in the next 24 h" : "24 小时内没有重置，也没有高峰")
+            // The heading is the sentence itself (the strip hover's words), then the next two items.
+            line((english ? "No resets or peaks in the next 24 h" : "接下来 24 小时没有重置，也没有高峰") + suffix)
             for fact in beyond.prefix(2) { line((english ? "Later " : "之后 ") + words(fact, later: true)) }
+        } else {
+            line((english ? "Next" : "接下来") + suffix)
+            for fact in within.prefix(maxLines) { line(words(fact, later: false)) }
         }
         return rows
     }

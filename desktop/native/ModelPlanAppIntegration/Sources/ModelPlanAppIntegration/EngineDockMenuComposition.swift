@@ -131,6 +131,10 @@ public struct EngineMenuRefreshResult {
     private var resetNotifier:EngineResetNotifier?
     private var forecastNotifier:EngineForecastNotifier?
     private var resetScratch:URL?
+    private var newsPresence: NewsPresenceMonitor?
+    private var seenBinding: SeenSubscriptionsBinding?
+    /// Decision 3 (D474): the seen-subscriptions memory, for the cockpit's `seen` message. Nil unless the live app installed it.
+    public private(set) var seenSubscriptions: DockSeenSubscriptionsStore?
     public var menuDidChange: (() -> Void)?
     public private(set) var latestSettings: SettingsApplication?
     public var settingsDidChange: ((SettingsApplication) -> Void)?
@@ -321,13 +325,15 @@ public struct EngineMenuRefreshResult {
         if live, isolatedLedger == nil {
             let clock = DockNewsClockStore(url: base.appendingPathComponent("news-clock.json"))
             adapter.newsClock = clock; dock.newsClock = clock
-            // Present = awake (refreshes only run then) and the screen unlocked, in the console session.
-            adapter.isPresent = {
-                guard let session = CGSessionCopyCurrentDictionary() as? [String: Any] else { return true }
-                if (session["CGSSessionScreenIsLocked"] as? Bool) == true { return false }
-                if let onConsole = session["kCGSSessionOnConsoleKey"] as? Bool, !onConsole { return false }
-                return true
-            }
+            // Master spec §5.3: present = awake, unlocked, in the console session and not idle (read at the refresh
+            // tick); sleep, screen sleep and lock close the span through their notifications.
+            adapter.isPresent = { NewsPresenceMonitor.isPresentNow() }
+            newsPresence?.stop(); newsPresence = NewsPresenceMonitor(clock: clock)
+            // Decision 3 / C45 (D474): rings and cockpit columns only after a first good reading on this Mac. Member
+            // keys only, 0600, cleared with Forget and a privacy clear.
+            let seen = DockSeenSubscriptionsStore(url: base.appendingPathComponent("seen-subscriptions.json"))
+            adapter.seenSubscriptions = seen; seenSubscriptions = seen
+            seenBinding?.stop(); seenBinding = SeenSubscriptionsBinding(store: store, seen: seen)
         }
         do {
             let notifier=try EngineResetNotifier.recovering(composition:self,settings:settings,cacheURL:isolatedLedger ?? base.appendingPathComponent("reset-notifications.json"),deliverToSystem:live && isolatedLedger == nil)
@@ -436,5 +442,5 @@ public struct EngineMenuRefreshResult {
     }
     func suspendDeadlines() { deadlineLifecycleSuspended = true; activityExpiryTask?.cancel(); activityExpiryTask = nil; pairedProjection.invalidate(); deadlineDriver.suspend() }
     func resumeDeadlines() { deadlineLifecycleSuspended = false; pairedProjection.invalidate(); deadlineDriver.replace() }
-    public func stop() async { activityExpiryTask?.cancel(); activityExpiryTask = nil; resetNotifier?.stop(); deadlineDriver.close(); dock.close(); await client.stop(); if let resetScratch { try? FileManager.default.removeItem(at:resetScratch) } }
+    public func stop() async { activityExpiryTask?.cancel(); activityExpiryTask = nil; resetNotifier?.stop(); newsPresence?.stop(); newsPresence = nil; seenBinding?.stop(); seenBinding = nil; deadlineDriver.close(); dock.close(); await client.stop(); if let resetScratch { try? FileManager.default.removeItem(at:resetScratch) } }
 }

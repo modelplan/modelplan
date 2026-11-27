@@ -98,7 +98,7 @@ public struct DockContentRow: Sendable {
     }
     /// D466 section 5: the card's "接下来" block, the same lines as the cockpit strip hover. It replaces the footer alert
     /// sentence, which repeated the quota row above it.
-    func cardNextRows(at now: Date, english: Bool, calendar: Calendar = .current) -> [DockCardRow] {
+    func cardNextRows(at now: Date, english: Bool, inAlert: Bool = false, calendar: Calendar = .current) -> [DockCardRow] {
         var facts = [DockNextFact]()
         for window in input.windows where window.isGeneral {
             guard let reset = resetTimes[window.id] ?? window.resetsAt, reset > now else { continue }
@@ -110,7 +110,7 @@ public struct DockContentRow: Sendable {
             }
         }
         for (_, runOut) in runOutTimes where runOut > now { facts.append(DockNextFact(kind: .runOut, at: runOut)) }
-        return DockNextBlock.rows(facts: facts, peaks: peaks, hasPeakRules: hasPeakRules, now: now, english: english, calendar: calendar)
+        return DockNextBlock.rows(facts: facts, peaks: peaks, hasPeakRules: hasPeakRules, now: now, english: english, inAlert: inAlert, calendar: calendar)
     }
     /// The reserve brightens under an alert only when a reset is there to use (V1-FINAL §2 item 5).
     /// macrevb-1051-2: judged at presentation time; a positive count whose earliest expiry has passed is not spendable.
