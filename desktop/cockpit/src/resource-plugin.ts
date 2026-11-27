@@ -210,8 +210,10 @@ function drawRadar(c:PluginDrawContext,state:unknown):void {
   // name is cut; the name takes its short form last.
   const left=pad+4,textRow=(kind:string,name:PluginWords,values:readonly string[],i:number,ink:string,mark:string,full:string)=>{
     const g=node('g',{'data-row':kind,role:'img','aria-label':full},svg),y=baseOf(i)-0.5,vsz=fs+1,room=right-left;
-    // Value forms first, longest to none, with the full name; then the same with the short name.
-    const tries=[name.full,name.short].flatMap(n=>[...values,''].map(v=>[n,v] as const));
+    // The value outranks the name (D465): every name form keeps a value form before any value is dropped, so a narrow
+    // column reads "Pressure Normal"; below that the value alone ("Critical" is the fact, the leader and the row label say what it is),
+    // and only then the name alone.
+    const tries=[...[name.full,name.short].flatMap(n=>values.map(v=>[n,v] as const)),...values.map(v=>['',v] as const),...[name.full,name.short].map(n=>[n,''] as const)];
     const [nm,val]=tries.find(([n,v])=>width(n,fs)+(v?8+width(v,vsz):0)<=room)??[name.short,''];
     node('text',{'data-name':'',x:f(left),y:f(y),'font-size':fs,'font-family':T.silkFont,fill:T.muted},g).textContent=nm;
     if(val)node('text',{[mark]:'',x:f(right),y:f(y),'text-anchor':'end','font-size':vsz,'font-family':T.lcdFont,fill:ink},g).textContent=val;
