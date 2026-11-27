@@ -163,6 +163,8 @@ type hubFixture struct {
 	owned    bool
 	local    atomic.Int32
 	tokenHdr atomic.Value
+	summary  string
+	methods  []string
 }
 
 func newHubFixture(t *testing.T, owned bool) *hubFixture {
@@ -171,6 +173,11 @@ func newHubFixture(t *testing.T, owned bool) *hubFixture {
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h.requests.Add(1)
 		h.tokenHdr.Store(r.Header.Get("X-Codeium-Csrf-Token"))
+		h.methods = append(h.methods, r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:])
+		if h.summary != "" && strings.HasSuffix(r.URL.Path, "/RetrieveUserQuotaSummary") {
+			_, _ = w.Write([]byte(h.summary))
+			return
+		}
 		_, _ = w.Write([]byte(antigravityFixture))
 	}))
 	srv.Config.ConnState = func(c net.Conn, st http.ConnState) {
@@ -217,7 +224,7 @@ func TestAntigravityHubReadsThroughDescriptor(t *testing.T) {
 		t.Fatalf("hub line is a hub candidate: %+v", got)
 	}
 	e := fetchAntigravity(context.Background(), nil, "", "", now)
-	if e.Status != "ok" || h.requests.Load() != 1 || h.tokenHdr.Load() != hubToken {
+	if e.Status != "ok" || h.requests.Load() != 2 || h.tokenHdr.Load() != hubToken || strings.Join(h.methods, ",") != "RetrieveUserQuotaSummary,GetUserStatus" {
 		t.Fatalf("%+v requests=%d", e, h.requests.Load())
 	}
 	if b, _ := json.Marshal(e); strings.Contains(string(b), hubToken) {
@@ -250,5 +257,39 @@ func TestAntigravityHubWithoutDescriptorIsUnsupportedNotMissing(t *testing.T) {
 	e := fetchAntigravity(context.Background(), nil, "", "", now)
 	if e.Status != "error" || e.ErrorCode != "unsupported_login" || e.Error != antigravityNext("not_supported_yet") || h.requests.Load() != 0 {
 		t.Fatalf("%+v", e)
+	}
+}
+
+// Fixture shaped like Token Monitor@417f84d2 tests/shared/antigravityProbe.test.js:547-577.
+const antigravitySummaryFixture = `{"response":{"groups":[
+{"displayName":"Claude and GPT models","buckets":[
+ {"bucketId":"3p-weekly","displayName":"Weekly Limit","remaining":{"remainingFraction":0.64},"resetTime":"2026-10-20T00:39:54Z"},
+ {"bucketId":"3p-5h","displayName":"Five Hour Limit","remaining":{"remainingFraction":0.73},"resetTime":"2026-10-14T12:52:10Z"}]},
+{"displayName":"Gemini Models","buckets":[
+ {"bucketId":"gemini-weekly","displayName":"Weekly Limit","remaining":{"case":"remainingFraction","value":0.82}},
+ {"bucketId":"gemini-5h","displayName":"Five Hour Limit","remainingFraction":0.91,"description":"Refreshes in four hours."},
+ {"bucketId":"gemini-session-history","displayName":"Session History","remainingFraction":0.25}]}]}}`
+
+func TestAntigravityHubPrefersQuotaSummary(t *testing.T) {
+	isolateHome(t)
+	h := newHubFixture(t, true)
+	h.summary = antigravitySummaryFixture
+	e := fetchAntigravity(context.Background(), nil, "", "", now)
+	if e.Status != "ok" || strings.Join(h.methods, ",") != "RetrieveUserQuotaSummary" {
+		t.Fatalf("%+v %v", e, h.methods)
+	}
+	var got []string
+	for _, w := range e.Windows {
+		got = append(got, fmt.Sprintf("%s %s %.0f", w.Limit, w.Kind, *w.UsedPercent))
+	}
+	want := "Gemini five_hour 9,Gemini weekly 18,Claude/GPT five_hour 27,Claude/GPT weekly 36"
+	if strings.Join(got, ",") != want {
+		t.Fatalf("%v", got)
+	}
+	// An empty or unusable summary falls back to GetUserStatus, never to a schema error.
+	h2 := newHubFixture(t, true)
+	h2.summary = `{"response":{"groups":[]}}`
+	if e := fetchAntigravity(context.Background(), nil, "", "", now); e.Status != "ok" || strings.Join(h2.methods, ",") != "RetrieveUserQuotaSummary,GetUserStatus" {
+		t.Fatalf("%+v %v", e, h2.methods)
 	}
 }

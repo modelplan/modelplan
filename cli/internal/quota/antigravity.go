@@ -12,7 +12,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -195,13 +197,7 @@ func fetchAntigravity(ctx context.Context, c *http.Client, _, _ string, now time
 	if s.TLS {
 		scheme = "https"
 	}
-	url := scheme + "://127.0.0.1:" + strconv.Itoa(s.Port) + "/exa.language_server_pb.LanguageServerService/GetUserStatus"
-	ctx, cancel := context.WithTimeout(ctx, nativeTimeout)
-	defer cancel()
-	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(`{"metadata":{"ideName":"antigravity","extensionName":"antigravity","ideVersion":"unknown","locale":"en"}}`))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Connect-Protocol-Version", "1")
-	req.Header.Set("X-Codeium-Csrf-Token", s.CSRF)
+	base := scheme + "://127.0.0.1:" + strconv.Itoa(s.Port) + "/exa.language_server_pb.LanguageServerService/"
 	if c == nil {
 		c = nativeClient
 	}
@@ -245,30 +241,193 @@ func fetchAntigravity(ctx context.Context, c *http.Client, _, _ string, now time
 	client.Transport = local
 	defer local.CloseIdleConnections()
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	resp, err := client.Do(req)
-	if err != nil {
-		e.Error = antigravityNext("network_error")
-		e.ErrorCode = transportErrorCode(err)
-		return e
+	rpc := func(method, body string) ([]byte, *codexbarEntry) {
+		fail := codexbarEntry{Status: "error", ObservedAt: now.UTC()}
+		rctx, cancel := context.WithTimeout(ctx, nativeTimeout)
+		defer cancel()
+		req, _ := http.NewRequestWithContext(rctx, http.MethodPost, base+method, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Connect-Protocol-Version", "1")
+		req.Header.Set("X-Codeium-Csrf-Token", s.CSRF)
+		resp, err := client.Do(req)
+		if err != nil {
+			fail.Error = antigravityNext("network_error")
+			fail.ErrorCode = transportErrorCode(err)
+			return nil, &fail
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode == 401 || resp.StatusCode == 403 {
+			fail.Error = antigravityNext("expired_login")
+			fail.ErrorCode = httpErrorCode(resp.StatusCode)
+			return nil, &fail
+		}
+		if resp.StatusCode != 200 {
+			fail.Error = antigravityNext("upstream_changed")
+			fail.ErrorCode = httpErrorCode(resp.StatusCode)
+			return nil, &fail
+		}
+		b, err := io.ReadAll(io.LimitReader(resp.Body, nativeMaxBody+1))
+		if err != nil || len(b) > nativeMaxBody {
+			fail.Error = antigravityNext("upstream_changed")
+			fail.ErrorCode = "schema_changed"
+			return nil, &fail
+		}
+		return b, nil
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode == 401 || resp.StatusCode == 403 {
-		e.Error = antigravityNext("expired_login")
-		e.ErrorCode = httpErrorCode(resp.StatusCode)
-		return e
+	if s.Hub {
+		// Token Monitor@417f84d2 probe.js:783-797: RetrieveUserQuotaSummary first, GetUserStatus as the fallback.
+		if b, fail := rpc("RetrieveUserQuotaSummary", `{"forceRefresh":true}`); fail == nil {
+			if got := parseAntigravitySummary(b, now); got.Status == "ok" {
+				return got
+			}
+		} else if fail.ErrorCode == "unauthorized" || fail.Error == antigravityNext("expired_login") {
+			return *fail
+		}
 	}
-	if resp.StatusCode != 200 {
-		e.Error = antigravityNext("upstream_changed")
-		e.ErrorCode = httpErrorCode(resp.StatusCode)
-		return e
-	}
-	b, err := io.ReadAll(io.LimitReader(resp.Body, nativeMaxBody+1))
-	if err != nil || len(b) > nativeMaxBody {
-		e.Error = antigravityNext("upstream_changed")
-		e.ErrorCode = "schema_changed"
-		return e
+	b, fail := rpc("GetUserStatus", `{"metadata":{"ideName":"antigravity","extensionName":"antigravity","ideVersion":"unknown","locale":"en"}}`)
+	if fail != nil {
+		return *fail
 	}
 	return parseAntigravity(b, now)
+}
+
+// parseAntigravitySummary reads RetrieveUserQuotaSummary: groups of 5-hour and weekly buckets.
+// Reference: Token Monitor@417f84d2 probe.js:530-610 (quotaSummaryWindows and its helpers).
+func parseAntigravitySummary(b []byte, now time.Time) codexbarEntry {
+	e := codexbarEntry{ErrorCode: "schema_changed", Status: "error", ObservedAt: now.UTC(), Error: antigravityNext("not_supported_yet")}
+	type bucket struct {
+		BucketID    string   `json:"bucketId"`
+		DisplayName string   `json:"displayName"`
+		Window      string   `json:"window"`
+		Disabled    bool     `json:"disabled"`
+		Fraction    *float64 `json:"remainingFraction"`
+		Remaining   *struct {
+			Fraction *float64 `json:"remainingFraction"`
+			Case     string   `json:"case"`
+			Value    *float64 `json:"value"`
+		} `json:"remaining"`
+		Reset json.RawMessage `json:"resetTime"`
+	}
+	type group struct {
+		DisplayName string   `json:"displayName"`
+		Buckets     []bucket `json:"buckets"`
+	}
+	type summary struct {
+		Groups []group `json:"groups"`
+	}
+	var raw struct {
+		summary
+		Response *summary `json:"response"`
+		Summary  *summary `json:"summary"`
+	}
+	if json.Unmarshal(b, &raw) != nil {
+		e.ErrorCode = "parse_error"
+		return e
+	}
+	groups := raw.Groups
+	if raw.Response != nil {
+		groups = raw.Response.Groups
+	} else if raw.Summary != nil {
+		groups = raw.Summary.Groups
+	}
+	if len(groups) > 16 {
+		return e
+	}
+	rank := func(name string) int {
+		switch name {
+		case "Gemini":
+			return 0
+		case "Gemini 4 Argon":
+			return 1
+		case "Claude/GPT":
+			return 2
+		}
+		return 3
+	}
+	sort.SliceStable(groups, func(i, j int) bool {
+		return rank(antigravityGroupName(groups[i].DisplayName)) < rank(antigravityGroupName(groups[j].DisplayName))
+	})
+	for _, g := range groups {
+		name := antigravityGroupName(g.DisplayName)
+		var session, weekly []Window
+		for _, bk := range g.Buckets {
+			kind := antigravityBucketKind(bk.Window, bk.BucketID, bk.DisplayName)
+			if kind == "" || bk.Disabled {
+				continue
+			}
+			fr := bk.Fraction
+			if fr == nil && bk.Remaining != nil {
+				fr = bk.Remaining.Fraction
+				if fr == nil && bk.Remaining.Case == "remainingFraction" {
+					fr = bk.Remaining.Value
+				}
+			}
+			fr = finite(fr, 0, 1)
+			if fr == nil {
+				continue
+			}
+			var reset *time.Time
+			var text string
+			if json.Unmarshal(bk.Reset, &text) == nil {
+				reset = stamp(text)
+			}
+			if reset != nil && !reset.After(now) {
+				continue
+			}
+			used := 100 * (1 - *fr)
+			w := Window{Kind: kind, Limit: name, UsedPercent: &used, ResetsAt: reset, ResetMode: "fixed", ObservedAt: now.UTC()}
+			if kind == "five_hour" {
+				w.WindowMinutes = 300
+				session = append(session, w)
+			} else {
+				w.WindowMinutes = 7 * 24 * 60
+				weekly = append(weekly, w)
+			}
+		}
+		e.Windows = append(e.Windows, append(session, weekly...)...)
+	}
+	if len(e.Windows) > 0 {
+		e.Status, e.ErrorCode, e.Error = "ok", "", ""
+	}
+	return e
+}
+
+var antigravityGroupClean = regexp.MustCompile(`[^a-zA-Z0-9 +._/-]`)
+
+func antigravityGroupName(display string) string {
+	name := strings.Join(strings.Fields(display), " ")
+	lower := strings.ToLower(name)
+	switch {
+	case lower == "gemini" || lower == "gemini models":
+		return "Gemini"
+	case lower == "gemini 4 argon":
+		return "Gemini 4 Argon"
+	case regexp.MustCompile(`^claude\s*(and|&|/)\s*gpt( models)?$`).MatchString(lower):
+		return "Claude/GPT"
+	case name == "":
+		return "Quota"
+	}
+	name = strings.TrimSpace(antigravityGroupClean.ReplaceAllString(name, ""))
+	if name == "" {
+		return "Quota"
+	}
+	return clip(name)
+}
+
+func antigravityBucketKind(values ...string) string {
+	for _, v := range values {
+		n := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(v)), "_", "-")
+		n = strings.TrimSuffix(strings.TrimSuffix(n, " remaining"), " limit")
+		n = strings.TrimSuffix(n, " remaining")
+		switch {
+		case n == "weekly" || strings.HasSuffix(n, "-weekly") || strings.HasSuffix(n, " weekly"):
+			return "weekly"
+		case n == "session" || n == "5h" || n == "5-hour" || n == "five hour" || n == "five-hour" ||
+			strings.HasSuffix(n, "-5h") || strings.HasSuffix(n, "-5-hour") || strings.HasSuffix(n, "-five-hour") || strings.HasSuffix(n, "-session"):
+			return "five_hour"
+		}
+	}
+	return ""
 }
 func parseAntigravity(b []byte, now time.Time) codexbarEntry {
 	e := codexbarEntry{ErrorCode: "schema_changed", Status: "error", ObservedAt: now.UTC(), Error: antigravityNext("not_supported_yet")}
