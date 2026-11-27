@@ -117,6 +117,8 @@ func TestNoExecSiteBypassesToolcli(t *testing.T) {
 	}
 	execCall := regexp.MustCompile(`\bexec\.Command(Context)?\(|\bos\.StartProcess\(|\bsyscall\.(Exec|ForkExec|StartProcess)\(`)
 	bundleLiteral := regexp.MustCompile(`(?i)\.app/Contents/`)
+	usesToolcli := regexp.MustCompile(`\btoolcli\.(Command|CommandContext|NodeCommandContext)\(`)
+	directLifecycle := regexp.MustCompile(`\bcmd\.(Start|Run|Output|CombinedOutput|Wait)\(`)
 	cliRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)
@@ -142,6 +144,9 @@ func TestNoExecSiteBypassesToolcli(t *testing.T) {
 		}
 		if _, ok := allowed[rel]; !ok && execCall.Match(b) {
 			t.Errorf("%s starts a program without toolcli.Command (bundle guard and process-group cleanup)", rel)
+		}
+		if usesToolcli.Match(b) && directLifecycle.Match(b) {
+			t.Errorf("%s starts or waits on a toolcli command directly; use toolcli.Start/Run/Finish so tagged descendants are stopped", rel)
 		}
 		if bundleLiteral.Match(b) {
 			t.Errorf("%s names a path inside an app bundle; ModelPlan never runs programs there", rel)

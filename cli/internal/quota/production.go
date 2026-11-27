@@ -237,19 +237,40 @@ func applyZCodeLogin(p *Paths, home string, state consent.State, mode string, co
 	fence := state.Fence()
 	dir := ZCodeLoginDir(home)
 	cache := p.Cache
-	loginStamp := zcodeLoginStamp(cache, dir)
+	loginStamp, loginSeal := zcodeLoginStampSeal(cache, dir)
+	if loginStamp == "" {
+		// No installation key yet (or nothing to keep while ZCode writes its files): skip the route
+		// for this projection rather than emit a generation that is not installation-keyed.
+		return
+	}
+	prefix := fence.StoreEpoch + ":" + strconv.FormatUint(state.Revoked[scope], 10) + ":zcode-login:"
 	// Retained readings follow this scope's revocation watermark. Publishing still uses the
 	// full fence, so any concurrent consent decision cancels an in-flight read.
 	p.ReaderAccess.Grants["zai"] = ReaderGrant{Admission: state.CaptureStamp(scope), CaptureAllowed: func(stamp *consent.CaptureStamp) bool { return state.CaptureAllowed(stamp, scope) },
 		Keychain: keychain.Consent == "allowed", KeychainConsent: keychain.Consent,
-		Generation: fence.StoreEpoch + ":" + strconv.FormatUint(state.Revoked[scope], 10) + ":zcode-login:" + loginStamp,
-		Publish:    func(write func() error) error { return consent.Publish(fence, write) },
+		Generation: prefix + loginStamp,
+		// A read that resolved a Keychain-bound store settles the generation it publishes under.
+		Regenerate: func() string {
+			if stamp := zcodeLoginStamp(cache, dir); stamp != "" {
+				return readerGenerationID(prefix + stamp)
+			}
+			return ""
+		},
+		Publish: func(write func() error) error { return consent.Publish(fence, write) },
 		StillValid: func() bool {
 			current, effective := consent.Current()
-			return effective == consent.Automatic && !nativeOff() && current.Fence() == fence &&
-				current.AllowsScope(scope, effective) && ZCodeLoginPresent(home) && zcodeLoginStamp(cache, dir) == loginStamp
+			if effective != consent.Automatic || nativeOff() || current.Fence() != fence || !current.AllowsScope(scope, effective) || !ZCodeLoginPresent(home) {
+				return false
+			}
+			// The sealed values are those the generation was built from. A file caught mid-write
+			// keeps it: the completed write is judged by the next projection.
+			_, seal := zcodeLoginStampSeal(cache, dir)
+			return seal == loginSeal || seal == "transient"
 		},
-		ConfigSource: &ZaiConfigSource{Tool: zcodeLoginTool, SettingsPath: dir, Keychain: keychain}}
+		ConfigSource: &ZaiConfigSource{Tool: zcodeLoginTool, SettingsPath: dir, Keychain: keychain,
+			Remember: func(login zcodeLogin) {
+				zcodeRememberSeal(cache, dir, login.sel, login.format, login.store, login.material)
+			}}}
 }
 
 // zcodeRoots are ZCode's data folders, the same path signals detection lists for it
@@ -363,7 +384,7 @@ func productionReaderContext(ctx context.Context, p Paths, provider string) cont
 	case "antigravity":
 		return WithAntigravityAccess(ctx, AntigravityAccess{Admission: captureFor(p, provider, false), CaptureAllowed: g.CaptureAllowed, Allowed: valid, LoginGeneration: generation, StillValid: g.StillValid, Publish: g.Publish})
 	case "zai":
-		ctx = WithZaiConfigAccess(ctx, ZaiConfigAccess{Admission: captureFor(p, provider, false), CaptureAllowed: g.CaptureAllowed, Allowed: valid, LoginGeneration: generation, StillValid: g.StillValid, Publish: g.Publish})
+		ctx = WithZaiConfigAccess(ctx, ZaiConfigAccess{Admission: captureFor(p, provider, false), CaptureAllowed: g.CaptureAllowed, Allowed: valid, LoginGeneration: generation, Regenerate: g.Regenerate, StillValid: g.StillValid, Publish: g.Publish})
 		if g.ConfigSource != nil {
 			ctx = context.WithValue(ctx, zaiConfigSourceKey{}, *g.ConfigSource)
 		}

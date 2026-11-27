@@ -3,6 +3,8 @@ package toolcli
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"os"
 	"os/exec"
@@ -76,10 +78,19 @@ func InsideOtherApp(p string) bool {
 	return false
 }
 
+// runTag names the environment variable that marks every process a tool run started. Descendants
+// inherit it even when they leave the process group (setsid, a daemonizing launcher), so cleanup
+// can still find and stop them (review macrev2-1284-3).
+const runTag = "MODELPLAN_TOOL_RUN"
+
+// runTags: the tag of each command Command made, until Finish or Run cleans it up.
+var runTags sync.Map
+
 // Command is the one way ModelPlan starts a tool program. It refuses a program inside another
-// app's bundle (ErrInsideAppBundle), and it starts the child in its own process group: a context
-// deadline or cancel stops the whole group, so no descendant the child spawned outlives the read.
-// Callers stop the group on every other exit too, with KillGroup after Run or Wait.
+// app's bundle (ErrInsideAppBundle). The child runs in its own process group and carries a
+// per-run tag in its environment: a deadline or cancel stops the group and every tagged
+// descendant, so nothing the child spawned outlives the read. Start it with Start or Run, and end
+// it with Run or Finish.
 func Command(ctx context.Context, bin string, args ...string) (*exec.Cmd, error) {
 	resolved := bin
 	if !strings.ContainsRune(bin, filepath.Separator) && !strings.ContainsRune(bin, '/') {
@@ -91,25 +102,71 @@ func Command(ctx context.Context, bin string, args ...string) (*exec.Cmd, error)
 	if InsideOtherApp(resolved) {
 		return nil, ErrInsideAppBundle
 	}
+	tag := make([]byte, 16)
+	if _, err := rand.Read(tag); err != nil {
+		return nil, err
+	}
 	cmd := exec.CommandContext(ctx, bin, args...)
+	runTags.Store(cmd, hex.EncodeToString(tag))
 	ownProcessGroup(cmd)
+	cmd.Cancel = func() error { KillGroup(cmd); return nil }
 	cmd.WaitDelay = childWaitDelay
 	return cmd, nil
 }
 
-// KillGroup stops whatever is left of the child's process group, then the child itself. It is
-// safe to call more than once and after Wait: while any member is alive the group id stays
-// reserved, so the signal cannot reach an unrelated process.
+func tagOf(cmd *exec.Cmd) string {
+	if v, ok := runTags.Load(cmd); ok {
+		return v.(string)
+	}
+	return ""
+}
+
+// Start starts a command from Command with its run tag added to the environment the caller set.
+func Start(cmd *exec.Cmd) error {
+	if tag := tagOf(cmd); tag != "" {
+		env := cmd.Env
+		if env == nil {
+			env = os.Environ()
+		}
+		cmd.Env = append(append([]string(nil), env...), runTag+"="+tag)
+	}
+	return cmd.Start()
+}
+
+// KillGroup stops whatever is left of the child's process group, the child itself, and every
+// process carrying the run's tag (descendants that left the group). It is safe to call more than
+// once. After Wait the group is no longer signalled (its id may have been recycled); the tag
+// still finds every descendant, in the group or not.
 func KillGroup(cmd *exec.Cmd) {
 	if cmd == nil || cmd.Process == nil {
 		return
 	}
-	killProcessGroup(cmd)
+	if cmd.ProcessState == nil {
+		killProcessGroup(cmd)
+	}
+	if tag := tagOf(cmd); tag != "" {
+		killTagged(runTag + "=" + tag)
+	}
 }
 
-// Run runs the command and then stops any descendant left in its process group.
-func Run(cmd *exec.Cmd) error {
-	err := cmd.Run()
+// Finish ends a command started with Start: it stops everything the run started, waits for the
+// child and sweeps once more for a descendant started meanwhile.
+func Finish(cmd *exec.Cmd) error {
 	KillGroup(cmd)
+	err := cmd.Wait()
+	KillGroup(cmd)
+	runTags.Delete(cmd)
+	return err
+}
+
+// Run runs the command and then stops anything it left behind.
+func Run(cmd *exec.Cmd) error {
+	if err := Start(cmd); err != nil {
+		runTags.Delete(cmd)
+		return err
+	}
+	err := cmd.Wait()
+	KillGroup(cmd)
+	runTags.Delete(cmd)
 	return err
 }

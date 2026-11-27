@@ -557,7 +557,7 @@ func askCodex(ctx context.Context, codex string) (*rlResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := cmd.Start(); err != nil {
+	if err := toolcli.Start(cmd); err != nil {
 		return nil, err
 	}
 	// A descendant that inherited stdout can keep the pipe open after the launcher dies: on the
@@ -571,8 +571,7 @@ func askCodex(ctx context.Context, codex string) (*rlResponse, error) {
 			<-fired
 		}
 		_ = in.Close()
-		toolcli.KillGroup(cmd)
-		_ = cmd.Wait()
+		_ = toolcli.Finish(cmd)
 	}()
 	send := func(v any) error { b, _ := json.Marshal(v); _, err := in.Write(append(b, '\n')); return err }
 	sc := bufio.NewScanner(out)

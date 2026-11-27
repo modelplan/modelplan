@@ -26,6 +26,9 @@ type ZaiConfigAccess struct {
 	// An opaque keyed generation changed after login changes or Settings Retry.
 	// Never pass a token, account ID or path.
 	LoginGeneration string
+	// Regenerate returns the generation ID after a read: a ZCode Keychain-bound sign-in is resolved
+	// only inside the read, so the reading is filed under the account that read found.
+	Regenerate func() string
 }
 type zaiConfigAccessKey struct{}
 
@@ -274,6 +277,12 @@ func collectZaiConfig(ctx context.Context, _ *http.Client, cache string, now tim
 	// CLIJIT cancels in-flight reads on revocation. Never republish their result.
 	if _, blocked := zaiConfigAdmission(ctx); ctx.Err() != nil || blocked != "" {
 		return codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: zaiConfigNext("consent_required")}
+	}
+	if access.Regenerate != nil {
+		if g := access.Regenerate(); g != "" {
+			access.LoginGeneration = g
+			s.LoginGeneration = g
+		}
 	}
 	if e.Status == "ok" {
 		e.Admission = access.Admission

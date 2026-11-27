@@ -54,121 +54,18 @@ func ZCodeLoginDir(home string) string { return filepath.Join(home, ".zcode", "v
 // ZCodeLoginPresent: ZCode's sign-in layout is there (detect.ZCodeLoginPresent; metadata only).
 func ZCodeLoginPresent(home string) bool { return detect.ZCodeLoginPresent(home) }
 
-// zcodeLoginStamp names the selected sign-in, so a retained reading is dropped only when the
-// account actually changes (owner build-6 #1). It is built from content that decides the account,
-// never from modification times, and never from telemetry-state.json, which ZCode rewrites all the
-// time while it runs (each rewrite used to discard the last good reading):
-//   - setting.json: only the family and the selection (domain, kind-based and legacy selections);
-//   - config.json: only the provider registry entries readZCodeLogin consults;
-//   - credentials.json: the store's entry names (account entries carry the account in their name)
-//     and the sealed profile entries; other values, a refreshed token above all, are ignored.
-//
-// Nothing is decrypted, and the material is kept only as a keyed hash under the installation key
-// (readerHash), so the generation never carries a credential. It is computed only once the scope
-// and its Keychain choice allow the read (production.go), like the read itself (D380).
-func zcodeLoginStamp(cache, dir string) string {
-	// The stamp is recomputed only when one of the three files' metadata moves; a move with the
-	// same account content (a rewrite, a touch) yields the same stamp.
-	meta := zcodeLoginMeta(dir)
-	key := cache + "\x00" + dir
-	if m, ok := zcodeStampMemo.Load(key); ok && m.(zcodeStampMemoEntry).meta == meta {
-		return m.(zcodeStampMemoEntry).stamp
-	}
-	stamp := zcodeLoginContentStamp(cache, dir)
-	zcodeStampMemo.Store(key, zcodeStampMemoEntry{meta: meta, stamp: stamp})
-	return stamp
-}
-
-type zcodeStampMemoEntry struct{ meta, stamp string }
-
-var zcodeStampMemo sync.Map
-
-// zcodeLoginMeta: size, modification time and mode of the files the stamp reads; only a cache key.
-func zcodeLoginMeta(dir string) string {
-	var meta strings.Builder
-	for _, name := range zcodeStampFiles {
-		if fi, err := os.Lstat(filepath.Join(dir, name)); err == nil {
-			meta.WriteString(strconv.FormatInt(fi.Size(), 10) + "." + strconv.FormatInt(fi.ModTime().UnixNano(), 10) + "." + strconv.FormatUint(uint64(fi.Mode()), 10))
-		}
-		meta.WriteByte(':')
-	}
-	meta.WriteString(strconv.FormatBool(detect.ZCodeKeychainMarkerPresent(dir)))
-	return meta.String()
-}
-
-// zcodeStampFiles decide the selected account. telemetry-state.json is deliberately absent.
-var zcodeStampFiles = []string{"setting.json", "config.json", "credentials.json"}
-
-func zcodeLoginContentStamp(cache, dir string) string {
-	var material strings.Builder
-	part := func(name string, v any) {
-		b, _ := json.Marshal(v) // map keys sort, so equal content gives equal bytes
-		material.WriteString(name)
-		material.WriteByte('=')
-		material.Write(b)
-		material.WriteByte('\n')
-	}
-	read := func(name string) ([]byte, bool) {
-		b, err := zcodeLoginRead(filepath.Join(dir, name))
-		if err != nil {
-			part(name, "unreadable:"+errorCode(err))
-			return nil, false
-		}
-		return b, true
-	}
-	if b, ok := read("setting.json"); ok {
-		var settings zcodeSettings
-		if json.Unmarshal(b, &settings) != nil {
-			part("setting.json", "unparsable:"+string(b))
-		} else {
-			kinds := map[string]string{}
-			for family, sel := range settings.Selections {
-				kinds[family] = strings.TrimSpace(sel.Kind)
-			}
-			part("setting.json", map[string]any{"domain": strings.TrimSpace(settings.Domain), "kinds": kinds, "legacy": settings.Legacy})
-		}
-	}
-	if b, ok := read("config.json"); ok {
-		var registry struct {
-			Provider map[string]zcodeProvider `json:"provider"`
-		}
-		if json.Unmarshal(b, &registry) != nil {
-			part("config.json", "unparsable:"+string(b))
-		} else {
-			part("config.json", registry.Provider)
-		}
-	}
-	if b, ok := read("credentials.json"); ok {
-		var store map[string]any
-		if json.Unmarshal(b, &store) != nil {
-			part("credentials.json", "unparsable:"+string(b))
-		} else {
-			names := make([]string, 0, len(store))
-			profiles := map[string]any{}
-			for name, v := range store {
-				names = append(names, name)
-				if strings.HasPrefix(name, "oauth:") && strings.HasSuffix(name, ":user_info") {
-					profiles[name] = v
-				}
-			}
-			sort.Strings(names)
-			part("credentials.json", map[string]any{"names": names, "profiles": profiles})
-		}
-	}
-	part("keychain-marker", detect.ZCodeKeychainMarkerPresent(dir))
-	if h := readerHash(cache, "zcode-login-stamp", material.String()); h != "" {
-		return h
-	}
-	sum := sha256.Sum256([]byte("zcode-login-stamp\x00" + material.String()))
-	return hex.EncodeToString(sum[:])
-}
-
 // zcodeLogin is one resolved read. credential is in memory only.
 type zcodeLogin struct {
 	region     string // global | bigmodel-cn
 	billing    bool   // Start Plan balance (JWT) rather than Coding Plan quota (account key)
 	credential string
 	deviceMid  string
+	// What names the account (zcodeAccountMaterial) and the still-sealed store it came from, so
+	// the read can record it for the projection (zcodeRememberSeal). In memory only.
+	material string
+	sel      zcodeSelected
+	format   string
+	store    map[string]any
 }
 
 var zcodeProviderIDs = map[string]map[string]string{
@@ -450,6 +347,42 @@ func zcodeBaseRegion(base string) string {
 	return ""
 }
 
+// zcodeSelected is the sign-in ZCode's settings select: the family, its region and the selected
+// provider entry. Only this entry of the registry decides the account (owner build-6 #1).
+type zcodeSelected struct {
+	family, region, providerID, kind string
+	provider                         zcodeProvider
+	start                            bool
+}
+
+// zcodeSelect follows the selection the way the read does; the code is the read's refusal.
+func zcodeSelect(settings zcodeSettings, providers map[string]zcodeProvider) (zcodeSelected, string) {
+	family := strings.TrimSpace(settings.Domain)
+	region := map[string]string{"zai": "global", "bigmodel": "bigmodel-cn"}[family]
+	if region == "" {
+		return zcodeSelected{}, "not_signed_in"
+	}
+	providerID, kind := zcodeSelectedProvider(settings, family)
+	provider, ok := providers[providerID]
+	if providerID == "" || !ok {
+		return zcodeSelected{}, "not_signed_in"
+	}
+	if provider.Enabled != nil && !*provider.Enabled {
+		if reason := strings.TrimSpace(provider.DisabledReason); reason == "" || reason == "oauth_provider_inactive" {
+			return zcodeSelected{}, "not_signed_in"
+		}
+	}
+	start := providerID == zcodeProviderIDs["startPlan"][family]
+	if !start && providerID != zcodeProviderIDs["codingPlan"][family] {
+		return zcodeSelected{}, "unsupported_login" // a pay-as-you-go API key entry: no plan quota to read
+	}
+	// Region scoping (Pulse lesson): the entry's own endpoint must not name the other region.
+	if r := zcodeBaseRegion(provider.Options.BaseURL); r != "" && r != region {
+		return zcodeSelected{}, "region_refused"
+	}
+	return zcodeSelected{family: family, region: region, providerID: providerID, kind: kind, provider: provider, start: start}, ""
+}
+
 // readZCodeLogin resolves what one read may send and where, from ZCode's own files, read-only.
 // The code on failure is a reader error code; nothing of the files appears in it.
 func readZCodeLogin(ctx context.Context, dir string, keychain *ZCodeKeychain, now time.Time) (zcodeLogin, string) {
@@ -479,29 +412,11 @@ func readZCodeLogin(ctx context.Context, dir string, keychain *ZCodeKeychain, no
 	if json.Unmarshal(b, &registry) != nil {
 		return zcodeLogin{}, "parse_error"
 	}
-	family := strings.TrimSpace(settings.Domain)
-	region := map[string]string{"zai": "global", "bigmodel": "bigmodel-cn"}[family]
-	if region == "" {
-		return zcodeLogin{}, "not_signed_in"
+	sel, code := zcodeSelect(settings, registry.Provider)
+	if code != "" {
+		return zcodeLogin{}, code
 	}
-	providerID, kind := zcodeSelectedProvider(settings, family)
-	provider, ok := registry.Provider[providerID]
-	if providerID == "" || !ok {
-		return zcodeLogin{}, "not_signed_in"
-	}
-	if provider.Enabled != nil && !*provider.Enabled {
-		if reason := strings.TrimSpace(provider.DisabledReason); reason == "" || reason == "oauth_provider_inactive" {
-			return zcodeLogin{}, "not_signed_in"
-		}
-	}
-	start := providerID == zcodeProviderIDs["startPlan"][family]
-	if !start && providerID != zcodeProviderIDs["codingPlan"][family] {
-		return zcodeLogin{}, "unsupported_login" // a pay-as-you-go API key entry: no plan quota to read
-	}
-	// Region scoping (Pulse lesson): the entry's own endpoint must not name the other region.
-	if r := zcodeBaseRegion(provider.Options.BaseURL); r != "" && r != region {
-		return zcodeLogin{}, "region_refused"
-	}
+	family, region, kind, provider, start := sel.family, sel.region, sel.kind, sel.provider, sel.start
 	var store map[string]any
 	if b, err = zcodeLoginRead(filepath.Join(dir, "credentials.json")); err == nil {
 		if json.Unmarshal(b, &store) != nil {
@@ -600,6 +515,8 @@ func readZCodeLogin(ctx context.Context, dir string, keychain *ZCodeKeychain, no
 	if len(login.credential) > 8192 || strings.ContainsAny(login.credential, "\r\n\x00") {
 		return zcodeLogin{}, "unsupported_login"
 	}
+	login.material = zcodeAccountMaterial(sel, format, store, open)
+	login.sel, login.format, login.store = sel, format, store
 	return login, ""
 }
 
@@ -645,6 +562,10 @@ func fetchZCodeLogin(ctx context.Context, c *http.Client, source ZaiConfigSource
 		e.ErrorCode, e.Error = code, code
 		return e
 	}
+	if source.Remember != nil {
+		source.Remember(login)
+	}
+	login.store, login.material = nil, ""
 	if _, blocked := zaiConfigAdmission(ctx); blocked != "" {
 		e.ErrorCode, e.Error = "consent_required", "consent_required"
 		return e

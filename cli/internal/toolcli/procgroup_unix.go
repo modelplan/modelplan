@@ -15,7 +15,6 @@ func ownProcessGroup(cmd *exec.Cmd) {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
 	}
 	cmd.SysProcAttr.Setpgid = true
-	cmd.Cancel = func() error { killProcessGroup(cmd); return nil }
 }
 
 func killProcessGroup(cmd *exec.Cmd) {

@@ -5,9 +5,9 @@ package toolcli
 
 import "os/exec"
 
-func ownProcessGroup(cmd *exec.Cmd) {
-	cmd.Cancel = func() error { killProcessGroup(cmd); return nil }
-}
+func ownProcessGroup(*exec.Cmd) {}
+
+func killTagged(string) {}
 
 func killProcessGroup(cmd *exec.Cmd) {
 	if cmd.Process != nil {
