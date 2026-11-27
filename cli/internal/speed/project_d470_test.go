@@ -15,10 +15,10 @@ import (
 // Owner decision D470: a project is a repository root (worktrees merged), else a workspace the tool names, else
 // a bucket. These fixtures are the owner's build-6 cases.
 
-// d470Home makes a home folder named like a person ("guanzhicheng") and points HOME at it.
+// d470Home makes a home folder named like a person ("sampleperson") and points HOME at it.
 func d470Home(t *testing.T) string {
 	t.Helper()
-	home := filepath.Join(t.TempDir(), "guanzhicheng")
+	home := filepath.Join(t.TempDir(), "sampleperson")
 	if err := os.MkdirAll(home, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestProjectCodexThreadIDComesFromTheRolloutName(t *testing.T) {
 	if len(l.Sessions) != 1 || l.Sessions[0].ProjectKind != KindIndependent || l.Sessions[0].ProjectLabel != "" || l.Sessions[0].ProjectRef == "" {
 		t.Fatalf("%+v", l.Sessions)
 	}
-	if b, _ := os.ReadFile(PerfPath(cache)); strings.Contains(string(b), "new-chat") || strings.Contains(string(b), "guanzhicheng") {
+	if b, _ := os.ReadFile(PerfPath(cache)); strings.Contains(string(b), "new-chat") || strings.Contains(string(b), "sampleperson") {
 		t.Fatal("a scratch folder name or the user name is in perf.json")
 	}
 }
@@ -142,15 +142,15 @@ func TestProjectCodexThreadIDComesFromTheRolloutName(t *testing.T) {
 func TestProjectWorktreesMergeIntoTheirRepositoryWhateverTheirName(t *testing.T) {
 	d470Home(t)
 	root := t.TempDir()
-	repo := d470Repo(t, filepath.Join(root, "modelplans.ai"), "")
-	uuid := filepath.Join(root, "b98e560e-5c6c-4d7e-8f90-123456789abc", "modelplans.ai")
-	t3 := filepath.Join(root, "t3-af920b12")
+	repo := d470Repo(t, filepath.Join(root, "sample-site"), "")
+	uuid := filepath.Join(root, "b98e560e-5c6c-4d7e-8f90-123456789abc", "sample-site")
+	t3 := filepath.Join(root, "t3-0a1b2c3d")
 	linkWorktree(t, repo, uuid)
 	linkWorktree(t, repo, t3)
 	cache := t.TempDir()
 	pr := projectorInfo(cache, true)
 	want := pr("claude-code", repo, nativeProject{})
-	if want.Kind != KindRepo || want.Label != "modelplans.ai" {
+	if want.Kind != KindRepo || want.Label != "sample-site" {
 		t.Fatalf("%+v", want)
 	}
 	for _, cwd := range []string{uuid, filepath.Join(uuid, "src"), t3, filepath.Join(repo, "x")} {
@@ -177,10 +177,10 @@ func TestProjectLabelsNeverAreIdentifiersAndGenericNamesUseTheRemote(t *testing.
 	cache := t.TempDir()
 	pr := projectorInfo(cache, true)
 	for remote, dir := range map[string]string{
-		"git@github.com:modelplan/modelplan.git":     filepath.Join(root, "work", "repo"),
-		"https://github.com/modelplan/modelplans.ai": filepath.Join(root, "work2", "checkout"),
-		"https://github.com/modelplan/ping.git/":     filepath.Join(root, "work3", "5f0c9e1ab77d3"),
-		"https://example.com/org/some-thing.git":     filepath.Join(root, "work4", "t3-0123abcd"),
+		"git@github.com:modelplan/modelplan.git": filepath.Join(root, "work", "repo"),
+		"https://github.com/example/sample-site": filepath.Join(root, "work2", "checkout"),
+		"https://github.com/modelplan/ping.git/": filepath.Join(root, "work3", "5f0c9e1ab77d3"),
+		"https://example.com/org/some-thing.git": filepath.Join(root, "work4", "t3-0123abcd"),
 	} {
 		d470Repo(t, dir, remote)
 		want := strings.TrimSuffix(strings.TrimRight(remote[strings.LastIndexAny(remote, "/:")+1:], "/"), ".git")
@@ -298,11 +298,11 @@ func TestUsageRankingByTotalTokensWithSharesCostAndBackgroundReview(t *testing.T
 	old := day(now.AddDate(0, 0, -3))
 	sess := []PerfSession{
 		// Output-light but cache-heavy: ranks first by total tokens, last by output.
-		{Ref: "1111111111111111", Key: "k1", Source: "claude-code", ProjectRef: "pa", ProjectLabel: "alpha", ProjectKind: KindRepo, Title: "Cache heavy", LastAt: now, FirstAt: now.Add(-time.Hour),
+		{Ref: "1111111111111111", Key: "k1", Source: "claude-code", ProjectRef: "pa", ProjectLabel: "alpha", ProjectKind: KindRepo, ProjectRule: projectRule, Title: "Cache heavy", LastAt: now, FirstAt: now.Add(-time.Hour),
 			Days: []SessionDay{usageDay(today, "opus", 10, 100, 5000, 100)}},
-		{Ref: "2222222222222222", Key: "k2", Source: "codex", ProjectRef: "pa", ProjectLabel: "alpha", ProjectKind: KindRepo, LastAt: now,
+		{Ref: "2222222222222222", Key: "k2", Source: "codex", ProjectRef: "pa", ProjectLabel: "alpha", ProjectKind: KindRepo, ProjectRule: projectRule, LastAt: now,
 			Days: []SessionDay{usageDay(today, "sol", 900, 100, 100, 0), usageDay(old, "sol", 1000, 0, 0, 0)}},
-		{Ref: "3333333333333333", Key: "k3", Source: "codex", ProjectRef: "pi", ProjectKind: KindIndependent, LastAt: now,
+		{Ref: "3333333333333333", Key: "k3", Source: "codex", ProjectRef: "pi", ProjectKind: KindIndependent, ProjectRule: projectRule, LastAt: now,
 			Days: []SessionDay{usageDay(today, "sol", 200, 50, 50, 0)}},
 		{Ref: "4444444444444444", Key: "k4", Source: "zcode", LastAt: now,
 			Days: []SessionDay{{Day: today, Model: "glm", EffortStatus: "unreported", ObservedRequests: 1, ObservedOutputTokens: 77}}}, // recorded before token kinds
@@ -403,7 +403,7 @@ func TestUsageRowCapSumsTheRestIntoOther(t *testing.T) {
 	now := time.Date(2026, 11, 26, 12, 0, 0, 0, time.UTC)
 	var sess []PerfSession
 	for i := 0; i < RankCap+5; i++ {
-		sess = append(sess, PerfSession{Ref: fmt.Sprintf("%016x", i+1), Key: fmt.Sprint(i), Source: "codex", ProjectRef: fmt.Sprintf("p%d", i), ProjectKind: KindRepo, LastAt: now,
+		sess = append(sess, PerfSession{Ref: fmt.Sprintf("%016x", i+1), Key: fmt.Sprint(i), Source: "codex", ProjectRef: fmt.Sprintf("p%d", i), ProjectKind: KindRepo, ProjectRule: projectRule, LastAt: now,
 			Days: []SessionDay{usageDay(day(now), "sol", int64(10+i), 0, 0, 0)}})
 	}
 	w := PerfView{OK: true, Recording: true, Now: now, Ledger: PerfLedger{Sessions: sess}}.Usage(nil).Today
@@ -446,12 +446,12 @@ func TestUsageViewHoldsNoPathOrUserName(t *testing.T) {
 	now := t0.Add(2 * time.Minute)
 	u := view(t, cache, now).Usage(fixedPricer())
 	b, _ := json.Marshal(u)
-	for _, leak := range []string{"guanzhicheng", home, dir, "/tmp", "/home/", "/Users/"} {
+	for _, leak := range []string{"sampleperson", home, dir, "/tmp", "/home/", "/Users/"} {
 		if strings.Contains(string(b), leak) {
 			t.Fatalf("%q in the usage view: %s", leak, b)
 		}
 	}
-	if pb, _ := os.ReadFile(PerfPath(cache)); strings.Contains(string(pb), "guanzhicheng") || strings.Contains(string(pb), home) {
+	if pb, _ := os.ReadFile(PerfPath(cache)); strings.Contains(string(pb), "sampleperson") || strings.Contains(string(pb), home) {
 		t.Fatal("the user name or home path is in perf.json")
 	}
 	if rows := u.Recent7d.ProjectRows; len(rows) != 1 || rows[0].ProjectKind != KindHome || rows[0].Label != nil {

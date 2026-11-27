@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -113,13 +114,50 @@ type projectResolver struct {
 	temps       []string
 	codex       *codexProjects
 	rememberAt  string
-	remembered  [][2]string
+	remembered  []rememberedRoot
 	rememberSet map[string]int
 	dirty       bool
 }
 
+// rememberedRoot: a linked worktree's checkout remembered under its repository, so its history keeps the
+// repository after the worktree is removed. Every field is keyed or a label (macrevb-1299-5): Dir is the keyed
+// hash of the worktree's top folder, Ref the repository's reference, Kind its kind; Label is kept only while
+// project labels are on. No path is stored; the file is not written while labels are off and is deleted when
+// they are turned off.
+type rememberedRoot struct {
+	Dir   string `json:"d"`
+	Ref   string `json:"r"`
+	Kind  string `json:"k"`
+	Label string `json:"l,omitempty"`
+}
+
+// rememberFile: the remembered worktrees. legacyRememberFile held absolute paths (an earlier build of D470) and is
+// removed on sight.
+const (
+	rememberFile       = "project-worktrees.json"
+	legacyRememberFile = "project-roots.json"
+)
+
+func rememberPath(cache string) string { return filepath.Join(cache, "observed", rememberFile) }
+
+// forgetRemembered deletes the remembered worktrees (project labels turned off).
+func forgetRemembered(cache string) error {
+	var errs []error
+	for _, name := range []string{rememberFile, legacyRememberFile} {
+		if err := os.Remove(filepath.Join(cache, "observed", name)); err != nil && !os.IsNotExist(err) {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
 func newProjectResolver(cache string, key []byte, labels bool) *projectResolver {
-	r := &projectResolver{key: key, labels: labels, rememberAt: filepath.Join(cache, "observed", "project-roots.json")}
+	r := &projectResolver{key: key, labels: labels, rememberAt: rememberPath(cache)}
+	if labels {
+		_ = os.Remove(filepath.Join(cache, "observed", legacyRememberFile))
+	} else {
+		_ = forgetRemembered(cache) // however labels were turned off, what was remembered goes
+	}
 	if h, err := os.UserHomeDir(); err == nil && filepath.IsAbs(h) {
 		r.home = filepath.Clean(h)
 		if real, err := filepath.EvalSymlinks(r.home); err == nil {
@@ -184,51 +222,65 @@ func (r *projectResolver) label(dir, commonGit, title string) string {
 	return name
 }
 
+var hexRef = regexp.MustCompile(`^[0-9a-f]{32}$`)
+
 func (r *projectResolver) load() {
 	if r.rememberSet != nil {
 		return
 	}
 	r.rememberSet = map[string]int{}
 	if b, ok := readCapped(r.rememberAt); ok {
-		var pairs [][2]string
-		if json.Unmarshal(b, &pairs) == nil {
-			for _, p := range pairs {
-				if len(r.remembered) < maxRememberedRoots && filepath.IsAbs(p[0]) && filepath.IsAbs(p[1]) {
-					r.rememberSet[p[0]] = len(r.remembered)
-					r.remembered = append(r.remembered, p)
+		var entries []rememberedRoot
+		if json.Unmarshal(b, &entries) == nil {
+			for _, e := range entries {
+				if len(r.remembered) >= maxRememberedRoots || !hexRef.MatchString(e.Dir) || !hexRef.MatchString(e.Ref) || (e.Kind != KindRepo && e.Kind != KindNone) {
+					continue
+				}
+				if !r.labels || strings.ContainsAny(e.Label, `/\`) {
+					e.Label = ""
+				}
+				if _, dup := r.rememberSet[e.Dir]; !dup {
+					r.rememberSet[e.Dir] = len(r.remembered)
+					r.remembered = append(r.remembered, e)
 				}
 			}
 		}
 	}
 }
 
-func (r *projectResolver) remember(dir, root string) {
+// remember keeps a linked worktree's top folder (top) under its repository's resolved project.
+func (r *projectResolver) remember(top string, info projectInfo) {
 	r.load()
-	if i, ok := r.rememberSet[dir]; ok && r.remembered[i][1] == root {
+	e := rememberedRoot{Dir: r.ref("dir:" + top), Ref: info.Ref, Kind: info.Kind, Label: info.Label}
+	if i, ok := r.rememberSet[e.Dir]; ok {
+		if r.remembered[i] != e {
+			r.remembered[i], r.dirty = e, true
+		}
 		return
 	}
-	if i, ok := r.rememberSet[dir]; ok {
-		r.remembered[i][1] = root
-	} else {
-		if len(r.remembered) >= maxRememberedRoots {
-			delete(r.rememberSet, r.remembered[0][0])
-			r.remembered = r.remembered[1:]
-			for i, p := range r.remembered {
-				r.rememberSet[p[0]] = i
-			}
+	if len(r.remembered) >= maxRememberedRoots {
+		delete(r.rememberSet, r.remembered[0].Dir)
+		r.remembered = r.remembered[1:]
+		for i, p := range r.remembered {
+			r.rememberSet[p.Dir] = i
 		}
-		r.rememberSet[dir] = len(r.remembered)
-		r.remembered = append(r.remembered, [2]string{dir, root})
 	}
+	r.rememberSet[e.Dir] = len(r.remembered)
+	r.remembered = append(r.remembered, e)
 	r.dirty = true
 }
 
-// recall: the repository a gone worktree (or a folder inside one) was remembered under.
-func (r *projectResolver) recall(dir string) string {
+// recall: the project a gone worktree (or a folder inside one) was remembered under.
+func (r *projectResolver) recall(dir string) (projectInfo, bool) {
 	r.load()
 	for d, i := dir, 0; i < 64; i++ {
-		if j, ok := r.rememberSet[d]; ok {
-			return r.remembered[j][1]
+		if j, ok := r.rememberSet[r.ref("dir:"+d)]; ok {
+			e := r.remembered[j]
+			info := projectInfo{Ref: e.Ref, Kind: e.Kind}
+			if r.labels {
+				info.Label = e.Label
+			}
+			return info, true
 		}
 		up := filepath.Dir(d)
 		if up == d {
@@ -236,12 +288,13 @@ func (r *projectResolver) recall(dir string) string {
 		}
 		d = up
 	}
-	return ""
+	return projectInfo{}, false
 }
 
-// save writes the remembered mappings once, after a run.
+// save writes the remembered worktrees once, after a run. Never while labels are off: nothing about a project
+// beyond the ledger's own references is kept then.
 func (r *projectResolver) save() {
-	if !r.dirty {
+	if !r.dirty || !r.labels {
 		return
 	}
 	r.dirty = false
@@ -253,8 +306,21 @@ func (r *projectResolver) save() {
 }
 
 // resolve names a session's project. cwd "" with no native project resolves to no reference at all: nothing
-// is known about it.
+// is known about it. The repository comes first for every tool (macrevb-1299-2): a Codex thread listed as
+// projectless is an independent chat only when its folder is in no repository.
 func (r *projectResolver) resolve(source, cwd string, np nativeProject) projectInfo {
+	dir := ""
+	if cwd != "" && len(cwd) <= 4096 && filepath.IsAbs(cwd) {
+		dir = filepath.Clean(cwd)
+	}
+	gone := false
+	if dir != "" {
+		info, ok, exists := r.byRepo(dir, np)
+		if ok {
+			return info
+		}
+		gone = !exists
+	}
 	if source == "codex" && np.Thread != "" {
 		if r.codex == nil {
 			r.codex = loadCodexProjects()
@@ -263,23 +329,21 @@ func (r *projectResolver) resolve(source, cwd string, np nativeProject) projectI
 			return r.bucket(KindIndependent)
 		}
 	}
-	dir := ""
-	if cwd != "" && len(cwd) <= 4096 && filepath.IsAbs(cwd) {
-		dir = filepath.Clean(cwd)
-	}
 	if dir == "" && np.ID == "" {
 		return projectInfo{}
 	}
-	if dir != "" {
-		if info, ok := r.byRepo(dir, np); ok {
-			return info
+	if gone && !r.homeBucket(dir) {
+		// A folder that no longer exists and was not remembered: its own name. Never an unrelated parent
+		// repository.
+		if l := r.label(dir, "", np.Title); l != "" {
+			return r.named("cwd:"+dir, l, KindWorkspace)
 		}
+		return r.bucket(KindNone)
 	}
 	if info, ok := r.byWorkspace(source, dir, np); ok {
 		return info
 	}
-	switch {
-	case dir != "" && r.homeBucket(dir):
+	if dir != "" && r.homeBucket(dir) {
 		return r.bucket(KindHome)
 	}
 	return r.bucket(KindNone)
@@ -293,38 +357,49 @@ func (r *projectResolver) named(id, label, kind string) projectInfo {
 	return info
 }
 
-// byRepo: step 1.
-func (r *projectResolver) byRepo(dir string, np nativeProject) (projectInfo, bool) {
+// byRepo: step 1. exists reports whether dir is still there.
+func (r *projectResolver) byRepo(dir string, np nativeProject) (info projectInfo, ok, exists bool) {
 	real, err := filepath.EvalSymlinks(dir)
 	if err != nil {
-		// A folder that no longer exists: its remembered repository, else its own name. Never an
-		// unrelated parent repository.
-		if root := r.recall(dir); root != "" {
-			return r.repo(root, np)
-		}
-		if r.homeBucket(dir) {
-			return projectInfo{}, false
-		}
-		if l := r.label(dir, "", np.Title); l != "" {
-			return r.named("cwd:"+dir, l, KindWorkspace), true
-		}
-		return r.bucket(KindNone), true
+		// A folder that no longer exists: the repository its worktree was remembered under.
+		info, ok := r.recall(dir)
+		return info, ok, false
 	}
-	root := gitRoot(real)
+	top, root := gitCheckout(real)
 	if root == "" || root == r.home {
-		return projectInfo{}, false
+		return projectInfo{}, false, true
 	}
-	if root != real {
-		if g := filepath.Join(real, ".git"); fileExists(g) {
-			r.remember(dir, root)
+	info, _ = r.repo(root, np)
+	if top != root {
+		// A linked worktree: its top folder is remembered, so any folder inside it keeps the repository after the
+		// worktree is removed (macrevb-1299-3). Both spellings, as observed and resolved, are kept.
+		r.remember(top, info)
+		if rel, err := filepath.Rel(real, top); err == nil {
+			if obs := filepath.Clean(filepath.Join(dir, rel)); obs != top {
+				r.remember(obs, info)
+			}
 		}
 	}
-	return r.repo(root, np)
+	return info, true, true
 }
 
-func fileExists(p string) bool {
-	fi, err := os.Lstat(p)
-	return err == nil && fi.Mode().IsRegular()
+// gitCheckout: the top folder of the checkout a folder is in and its repository root (gitRoot); the two differ
+// for a linked worktree. "" when the folder is in no checkout.
+func gitCheckout(dir string) (top, root string) {
+	for d, i := dir, 0; i < 64; i++ {
+		if common := gitCommonDir(d); common != "" {
+			if filepath.Base(common) == ".git" {
+				return d, filepath.Dir(common)
+			}
+			return d, d
+		}
+		up := filepath.Dir(d)
+		if up == d {
+			break
+		}
+		d = up
+	}
+	return "", ""
 }
 
 func (r *projectResolver) repo(root string, np nativeProject) (projectInfo, bool) {

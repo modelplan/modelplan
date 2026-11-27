@@ -481,7 +481,7 @@
               "cacheWrite": 1,
               "complete": false
             },
-            "share": 42.5,
+            "share": 0.425,
             "costUsd": 42.5,
             "costState": "priced",
             "model": "synthetic",
@@ -510,7 +510,7 @@
               "cacheWrite": 1,
               "complete": false
             },
-            "share": 42.5,
+            "share": 0.425,
             "costUsd": 42.5,
             "costState": "priced",
             "model": "synthetic",
@@ -528,7 +528,7 @@
             "cacheWrite": 1,
             "complete": false
           },
-          "share": 42.5,
+          "share": 0.425,
           "costUsd": 42.5,
           "costState": "priced"
         },
@@ -542,7 +542,7 @@
             "cacheWrite": 1,
             "complete": false
           },
-          "share": 42.5,
+          "share": 0.425,
           "costUsd": 42.5,
           "costState": "priced"
         },
@@ -556,7 +556,7 @@
             "cacheWrite": 1,
             "complete": false
           },
-          "share": 42.5,
+          "share": 0.425,
           "costUsd": 42.5,
           "costState": "priced",
           "model": "synthetic",
@@ -599,7 +599,7 @@
               "cacheWrite": 1,
               "complete": false
             },
-            "share": 42.5,
+            "share": 0.425,
             "costUsd": 42.5,
             "costState": "priced",
             "model": "synthetic",
@@ -628,7 +628,7 @@
               "cacheWrite": 1,
               "complete": false
             },
-            "share": 42.5,
+            "share": 0.425,
             "costUsd": 42.5,
             "costState": "priced",
             "model": "synthetic",
@@ -646,7 +646,7 @@
             "cacheWrite": 1,
             "complete": false
           },
-          "share": 42.5,
+          "share": 0.425,
           "costUsd": 42.5,
           "costState": "priced"
         },
@@ -660,7 +660,7 @@
             "cacheWrite": 1,
             "complete": false
           },
-          "share": 42.5,
+          "share": 0.425,
           "costUsd": 42.5,
           "costState": "priced"
         },
@@ -674,7 +674,7 @@
             "cacheWrite": 1,
             "complete": false
           },
-          "share": 42.5,
+          "share": 0.425,
           "costUsd": 42.5,
           "costState": "priced",
           "model": "synthetic",
@@ -717,7 +717,7 @@
               "cacheWrite": 1,
               "complete": false
             },
-            "share": 42.5,
+            "share": 0.425,
             "costUsd": 42.5,
             "costState": "priced",
             "model": "synthetic",
@@ -746,7 +746,7 @@
               "cacheWrite": 1,
               "complete": false
             },
-            "share": 42.5,
+            "share": 0.425,
             "costUsd": 42.5,
             "costState": "priced",
             "model": "synthetic",
@@ -764,7 +764,7 @@
             "cacheWrite": 1,
             "complete": false
           },
-          "share": 42.5,
+          "share": 0.425,
           "costUsd": 42.5,
           "costState": "priced"
         },
@@ -778,7 +778,7 @@
             "cacheWrite": 1,
             "complete": false
           },
-          "share": 42.5,
+          "share": 0.425,
           "costUsd": 42.5,
           "costState": "priced"
         },
@@ -792,7 +792,7 @@
             "cacheWrite": 1,
             "complete": false
           },
-          "share": 42.5,
+          "share": 0.425,
           "costUsd": 42.5,
           "costState": "priced",
           "model": "synthetic",

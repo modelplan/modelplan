@@ -236,7 +236,14 @@ func observePerf(cache string, now time.Time, in Ingest, f func(*PerfLedger) boo
 }
 
 func (l *PerfLedger) scan(path, source, parser string, p parser, now time.Time) bool {
+	return l.scanFresh(path, source, parser, p, nil, now)
+}
+
+// scanFresh is scan with a second, unused parser for the once-only re-attribution of an older session (nil: none).
+func (l *PerfLedger) scanFresh(path, source, parser string, p, fresh parser, now time.Time) bool {
+	migrated := l.reattribute(path, source, fresh, now)
 	done, changed := scanLog(l.Files, path, source, p, now)
+	changed = changed || migrated
 	thread := ""
 	if source == "codex" {
 		thread = codexThreadOfPath(path)
@@ -249,6 +256,94 @@ func (l *PerfLedger) scan(path, source, parser string, p parser, now time.Time) 
 		l.addSession(fileKey(path), source, t)
 	}
 	return changed
+}
+
+// attribute names a session's project from a turn's working directory and the tool's own project. The first
+// working directory names the project; a label comes once labels are on. A session recorded under an older rule
+// is recomputed once under the current one, dropping a guessed project.
+func (l *PerfLedger) attribute(s *PerfSession, key, source, cwd string, np nativeProject, epoch *GrantEpoch) {
+	if (cwd == "" && np.ID == "" && np.Thread == "") || l.project == nil || !(s.ProjectRule < projectRule || s.ProjectRef == "" || s.ProjectLabel == "" || s.ProjectKind == "") {
+		return
+	}
+	p := l.project(source, cwd, np)
+	ref, label := p.Ref, p.Label
+	if s.ProjectRule < projectRule {
+		// macrevb-909-1: the live record of the same session carries the old guess too; it follows the
+		// recomputed project at once instead of waiting for (or outliving) its next live observation.
+		for i := range l.Live {
+			if l.Live[i].Key == key && l.Live[i].Source == source && sameEpoch(l.Live[i].GrantEpoch, epoch) && l.Live[i].ProjectRef == s.ProjectRef {
+				l.Live[i].ProjectRef, l.Live[i].ProjectLabel = ref, label
+			}
+		}
+		s.ProjectRef, s.ProjectLabel, s.ProjectKind, s.ProjectRule = ref, label, p.Kind, projectRule
+	} else if s.ProjectRef == "" {
+		s.ProjectRef, s.ProjectLabel, s.ProjectKind = ref, label, p.Kind
+	} else if ref == s.ProjectRef {
+		s.ProjectLabel, s.ProjectKind = label, p.Kind
+	}
+}
+
+// stale: the sessions of a log (by key) recorded under an older project rule.
+func (l *PerfLedger) stale(key, source string) []*PerfSession {
+	var out []*PerfSession
+	for i := range l.Sessions {
+		if s := &l.Sessions[i]; s.Key == key && s.Source == source && s.ProjectRule < projectRule {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// reattribute re-reads a log whose session was recorded under an older project rule, only for the working
+// directory and the tool's project of its first turn, and recomputes the project once (macrevb-1299-4). The
+// session's counts are untouched and the log's cursor is not moved: a session with no new turns is migrated too.
+func (l *PerfLedger) reattribute(path, source string, fresh parser, now time.Time) bool {
+	key := fileKey(path)
+	stale := l.stale(key, source)
+	if len(stale) == 0 || l.project == nil || fresh == nil {
+		return false
+	}
+	if fi, err := os.Stat(path); err != nil || !fi.Mode().IsRegular() {
+		return false // not readable now: tried again on a later run
+	}
+	done, _ := scanLog(map[string]Cursor{}, path, source, fresh, now)
+	thread := ""
+	if source == "codex" {
+		thread = codexThreadOfPath(path)
+	}
+	for _, t := range done {
+		if thread != "" {
+			t.np.Thread = thread
+		}
+		if t.cwd == "" && t.np.ID == "" && t.np.Thread == "" {
+			continue
+		}
+		np := t.np
+		if np.Title == "" && source == "codex" && np.Thread != "" {
+			np.Title = l.codexTitle(np.Thread)
+		}
+		for _, s := range stale {
+			l.attribute(s, key, source, t.cwd, np, s.GrantEpoch)
+		}
+		break
+	}
+	for _, s := range stale {
+		if s.ProjectRule < projectRule {
+			// The log no longer says where the session ran: the older rule's guess is dropped, not kept.
+			l.dropStale(s, key, source)
+		}
+	}
+	return true
+}
+
+// dropStale ends an older session's guessed project when the current rule cannot recompute it: no project.
+func (l *PerfLedger) dropStale(s *PerfSession, key, source string) {
+	for i := range l.Live {
+		if l.Live[i].Key == key && l.Live[i].Source == source && sameEpoch(l.Live[i].GrantEpoch, s.GrantEpoch) && l.Live[i].ProjectRef == s.ProjectRef {
+			l.Live[i].ProjectRef, l.Live[i].ProjectLabel = "", ""
+		}
+	}
+	s.ProjectRef, s.ProjectLabel, s.ProjectKind, s.ProjectRule = "", "", KindNone, projectRule
 }
 
 // maxSessions: the sessions kept; the ones last active longest ago go first.
@@ -283,32 +378,16 @@ func (l *PerfLedger) addSession(key, source string, t turn) {
 	if s.SubscriptionRef == "" {
 		s.SubscriptionRef = l.subscription
 	}
-	if (t.cwd != "" || t.np.ID != "" || t.np.Thread != "") && l.project != nil && (s.ProjectRule < projectRule || s.ProjectRef == "" || s.ProjectLabel == "" || s.ProjectKind == "") {
-		// The first working directory names the project; a label comes once labels are on. A session recorded
-		// under an older rule is recomputed once under the current one, dropping a guessed project.
-		p := l.project(source, t.cwd, t.np)
-		ref, label := p.Ref, p.Label
-		if s.ProjectRule < projectRule {
-			// macrevb-909-1: the live record of the same session carries the old guess too; it follows the
-			// recomputed project at once instead of waiting for (or outliving) its next live observation.
-			for i := range l.Live {
-				if l.Live[i].Key == key && l.Live[i].Source == source && sameEpoch(l.Live[i].GrantEpoch, epoch) && l.Live[i].ProjectRef == s.ProjectRef {
-					l.Live[i].ProjectRef, l.Live[i].ProjectLabel = ref, label
-				}
-			}
-			s.ProjectRef, s.ProjectLabel, s.ProjectKind, s.ProjectRule = ref, label, p.Kind, projectRule
-		} else if s.ProjectRef == "" {
-			s.ProjectRef, s.ProjectLabel, s.ProjectKind = ref, label, p.Kind
-		} else if ref == s.ProjectRef {
-			s.ProjectLabel, s.ProjectKind = label, p.Kind
-		}
+	// The tool's own title is known before the project, so the guard against a label that is the thread's own name
+	// sees it (macrevb-1299-7). It is read for that guard whatever the labels switch says and kept only while
+	// labels are on.
+	np := t.np
+	if np.Title == "" && source == "codex" && np.Thread != "" {
+		np.Title = l.codexTitle(np.Thread)
 	}
+	l.attribute(s, key, source, t.cwd, np, epoch)
 	if l.titles {
-		title := t.np.Title
-		if title == "" && source == "codex" && t.np.Thread != "" && s.Title == "" {
-			title = l.codexTitle(t.np.Thread)
-		}
-		if title = cleanTitle(title); title != "" {
+		if title := cleanTitle(np.Title); title != "" {
 			s.Title = title
 		}
 	}
@@ -543,6 +622,9 @@ func (l *PerfLedger) prune(now time.Time) []byte {
 
 // projectRule is the current project attribution rule (see PerfSession.ProjectRule).
 const projectRule = 2
+
+// CurrentProjectRule is projectRule, for callers outside the package.
+const CurrentProjectRule = projectRule
 
 // CompleteTotal is the day's total: input, cache reads, cache writes and output, each counted once (the ccusage
 // definition; reasoning is part of output). It is unknown unless every part is, and never falls back to output alone.

@@ -72,8 +72,36 @@ func ObserveZCode(cache, home string, in Ingest, now time.Time) error {
 		return nil
 	}
 	return observePerf(cache, now, in, func(l *PerfLedger) bool {
-		return l.scanDB(path, "zcode", ParserZCode, zcodeAnchor, zcodePostClear, now, readZCode)
+		migrated := l.reattributeDB(path, "zcode", zcodeSessions)
+		return l.scanDB(path, "zcode", ParserZCode, zcodeAnchor, zcodePostClear, now, readZCode) || migrated
 	})
+}
+
+// zcodeSessions: every session's folder, project and title, as readZCode joins them.
+func zcodeSessions(db *sql.DB) ([]dbSession, error) {
+	if !hasColumns(db, "session", "id", "directory") {
+		return nil, nil
+	}
+	pid, title := "''", "''"
+	if hasColumns(db, "session", "project_id") {
+		pid = "COALESCE(project_id, '')"
+	}
+	if hasColumns(db, "session", "title") {
+		title = "COALESCE(title, '')"
+	}
+	rows, err := db.Query(`SELECT CAST(id AS TEXT), COALESCE(directory, ''), ` + pid + `, ` + title + ` FROM session`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []dbSession
+	for rows.Next() {
+		var s dbSession
+		if rows.Scan(&s.id, &s.cwd, &s.np.ID, &s.np.Title) == nil && s.id != "" {
+			out = append(out, s)
+		}
+	}
+	return out, rows.Err()
 }
 
 // hasColumns: the table exists with these columns.

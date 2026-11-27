@@ -196,9 +196,15 @@ func FallbackModel(dayStr string) string {
 	return autoReviewFallbacks[len(autoReviewFallbacks)-1].model
 }
 
-// reviewResponse: a Codex response that ran under no named model, or under the Auto Review id: a background run.
-func reviewResponse(r SessionResponse) bool {
-	return r.Source == "codex" && (r.Model == "" || r.Model == "codex-auto-review")
+// unnamedModel: a response the accounting parser read under no named model (it records the "unknown" sentinel,
+// macrevb-1299-6).
+func unnamedModel(m string) bool { return m == "" || m == "unknown" }
+
+// reviewResponse: a Codex background run: a response under the Auto Review id, or one under no named model from a
+// rollout that is no interactive session (Codex runs its reviews in rollouts of their own, which the session
+// ledger skips). interactive: the response's rollout is a recorded session.
+func reviewResponse(r SessionResponse, interactive bool) bool {
+	return r.Source == "codex" && (r.Model == "codex-auto-review" || !interactive && unnamedModel(r.Model))
 }
 
 // Usage ranks every session and project over today, 7 and 30 days. p prices (nil: every cost is unpriced).
@@ -224,7 +230,8 @@ func (v PerfView) usageWindow(from string, p Pricer, running map[string]bool) Us
 	w.Total.Complete = true
 	sessions := []UsageRow{}
 	for _, s := range v.Ledger.Sessions {
-		row := UsageRow{Ref: s.Ref, Source: s.Source, Sources: []string{s.Source}, ProjectRef: refOrNil(s.ProjectRef), ProjectKind: sessionKind(s),
+		projectRef, projectLabel, kind := s.Project()
+		row := UsageRow{Ref: s.Ref, Source: s.Source, Sources: []string{s.Source}, ProjectRef: refOrNil(projectRef), ProjectKind: kind,
 			SubscriptionRef: refOrNil(s.SubscriptionRef), SubscriptionRefs: []string{}, FirstAt: s.FirstAt, LastAt: s.LastAt, Sessions: 1, Running: running[s.Ref]}
 		row.Tokens.Complete = true
 		var c configSums
@@ -244,8 +251,8 @@ func (v PerfView) usageWindow(from string, p Pricer, running map[string]bool) Us
 		}
 		row.Configs = c.top()
 		row.Model, row.ModelApprox = rowModel(s.Source, row.Configs, last)
-		if s.ProjectLabel != "" {
-			l := s.ProjectLabel
+		if projectLabel != "" {
+			l := projectLabel
 			row.Label = &l
 		}
 		if s.Title != "" {
@@ -296,20 +303,43 @@ func allComplete(rows []UsageRow) bool {
 	return true
 }
 
-// sessionKind: the project kind of a session recorded before kinds were kept reads as none when it has no
-// project and is unknown otherwise.
-func sessionKind(s PerfSession) string {
-	if s.ProjectKind != "" {
-		return s.ProjectKind
+// Project: the session's project as the usage rankings group it, under the current rule (D470). A session still
+// recorded under an older rule (its log not observed since the upgrade) is in no project there until it is
+// re-attributed (macrevb-1299-4): the older rule's grouping is never ranked, and the kind is always a published one.
+func (s PerfSession) Project() (ref, label, kind string) {
+	if k := s.Kind(); k != "" && s.ProjectRef != "" {
+		return s.ProjectRef, s.ProjectLabel, k
 	}
-	if s.ProjectRef == "" {
-		return KindNone
+	return "", "", KindNone
+}
+
+// Kind: the session's project kind when the current rule recorded it, "" otherwise (an older session: the wire
+// leaves the kind out, as for a session recorded before kinds were kept).
+func (s PerfSession) Kind() string {
+	if s.ProjectRule < projectRule {
+		return ""
+	}
+	switch s.ProjectKind {
+	case KindRepo, KindWorkspace, KindIndependent, KindHome, KindNone:
+		return s.ProjectKind
 	}
 	return ""
 }
 
+// SessionModel: the model a session row shows: the observed one, or for a Codex session under none (or under the
+// Auto Review id) the dated fallback, approx true.
+func SessionModel(source, observed, lastDay string) (model string, approx bool) {
+	if !unnamedModel(observed) && observed != "codex-auto-review" {
+		return observed, false
+	}
+	if source == "codex" && lastDay != "" {
+		return FallbackModel(lastDay), true
+	}
+	return "", false
+}
+
 func rowModel(source string, configs []SessionConfig, lastDay string) (string, bool) {
-	if len(configs) > 0 && configs[0].Model != "" && configs[0].Model != "codex-auto-review" {
+	if len(configs) > 0 && !unnamedModel(configs[0].Model) && configs[0].Model != "codex-auto-review" {
 		return configs[0].Model, false
 	}
 	if source == "codex" && lastDay != "" {
@@ -430,10 +460,15 @@ func (v PerfView) sessionCost(s PerfSession, from string, p Pricer) Cost {
 	}
 	if rs := v.Ledger.UsageSessions[s.Key]; len(rs) > 0 {
 		for _, r := range rs {
-			if d := day(r.At); d < from || d > day(v.Now) || r.At.After(v.Now) || reviewResponse(r) {
+			d := day(r.At)
+			if d < from || d > day(v.Now) || r.At.After(v.Now) || reviewResponse(r, true) {
 				continue
 			}
-			usd, ok := p.Request(r.Source, r.Model, r.Tier, r.Buckets)
+			model := r.Model
+			if r.Source == "codex" && unnamedModel(model) {
+				model = FallbackModel(d) // the dated approximation the row's model shows (modelApprox)
+			}
+			usd, ok := p.Request(r.Source, model, r.Tier, r.Buckets)
 			c.add(usd, r.Buckets.Sum(), ok)
 		}
 		c.settle()
@@ -464,10 +499,16 @@ func (v PerfView) reviewRuns(from string, p Pricer) BackgroundReview {
 	b := BackgroundReview{}
 	b.Tokens.Complete = true
 	runs := map[string]bool{}
+	interactive := map[string]bool{}
+	for _, s := range v.Ledger.Sessions {
+		if s.Source == "codex" {
+			interactive[s.Key] = true
+		}
+	}
 	for key, rs := range v.Ledger.UsageSessions {
 		for _, r := range rs {
 			d := day(r.At)
-			if !reviewResponse(r) || d < from || d > day(v.Now) || r.At.After(v.Now) {
+			if !reviewResponse(r, interactive[key]) || d < from || d > day(v.Now) || r.At.After(v.Now) {
 				continue
 			}
 			runs[key] = true
@@ -526,7 +567,7 @@ func (v PerfView) SessionTotals(p Pricer) map[string]SessionTotal {
 func (v PerfView) SessionInfo(ref, source string) (title, kind string, ok bool) {
 	for _, s := range v.Ledger.Sessions {
 		if s.Ref == ref && s.Source == source {
-			return s.Title, sessionKind(s), true
+			return s.Title, s.Kind(), true
 		}
 	}
 	return "", "", false

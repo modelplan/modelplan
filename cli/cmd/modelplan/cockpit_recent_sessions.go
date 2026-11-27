@@ -42,6 +42,7 @@ func cockpitRecentSessions(sessions []speed.PerfSession, allowed map[string]bool
 	out := make([]wire.CockpitRecentSession, 0, len(recent))
 	for _, session := range recent {
 		entry := wire.CockpitRecentSession{SessionRef: session.Ref, Source: session.Source, Model: "unknown", LastObservedAt: session.LastAt.UTC()}
+		raw, lastDay := "", session.LastAt.Local().Format("2006-01-02")
 		if len(session.Days) > 0 {
 			// The newest recorded day by date, not the last one read: a log read out of order must not reverse it.
 			last := session.Days[0]
@@ -50,7 +51,7 @@ func cockpitRecentSessions(sessions []speed.PerfSession, allowed map[string]bool
 					last = d
 				}
 			}
-			entry.Model = cockpitModelID(last.Model, session.Source, models)
+			raw, lastDay = last.Model, last.Day
 			switch last.Effort {
 			case "low", "medium", "high", "xhigh", "max", "ultra":
 				if last.EffortStatus == "reported" {
@@ -59,7 +60,16 @@ func cockpitRecentSessions(sessions []speed.PerfSession, allowed map[string]bool
 				}
 			}
 		}
-		entry.ProjectKind = usageKind(session.ProjectKind)
+		// macrevb-1299-9: a Codex session under no named model is shown as the dated fallback model, marked as an
+		// approximation (the same rule as the usage rows); an observed model never is.
+		if model, approx := speed.SessionModel(session.Source, raw, lastDay); approx {
+			if id := cockpitModelID(model, session.Source, models); id != "unknown" {
+				entry.Model, entry.ModelApprox = id, true
+			}
+		} else if raw != "" {
+			entry.Model = cockpitModelID(raw, session.Source, models)
+		}
+		entry.ProjectKind = usageKind(session.Kind())
 		var ref, label *string
 		if session.ProjectRef != "" {
 			ref = &session.ProjectRef

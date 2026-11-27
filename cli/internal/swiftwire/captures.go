@@ -9,6 +9,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/rows"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -207,12 +208,50 @@ func (m *model) seed(t reflect.Type, name string) (reflect.Value, error) {
 			if err != nil {
 				return reflect.Value{}, err
 			}
+			boundSeed(elem, f.Tag.Get("schema"))
 			v.Field(i).Set(elem)
 		}
 	default:
 		return reflect.Value{}, fmt.Errorf("unsupported capture seed %s", t)
 	}
 	return v, nil
+}
+
+// boundSeed keeps a seeded number inside the schema bounds its field declares (macrevb-1299-1): the clients
+// reject a capture outside them, so the seed is the midpoint of a range that excludes the default.
+func boundSeed(v reflect.Value, tag string) {
+	if v.Kind() == reflect.Pointer && !v.IsNil() {
+		v = v.Elem()
+	}
+	if v.Kind() != reflect.Float64 || tag == "" || !v.CanSet() {
+		return
+	}
+	low, high, hasLow, hasHigh := 0.0, 0.0, false, false
+	for _, part := range strings.Split(tag, ",") {
+		k, val, ok := strings.Cut(part, "=")
+		if !ok {
+			continue
+		}
+		n, err := strconv.ParseFloat(val, 64)
+		if err != nil {
+			continue
+		}
+		switch k {
+		case "minimum":
+			low, hasLow = n, true
+		case "maximum":
+			high, hasHigh = n, true
+		}
+	}
+	x := v.Float()
+	switch {
+	case hasLow && hasHigh && (x < low || x > high):
+		v.SetFloat(low + (high-low)*0.425)
+	case hasHigh && x > high:
+		v.SetFloat(high)
+	case hasLow && x < low:
+		v.SetFloat(low)
+	}
 }
 
 type mutation struct {

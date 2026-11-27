@@ -18,10 +18,10 @@ func usageFixture(now time.Time) speed.PerfView {
 	d := speed.SessionDay{Day: now.Local().Format("2006-01-02"), Model: "synthetic-alias", EffortStatus: "reported", Effort: "high", ObservedRequests: 1, ObservedOutputTokens: 100,
 		Kinds: &speed.TokenKinds{TotalTokens: &total, InputTokens: &in, CacheReadTokens: &read, CacheWriteTokens: &write}}
 	return speed.PerfView{OK: true, Recording: true, Now: now, Ledger: speed.PerfLedger{Sessions: []speed.PerfSession{
-		{Ref: "1111111111111111", Key: "k1", Source: "codex", ProjectRef: "r1", ProjectLabel: "modelplans.ai", ProjectKind: speed.KindRepo, Title: "Fix the tape", LastAt: now, FirstAt: now, Days: []speed.SessionDay{d}},
-		{Ref: "2222222222222222", Key: "k2", Source: "codex", ProjectRef: "r2", ProjectKind: speed.KindIndependent, Title: "A chat", LastAt: now, FirstAt: now, Days: []speed.SessionDay{d}},
-		{Ref: "3333333333333333", Key: "k3", Source: "claude-code", ProjectRef: "r3", ProjectKind: speed.KindHome, LastAt: now, FirstAt: now, Days: []speed.SessionDay{d}},
-		{Ref: "4444444444444444", Key: "k4", Source: "gemini", ProjectRef: "r4", ProjectLabel: "hidden-source", ProjectKind: speed.KindRepo, LastAt: now, FirstAt: now, Days: []speed.SessionDay{d}},
+		{Ref: "1111111111111111", Key: "k1", Source: "codex", ProjectRef: "r1", ProjectLabel: "modelplans.ai", ProjectKind: speed.KindRepo, ProjectRule: speed.CurrentProjectRule, Title: "Fix the tape", LastAt: now, FirstAt: now, Days: []speed.SessionDay{d}},
+		{Ref: "2222222222222222", Key: "k2", Source: "codex", ProjectRef: "r2", ProjectKind: speed.KindIndependent, ProjectRule: speed.CurrentProjectRule, Title: "A chat", LastAt: now, FirstAt: now, Days: []speed.SessionDay{d}},
+		{Ref: "3333333333333333", Key: "k3", Source: "claude-code", ProjectRef: "r3", ProjectKind: speed.KindHome, ProjectRule: speed.CurrentProjectRule, LastAt: now, FirstAt: now, Days: []speed.SessionDay{d}},
+		{Ref: "4444444444444444", Key: "k4", Source: "gemini", ProjectRef: "r4", ProjectLabel: "hidden-source", ProjectKind: speed.KindRepo, ProjectRule: speed.CurrentProjectRule, LastAt: now, FirstAt: now, Days: []speed.SessionDay{d}},
 	}}}
 }
 

@@ -207,7 +207,7 @@ func ObserveClaude(cache, transcript string, often bool, in Ingest, now time.Tim
 	})
 	return errors.Join(accountingErr, err, observePerf(cache, now, in, func(l *PerfLedger) bool {
 		p := claudeObserver(now, l.Counted, transcript, l.cleared)
-		changed := l.scan(transcript, "claude-code", ParserClaude, p, now)
+		changed := l.scanFresh(transcript, "claude-code", ParserClaude, p, newClaude(now), now)
 		l.Counted = addCounted(l.Counted, p, transcript)
 		return changed
 	}))
@@ -223,7 +223,7 @@ func ObserveCodex(cache string, rollouts []string, background func(string) bool,
 		return scanCodex(l.Files, rollouts, background, now, func(p string) bool { return l.scan(p, "codex", newCodex(), now) })
 	})
 	return errors.Join(accountingErr, err, observePerf(cache, now, in, func(l *PerfLedger) bool {
-		return scanCodex(l.Files, rollouts, background, now, func(p string) bool { return l.scan(p, "codex", ParserCodex, newCodex(), now) })
+		return scanCodex(l.Files, rollouts, background, now, func(p string) bool { return l.scanFresh(p, "codex", ParserCodex, newCodex(), newCodex(), now) })
 	}))
 }
 

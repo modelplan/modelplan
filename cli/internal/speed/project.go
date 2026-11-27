@@ -65,13 +65,17 @@ func SetProjectLabels(file, cache string, on bool) error {
 	return ClearProjectLabels(cache)
 }
 
-// ClearProjectLabels removes every stored project label from perf.json; the references stay.
+// ClearProjectLabels removes every stored project label and title from perf.json, and the remembered worktrees
+// (macrevb-1299-5); the references stay.
 func ClearProjectLabels(cache string) error {
 	unlock, ok := lock(cache, "perf.lock")
 	if !ok {
 		return errors.New("perf.json is busy; try again")
 	}
 	defer unlock()
+	if err := forgetRemembered(cache); err != nil {
+		return err
+	}
 	l, ok := LoadPerf(cache)
 	if !ok || l.Since.IsZero() {
 		return nil // nothing of ours to change
