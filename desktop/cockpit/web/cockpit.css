@@ -508,6 +508,9 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .cal-wk .wk-hints i.down{bottom:1px;color:var(--silk)}
 /* Owner badcase 11-21 (B1): a control the pointer pressed (view.ts pointerKeepsFocus) shows no keyboard ring while it keeps
    that focus; keyboard focus (Tab, arrows) keeps every ring below. */
+/* G3-165: no ring at all unless the last input was a navigation key (view.ts sets #cockpit[data-kbd-nav]). */
+#cockpit:not([data-kbd-nav]) :focus-visible{outline:none}
+#cockpit:not([data-kbd-nav]) .ck-head .rk:focus-visible::before{content:none}
 #cockpit [data-pointer-focus]:focus-visible,body [data-pointer-focus]:focus-visible{outline:none}
 .ck-head .rk[data-pointer-focus]:focus-visible::before{content:none}
 
