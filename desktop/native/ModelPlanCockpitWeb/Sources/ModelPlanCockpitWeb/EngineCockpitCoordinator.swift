@@ -8,6 +8,7 @@ import ModelPlanWire
   var onReady: (() -> Void)? { get set }
   var onIntent: ((CockpitIntent) -> Void)? { get set }
   var onClosed: (() -> Void)? { get set }
+  var onFrozenClose: (() -> Void)? { get set }
   /// CKP-SHELL-20: once per open, when the page is first confirmed visible.
   var onShown: (() -> Void)? { get set }
   /// G3-42: the page admitted the rendered receipt of a display it was sent.
@@ -55,6 +56,7 @@ import ModelPlanWire
   func discard()
 }
 public extension CockpitPageSurface {
+  var onFrozenClose: (() -> Void)? { get { nil } set {} }
   var onShown: (() -> Void)? { get { nil } set {} }
   var onDataRendered: (() -> Void)? { get { nil } set {} }
   var reportsDataRendered: Bool { false }
@@ -132,6 +134,8 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   public var onPluginsRunning: (([String]) -> Void)?
   /// A page edit (right-click Remove or the + menu) as canonical JSON; the app saves it like a Settings edit.
   public var onPluginsEdit: ((Data) -> Void)?
+  /// D376: the page's right-click Remove on a plugin key (a valid plugin id); the app confirms before it turns the plugin off.
+  public var onPluginClose: ((String) -> Void)?
   public private(set) var pluginsRunning: [String] = []
   private func reportPluginsRunning(_ ids: [String]) {
     guard ids != pluginsRunning else { return }
@@ -143,6 +147,16 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   public func openPluginScreen(_ id: String) {
     guard CockpitPluginWire.validID(id) else { return }
     if let page { page.openPluginScreen(id); pluginScreenRequest = nil } else { pluginScreenRequest = id }
+  }
+  /// D371 B4e: a subscription card's footer row opens the cockpit on that subscription: its tab lights and the engine
+  /// table turns to it (the same state as a tab click). `key` is the member's scope key (its Dock ID). A key that is
+  /// not a current member is ignored once a reply is known; before the first reply it is held, and `showLastReply`
+  /// resets it to All if the reply has no such member. A cockpit that is already open only switches.
+  public func selectScope(_ key: String) {
+    guard CockpitMemberScopes.isValidKey(key), !CockpitMemberScopes.isIndexedFallback(key), !hiddenMembers.contains(key),
+      scopeMembers.isEmpty || scopeMembers.contains(key) else { return }
+    selectedScope = key; page?.updateScope(key)
+    scopeMemory?.save(Self.persistable(key) ? key : nil)
   }
   /// One reading for a running plugin, to the current page only.
   public func sendPluginData(id: String, data: [String: Any]) {
@@ -187,6 +201,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     key != "all" && CockpitMemberScopes.isValidKey(key) && !CockpitMemberScopes.isIndexedFallback(key)
   }
   private var scopeMembers = Set<String>()
+  private var hiddenMembers = Set<String>()
   private var request: Task<Void, Never>?
   private var requestToken: UUID?
   private var requestTicket: CockpitQueryTicket?
@@ -217,10 +232,9 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       else { stopWatchingMemoryPressure(); releaseWarmPage() }
     }
   }
-  /// WP-17 (Fable perf plan 5.1 row 2, CKP-SHELL-54): the hidden page is built as soon as there is an engine session; it no
-  /// longer waits 0.5 s. After a close the next one waits `rebuildAfterCloseDelay`, so the close's last steps run first.
+  /// WP-17: one speculative load once the engine admits the page.
   public var prewarmDelay: Duration = .zero
-  public var rebuildAfterCloseDelay: Duration = .milliseconds(100)
+  private var attemptedPrewarm = false
   private var prewarmTask: Task<Void, Never>?
   /// Hidden pages that ended on their own (a failure, not a release or a clear) since the last open.
   /// Three stop prewarming until the next open, so a page that cannot load is not rebuilt in a loop.
@@ -342,6 +356,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     guard let delivery else { pendingOpen = true; onUnavailable?(.noDelivery); return }
     guard let context = try? Self.bridgeContext(delivery) else { onUnavailable?(.invalidContext); return }
     prewarmTask?.cancel(); prewarmTask = nil
+    attemptedPrewarm = true
     warmFailures = 0
     if let page {
       if !presented {
@@ -424,6 +439,15 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     newPage.onIntent = { [weak self] intent in
       guard self?.pageGeneration == generation else { return }; self?.receiveIntent(intent)
     }
+    newPage.onFrozenClose = { [weak self] in
+      guard let self, self.pageGeneration == generation, self.presented else { return }
+      self.cancelQuery()
+      self.scopeMembers.removeAll()
+      self.presented = false; self.presentedPageRendered = false
+      self.openingReply = nil; self.openingFreshPending = false; self.openingShown = false
+      self.reportPluginsRunning([])
+      self.onClosed?()
+    }
     newPage.onClosed = { [weak self] in
       guard let self, self.pageGeneration == generation else { return }
       self.pageGeneration = nil
@@ -440,7 +464,6 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
         self.warmFailures += 1
         CockpitTimingLog.record("prewarm ended failures=\(self.warmFailures)")
       }
-      self.schedulePrewarm(after: self.rebuildAfterCloseDelay)
     }
     return newPage
   }
@@ -482,10 +505,10 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     trace("query.released")
     refresh()
   }
-  private func schedulePrewarm(after delay: Duration? = nil) {
-    guard prewarmEnabled, !memoryPressured, warmFailures < 3, page == nil, prewarmTask == nil,
+  private func schedulePrewarm() {
+    guard prewarmEnabled, !memoryPressured, !attemptedPrewarm, warmFailures < 3, page == nil, prewarmTask == nil,
       client != nil, delivery != nil else { return }
-    let delay = delay ?? prewarmDelay
+    let delay = prewarmDelay
     prewarmTask = Task { @MainActor [weak self] in
       if delay > .zero { do { try await Task.sleep(for: delay) } catch { return } }
       guard let self, !Task.isCancelled else { return }
@@ -494,8 +517,9 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     }
   }
   private func prewarmNow() {
-    guard prewarmEnabled, !memoryPressured, warmFailures < 3, page == nil, client != nil,
+    guard prewarmEnabled, !memoryPressured, !attemptedPrewarm, warmFailures < 3, page == nil, client != nil,
       let delivery, let context = try? Self.bridgeContext(delivery) else { return }
+    attemptedPrewarm = true
     do {
       let warm = try makeWiredPage(context)
       page = warm
@@ -554,6 +578,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       reportPluginsRunning(ids); return
     }
     if case .pluginsEdit(let state) = intent { onPluginsEdit?(state); return }
+    if case .pluginClose(let id) = intent { if CockpitPluginWire.validID(id) { onPluginClose?(id) }; return }
     if case .cautionAck(let ids)=intent {
       guard CockpitCautionIdentities.valid(ids) else { return }
       ackedCautions=ids; cautionMemory?.save(CockpitCautionIdentities.durable(ids)); return
@@ -563,7 +588,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       pinnedModels=ids; pinMemory?.save(ids); return
     }
     if case .scopeSelect(let key)=intent {
-      guard delivery != nil,scopeMembers.contains(key) else { return }
+      guard delivery != nil,scopeMembers.contains(key), !hiddenMembers.contains(key) else { return }
       selectedScope=key; page?.updateScope(key)
       scopeMemory?.save(Self.persistable(key) ? key : nil); return
     }
@@ -573,7 +598,13 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     }
     onIntent?(intent)
   }
-  public func updateAppearance(_ appearance: CockpitAppearance) { page?.updateAppearance(appearance) }
+  public func updateAppearance(_ appearance: CockpitAppearance) {
+    hiddenMembers = Set(appearance.hiddenMembers)
+    if hiddenMembers.contains(selectedScope) {
+      selectedScope = "all"; scopeMemory?.save(nil); page?.updateScope("all")
+    }
+    page?.updateAppearance(appearance)
+  }
   /// WP-22 (macrevb-1062-3): the enlarged field's selection reaches the cockpit page (HUD, faders, porthole).
   public func selectModel(_ id: String?) { page?.selectModel(id) }
   /// Owner 11-19 (#1062): the enlarged field closed; the page guards its porthole against the close's bounce.
@@ -593,7 +624,6 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     openingReply = nil; openingFreshPending = false; openingShown = false
     previous?.discard()
     if previous != nil, wasPresented { onClosed?() }
-    schedulePrewarm()
   }
   private func cancelQuery() {
     lastRenderHold?.task.cancel(); lastRenderHold = nil

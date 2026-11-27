@@ -39,6 +39,7 @@ public enum ReaderCauseTable {
 
     public static func entry(code rawCode: String, tool: String? = nil, toolName: String? = nil) -> ReaderCauseEntry? {
         let name = toolName.flatMap { $0.isEmpty ? nil : $0 }
+        if isGLM(tool), let own = zcodeEntry(canonical(rawCode)) { return own }
         switch canonical(rawCode) {
         case "not_found":
             return .init(reason: .init(name.map { "Can't find the \($0) command" } ?? "Can't find the tool command",
@@ -50,6 +51,12 @@ public enum ReaderCauseTable {
                 // The same cause covers a configured kiro-cli path that cannot start, so reinstalling is not the only fix.
                 return .init(reason: .init("kiro-cli was not found or could not start", "没有找到 Kiro 命令行工具，或它无法启动"),
                              action: .init("Install kiro-cli, or check the kiro-cli path you configured, then refresh", "安装 Kiro 命令行工具，或检查你配置的 Kiro 命令行工具路径，然后刷新"), target: .guidance)
+            }
+            // G3 owner report 2026-11-26: Antigravity's reader needs no Node.js. It reads the running Antigravity app's own
+            // language server (as CodexBar's AntigravityStatusProbe does), so this cause means the app is not open or its service was not found.
+            if (tool ?? "").lowercased() == "antigravity" {
+                return .init(reason: .init("Antigravity is not running, or its local service was not found", "没有检测到运行中的 Antigravity"),
+                             action: .init("Open or restart Antigravity, then refresh", "打开或重启 Antigravity 后刷新"), target: .guidance)
             }
             return .init(reason: .init("Node.js is required", "需要 Node.js"),
                          action: .init("Install Node.js, then refresh", "安装 Node.js 后刷新"), target: .guidance)
@@ -74,6 +81,8 @@ public enum ReaderCauseTable {
             }
             return .init(reason: .init("The sign-in has expired", "登录已过期"),
                          action: .init(name.map { "Open \($0) and sign in again" } ?? "Open the tool and sign in again", name.map { "打开 \($0) 并重新登录" } ?? "打开工具并重新登录"), target: .guidance)
+        case "unknown_store_format":
+            return zcodeUnreadable
         case "keychain_unset", "keychain_unavailable", "keychain_not_found":
             return .init(reason: .init("Keychain access needed", "需要允许读取钥匙串"),
                          action: .init("Allow Keychain reading in Settings", "在设置允许读取钥匙串"), target: .openSettings)
@@ -118,6 +127,26 @@ public enum ReaderCauseTable {
             return nil
         }
     }
+
+    /// ZCode's own causes (D380 Keychain, owner 11-22 unreadable store); nil keeps the shared entry.
+    static func zcodeEntry(_ code: String) -> ReaderCauseEntry? {
+        switch code {
+        case "keychain_unset", "keychain_unavailable", "keychain_denied":
+            // D380: ZCode 3.19+ keeps its sign-in key in the Keychain; macOS asks, and Always Allow keeps it readable.
+            return .init(reason: .init("ZCode may keep its sign-in key in the Keychain", "ZCode 的登录密钥可能保存在钥匙串中"),
+                         action: .init("Allow reading in Settings; when macOS asks, choose Always Allow", "在设置中允许读取；macOS 询问时请选择“始终允许”"), target: .openSettings)
+        case "unsupported_login", "unknown_store_format":
+            // Owner 11-22: never a bare "not supported"; the pasted-key route (D90) still reads the quota.
+            return zcodeUnreadable
+        default: return nil
+        }
+    }
+
+    /// Owner 11-22: ZCode's sign-in cannot be read automatically (unsupported or unknown store format).
+    public static let zcodeUnreadable = ReaderCauseEntry(
+        reason: .init("Can't read the ZCode sign-in automatically · Paste a Zhipu / Z.ai API key to read the quota",
+                      "无法自动读取 ZCode 登录 · 可粘贴智谱 / Z.ai 的 API key 读取额度"),
+        action: .init("Paste key…", "粘贴 key…"), target: .openSettings)
 
     /// "Last good reading 3h ago · cause: …" / "上次成功读取：3 小时前 · 原因：…" for a stale reading.
     public static func staleLine(entry: ReaderCauseEntry, ageSeconds: Int, language: SettingsLanguage) -> String {

@@ -5,7 +5,8 @@ Foundation and Darwin only: no AppKit, WebKit, child process, file write or netw
 
 - `SystemResourceReader` reads one sample with system calls: `host_processor_info` (CPU ticks per core, deltas since
   the previous read), `host_statistics64(HOST_VM_INFO64)`, `sysctlbyname` (`kern.memorystatus_vm_pressure_level`,
-  `vm.swapusage`), `getloadavg` and `statfs` on the data volume. The memory split follows Stats (Modules/RAM/readers.swift):
+  `vm.swapusage`), `getloadavg`, `statfs` on the data volume and, for the D407 network row, the `NET_RT_IFLIST2` sysctl
+  (64-bit byte counters of every interface but loopback; bytes per second since the previous read, none on the first). The memory split follows Stats (Modules/RAM/readers.swift):
   used = app + wired + compressed, cached = purgeable + external. One sample takes well under 2 ms (tested).
 - `ResourceCadence` / `ResourceSchedule`: column shown = its setting (2 / 5 / 10 s, other saved values snap), widget
   shown = 10 s, neither = 60 s, plugin off = no sampling. The sampler asks `ResourceSchedule.admit` before every read.
@@ -13,10 +14,12 @@ Foundation and Darwin only: no AppKit, WebKit, child process, file write or netw
   the ten-minute `ResourceHistory` (memory only; dropped when the plugin is turned off), the widget `ResourceReadout`,
   and `ResourceRedrawGate` (redraw only on a ≥ 1 percentage-point change or a readout change). `ResourceFace.animates`
   is false under Reduce Motion.
-- `ResourceReadout`: "内存 47%" normally (the widget draws the number alone, "47%", and VoiceOver reads "内存 47%"; owner 11-21); "CPU 96%" once CPU has stayed ≥ 70 % for 20 s; red from 90 %; back to memory
-  after 30 s below 60 %. Memory's tone follows macOS memory pressure. The ring never changes colour.
+- `ResourceReadout`: "内存 47%" normally (the widget draws the number alone, "47%", and VoiceOver reads "内存 47%"; owner 11-21); "CPU 96%" once CPU has stayed ≥ 70 % for 20 s; back to memory
+  after 30 s below 60 %. D371 B4c: the tone of CPU, memory and disk is one status colour (normal, amber from 80 %, red from 90 %,
+  3-point hysteresis; memory is also amber under warn and red under critical pressure). Ring arcs, card bars and numbers all take it.
 - `ResourceCard`: hover-card rows CPU · 内存 · 磁盘; the row matching the readout at full ink, the others at
-  secondary ink (variant A); a tint only on problem rows (pressure high, CPU ≥ 70 %, disk ≥ 90 %).
+  secondary ink (variant A); a tint only on problem rows (amber or red). The sampling cadence is `cadence` (the card header's right text) and `screenLink` is the
+  label of the card's "在驾驶舱查看" footer row.
 - `ResourcePagePayload` / `ResourcePageFeed`: the page's `pluginData` body; the whole window when the column starts
   running, then only newer samples.
 

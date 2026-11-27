@@ -2,20 +2,42 @@
 import Foundation
 import Security
 import LocalAuthentication
+import CryptoKit
 import ModelPlanWire
 
-/// Requests cannot supply a service, account, executable or path.
+/// Requests cannot supply a service, account, executable or path. Two fixed items exist: Claude Code's
+/// saved login, and (D380) ZCode 3.19+'s credential-store key, whose account ZCode derives itself from
+/// its own credentials file under this user's home (zai-org/ZCode credential-security,
+/// systemCredentialCipher.ts). The query only ever reads; this module has no write, update or delete call.
 public struct FixedItemQuery: Sendable {
+    public enum Item: Sendable, Equatable { case claude, zcode }
+    public static let zcodeService = "ZCode Credential Encryption"
     public let interactive: Bool
-    public let service = "Claude Code-credentials"
-    public init(interactive: Bool) { self.interactive = interactive }
+    public let item: Item
+    public let service: String
+    /// nil for Claude (the service alone names it); ZCode's hex(sha256(credentials.json path)).
+    public let account: String?
+    public init(interactive: Bool) {
+        self.interactive = interactive; item = .claude; service = "Claude Code-credentials"; account = nil
+    }
+    /// D380: ZCode's key item for `home`/.zcode/v2/credentials.json, the path ZCode itself resolves.
+    public init(interactive: Bool, zcodeHome home: String) {
+        self.interactive = interactive; item = .zcode; service = Self.zcodeService
+        account = Self.zcodeAccount(home: home)
+    }
+    public static func zcodeAccount(home: String) -> String {
+        let path = (home as NSString).appendingPathComponent(".zcode/v2/credentials.json")
+        return SHA256.hash(data: Data(path.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
     public var attributes: [String: Any] {
         let context = LAContext()
         context.interactionNotAllowed = !interactive
-        return [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
+        var query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
                 kSecReturnAttributes as String: true, kSecReturnPersistentRef as String: true,
                 kSecMatchLimit as String: kSecMatchLimitAll,
                 kSecUseAuthenticationContext as String: context]
+        if let account { query[kSecAttrAccount as String] = account }
+        return query
     }
     public func dataAttributes(persistentRef: Data) -> [String: Any] {
         let context = LAContext()
@@ -71,6 +93,7 @@ public struct SecurityItemReader: FixedItemReading {
         guard !items.isEmpty else { return .init(status: errSecItemNotFound) }
         guard items.count == 1 else { return .init(status: errSecDuplicateItem) }
         guard let item = items.first, item[kSecAttrService as String] as? String == query.service,
+              query.account == nil || item[kSecAttrAccount as String] as? String == query.account,
               let ref = item[kSecValuePersistentRef as String] as? Data,
               !ref.isEmpty, ref.count <= 4096 else { return .init(status: errSecDecode) }
         // Read exactly that reference; never select the first of multiple matches.

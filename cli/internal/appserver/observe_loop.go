@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"time"
 
@@ -37,9 +38,17 @@ type ObserveDecision struct {
 	Outcome ObserveOutcome `json:"outcome"`
 }
 
-// ObserveLogFile is where the latest observation outcomes are kept beside the files the
-// observers write, so "nothing was written" can be told apart from "never ran".
-const ObserveLogFile = "observe-decisions.json"
+// ObserveLogFile keeps the latest observation outcomes, so "nothing was written" can be told
+// apart from "never ran". It lives in ObserveLogDir, outside the observed/ directory the change
+// watcher stamps: a diagnostics-only change never invalidates the view (D397). Earlier builds
+// kept it in observed/; that copy is removed once.
+const (
+	ObserveLogFile = "observe-decisions.json"
+	ObserveLogDir  = "diagnostics"
+)
+
+// ObserveLogPath is the observation log under cache.
+func ObserveLogPath(cache string) string { return filepath.Join(cache, ObserveLogDir, ObserveLogFile) }
 
 // ObserveFirstDelay is how long the app's engine waits after its automatic start before the
 // first ledger observation (WP-17, Fable perf plan 5.1 row 2: 2-3 s after the handshake).
@@ -79,17 +88,7 @@ func (s *RefreshScheduler) observeLoop() {
 		}
 	}
 	for s.ctx.Err() == nil {
-		now := s.now()
-		results := s.config.Observe(now)
-		busy := false
-		for _, r := range results {
-			s.observations.add(now, r)
-			busy = busy || r.Outcome == ObserveSkippedLockBusy
-		}
-		s.writeObserveLog(now)
-		if s.ctx.Err() == nil && s.config.Changed != nil {
-			s.config.Changed()
-		}
+		busy := s.observeOnce(s.now())
 		wait, wake := observeEvery, (<-chan struct{})(nil)
 		if s.config.ObserveEvery > 0 {
 			wait = s.config.ObserveEvery
@@ -109,20 +108,70 @@ func (s *RefreshScheduler) observeLoop() {
 	}
 }
 
+// observeOnce is one observation pass; it reports whether a reader lock was busy. It signals a
+// change only when the pass moved a ledger the views read, and its own diagnostics never do:
+// an idle pass builds no view (D397).
+func (s *RefreshScheduler) observeOnce(now time.Time) (busy bool) {
+	cache := ""
+	if s.config.Paths != nil {
+		cache = s.config.Paths(consent.Capture()).Cache
+	}
+	before := observedStamp(cache)
+	results := s.config.Observe(now)
+	for _, r := range results {
+		s.observations.add(now, r)
+		busy = busy || r.Outcome == ObserveSkippedLockBusy
+	}
+	wrote := !reflect.DeepEqual(before, observedStamp(cache))
+	s.writeObserveLog(cache, now)
+	if wrote && s.ctx.Err() == nil && s.config.Changed != nil {
+		s.config.Changed()
+	}
+	return busy
+}
+
+// observedStamp is the metadata of the ledger directories the watcher stamps. The ledgers are
+// replaced by rename, which moves their directory.
+func observedStamp(cache string) []fileStamp {
+	if cache == "" {
+		return nil
+	}
+	var out []fileStamp
+	for _, dir := range []string{filepath.Join(cache, "observed"), filepath.Join(cache, "observed", "readers")} {
+		stamp := fileStamp{path: dir}
+		if info, err := os.Stat(dir); err == nil {
+			stamp.size, stamp.modified, stamp.exists = info.Size(), info.ModTime().UnixNano(), true
+		}
+		out = append(out, stamp)
+	}
+	return out
+}
+
+// ObserveOnce runs one pass of the observation loop at now, without its timers. The idle-work
+// gates (D397) step it through several 30-second deadlines under a test clock.
+func (s *RefreshScheduler) ObserveOnce(now time.Time) { s.observeOnce(now) }
+
 // ObserveDecisions returns the bounded, code-only history of observation outcomes.
 func (s *RefreshScheduler) ObserveDecisions() []ObserveDecision {
 	return s.observations.snapshot()
 }
 
-func (s *RefreshScheduler) writeObserveLog(now time.Time) {
-	if s.config.Paths == nil {
-		return
-	}
-	cache := s.config.Paths(consent.Capture()).Cache
+// writeObserveLog rewrites observe-decisions.json when an outcome changed (or the file is
+// gone); the times of repeated outcomes stay in ObserveDecisions. It writes outside the watched
+// observed/ directory, so no outcome change, however frequent, makes the watcher build a view.
+func (s *RefreshScheduler) writeObserveLog(cache string, now time.Time) {
 	if cache == "" {
 		return
 	}
-	dir := filepath.Join(cache, "observed")
+	dir := filepath.Join(cache, ObserveLogDir)
+	decisions := s.observations.snapshot()
+	codes := ""
+	for _, d := range decisions {
+		codes += d.Source + "=" + string(d.Outcome) + ";"
+	}
+	if _, err := os.Stat(filepath.Join(dir, ObserveLogFile)); err == nil && codes == s.observeLogged {
+		return
+	}
 	if os.MkdirAll(dir, 0700) != nil {
 		return
 	}
@@ -130,7 +179,7 @@ func (s *RefreshScheduler) writeObserveLog(now time.Time) {
 		SchemaVersion int               `json:"schemaVersion"`
 		WrittenAt     time.Time         `json:"writtenAt"`
 		Decisions     []ObserveDecision `json:"decisions"`
-	}{1, now.UTC(), s.observations.snapshot()})
+	}{1, now.UTC(), decisions})
 	if err != nil {
 		return
 	}
@@ -148,7 +197,17 @@ func (s *RefreshScheduler) writeObserveLog(now time.Time) {
 	}
 	if err != nil {
 		_ = os.Remove(tmp)
+		return
 	}
+	if s.observeLogged == "" {
+		// The copy earlier builds kept in the watched observed/ directory: removed once, which
+		// moves that directory one time only.
+		legacy := filepath.Join(cache, "observed", ObserveLogFile)
+		if info, err := os.Lstat(legacy); err == nil && info.Mode().IsRegular() {
+			_ = os.Remove(legacy)
+		}
+	}
+	s.observeLogged = codes
 }
 
 // observeRing keeps the last outcomes. An observer that keeps doing the same thing moves only its

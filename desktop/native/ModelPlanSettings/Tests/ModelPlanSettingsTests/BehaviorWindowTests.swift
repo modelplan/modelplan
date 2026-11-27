@@ -62,7 +62,7 @@ import XCTest
         try await choose("en", key: .language, controller: controller)
         controller.selectPane("dock")
         XCTAssertNil(controller.choice(key: .captureHiding))
-        XCTAssertTrue(labels(controller.window!.contentView!).contains("Unavailable"))
+        XCTAssertFalse(labels(controller.window!.contentView!).contains("Hide from capture"), "D371 / SET-9-29: an unavailable setting is not listed")
         controller.selectPane("cockpit")
         let opening = try XCTUnwrap(controller.choice(key: .opening))
         XCTAssertFalse(try XCTUnwrap(opening.itemArray.first { $0.representedObject as? String == "hold" }).isEnabled)

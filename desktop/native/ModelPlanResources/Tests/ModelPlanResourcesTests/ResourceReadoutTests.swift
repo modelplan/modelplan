@@ -2,8 +2,9 @@
 import XCTest
 @testable import ModelPlanResources
 
-/// D327 widget readout: "内存 47%" normally; "CPU 96%" once CPU has stayed ≥ 70 % for 20 s; red from 90 %; back to memory
-/// after CPU has stayed below 60 % for 30 s. The memory number follows macOS memory pressure, never its percentage.
+/// D327 widget readout: "内存 47%" normally; "CPU 96%" once CPU has stayed ≥ 70 % for 20 s; back to memory after CPU has
+/// stayed below 60 % for 30 s. D371 B4c (owner 11-21): the tone is the status colour, amber from 80 % and red from 90 % with a
+/// 3-point hysteresis; memory is also at least amber under warn pressure and red under critical pressure.
 final class ResourceReadoutTests: XCTestCase {
     func testMemoryByDefaultWithBothLanguages() {
         var readout = ResourceReadout()
@@ -18,7 +19,7 @@ final class ResourceReadoutTests: XCTestCase {
         XCTAssertEqual(readout.step(cpu(75, at: 0)).key, .memory)
         XCTAssertEqual(readout.step(cpu(75, at: 10)).key, .memory, "10 s is not enough")
         let shown = readout.step(cpu(75, at: 20))
-        XCTAssertEqual(shown, ResourceShown(key: .cpu, percent: 75, tone: .warning))
+        XCTAssertEqual(shown, ResourceShown(key: .cpu, percent: 75, tone: .normal), "75 % is over the readout switch but under the 80 % amber line")
         XCTAssertEqual(shown.text(.chinese), "CPU 75%")
     }
 
@@ -39,8 +40,25 @@ final class ResourceReadoutTests: XCTestCase {
         var readout = ResourceReadout()
         _ = readout.step(cpu(96, at: 0)); _ = readout.step(cpu(96, at: 10))
         XCTAssertEqual(readout.step(cpu(96, at: 20)), ResourceShown(key: .cpu, percent: 96, tone: .critical))
-        XCTAssertEqual(readout.step(cpu(89, at: 30)).tone, .warning)
-        XCTAssertEqual(readout.step(cpu(90, at: 40)).tone, .critical)
+        XCTAssertEqual(readout.step(cpu(89, at: 30)).tone, .critical, "3-point hysteresis: red is left only below 87 %")
+        XCTAssertEqual(readout.step(cpu(86, at: 40)).tone, .warning)
+        XCTAssertEqual(readout.step(cpu(90, at: 50)).tone, .critical)
+    }
+
+    /// D371 B4c: amber from 80 %, red from 90 %; each tone is left 3 points below its line, so a value that flickers at a
+    /// border keeps its colour.
+    func testAmberFromEightyWithThreePointHysteresis() {
+        var readout = ResourceReadout()
+        func level(_ percent: Double, at t: TimeInterval) -> ResourceTone? { _ = readout.step(cpu(percent, at: t)); return readout.levels?.cpu }
+        XCTAssertEqual(level(79.9, at: 0), .normal)
+        XCTAssertEqual(level(80, at: 10), .warning)
+        XCTAssertEqual(level(78, at: 20), .warning, "78 % is still inside the 3-point band")
+        XCTAssertEqual(level(76.9, at: 30), .normal)
+        XCTAssertEqual(level(78, at: 40), .normal, "entering needs the plain 80 % again")
+        XCTAssertEqual(ResourceRules.tone(85), .warning)
+        XCTAssertEqual(ResourceRules.tone(88, previous: .critical), .critical, "red is kept down to 87 %")
+        XCTAssertEqual(ResourceRules.tone(86, previous: .critical), .warning, "below 87 % red is left")
+        XCTAssertEqual(ResourceRules.tone(70, previous: .critical), .normal)
     }
 
     func testReturnsToMemoryAfterThirtySecondsBelowSixty() {
@@ -63,22 +81,24 @@ final class ResourceReadoutTests: XCTestCase {
         XCTAssertEqual(readout.step(cpu(80, at: 120)).key, .cpu)
     }
 
-    func testMemoryToneFollowsPressureNotPercentage() {
+    func testMemoryToneFollowsPercentageAndPressure() {
         var readout = ResourceReadout()
         let full = sample(at: 0, used: (20.4, 5.2, 4.6), cached: 1.2)
-        XCTAssertEqual(readout.step(full), ResourceShown(key: .memory, percent: 94, tone: .normal), "94 % at normal pressure stays white")
+        XCTAssertEqual(readout.step(full), ResourceShown(key: .memory, percent: 94, tone: .critical), "D371: 94 % is red by percentage even at normal pressure")
+        XCTAssertEqual(readout.step(sample(at: 5)).tone, .normal, "47 % at normal pressure is normal again")
         XCTAssertEqual(readout.step(sample(at: 10, pressure: .warn)).tone, .warning)
         XCTAssertEqual(readout.step(sample(at: 20, pressure: .critical)).tone, .critical)
     }
 
-    func testRingFaceNeverCarriesAColour() {
-        // D236/D327: the ring is always the plugin colour; only the readout has a tone.
+    func testRingFaceCarriesTheStatusToneOfEachArc() {
+        // D371: the outer arc takes memory's tone, the inner arc CPU's.
         var readout = ResourceReadout()
         let face = ResourceFace(sample: cpu(96, at: 0, pressure: .critical), shown: readout.step(cpu(96, at: 0, pressure: .critical)), reduceMotion: false)
         XCTAssertEqual(face.memoryUsed, 15.1 / 32, accuracy: 0.001)
         XCTAssertEqual(face.memoryCached, 12.8 / 32, accuracy: 0.001)
         XCTAssertEqual(face.cpu, 0.96, accuracy: 0.001)
         XCTAssertEqual(face.shown.tone, .critical)
+        XCTAssertEqual(face.levels, ResourceLevels(cpu: .critical, memory: .critical, disk: .normal))
         XCTAssertTrue(face.animates)
         XCTAssertFalse(ResourceFace(sample: sample(), shown: readout.step(sample(at: 10)), reduceMotion: true).animates, "Reduce Motion: no ring animation")
     }

@@ -328,8 +328,8 @@
     },
     {
       "file": "canopy-c01/canopy-890-1x.png",
-      "sha256": "538adca3e2602f6ac7b15fcc3a41bc449b3c3a52aa979bcece58d9c7a638bef6",
-      "bytes": 69942,
+      "sha256": "f8730dd4b3e4664d17ba140ef0e9ff65bfbef0a4b532a80f7e7c017238dbd550",
+      "bytes": 66218,
       "size": {
         "width": 636,
         "height": 244
@@ -341,8 +341,8 @@
     },
     {
       "file": "canopy-c01/pane-890-1x.png",
-      "sha256": "fcc3458f0ae800fd1d2c751a9d36dafaaf467d7febef3e40d52fa9dff2ed0a98",
-      "bytes": 58857,
+      "sha256": "d1058a4f16b50167759987576a835d8a4a94794b4ec647ae0f0fe3bd875b93ea",
+      "bytes": 3054,
       "size": {
         "width": 636,
         "height": 244
@@ -354,8 +354,8 @@
     },
     {
       "file": "canopy-c01/window-890-1x.png",
-      "sha256": "ff4e8e0746609ef94bfd767dc61f6b70e800b5a7dc45ccd69bfa3b2b8d9f2b12",
-      "bytes": 17754,
+      "sha256": "6564eaf1444377c14166ac89e0d4c1e946deacecc516f5cda224925ecccbb210",
+      "bytes": 6007,
       "size": {
         "width": 636,
         "height": 244
@@ -367,8 +367,8 @@
     },
     {
       "file": "canopy-c01/aperture-890-1x.png",
-      "sha256": "2ac50c0b575ad7aa09ceec8b1eac722691bb9d6247ad140c2fb62ce16e6fb45c",
-      "bytes": 16558,
+      "sha256": "671dd815302bc3ff77ee342461e07834f1b72dd33445affbec9f64775420112b",
+      "bytes": 6103,
       "size": {
         "width": 636,
         "height": 244
@@ -380,8 +380,8 @@
     },
     {
       "file": "canopy-c01/solid-outline-890-1x.png",
-      "sha256": "65778adf19058eb80917bb80526b0219dcee948dbff79a7c3a7a27531552d979",
-      "bytes": 18035,
+      "sha256": "872b8dacf6a9e85020b51d842ad5429193adc6fbe5477529e20ceeddf7ff1986",
+      "bytes": 6132,
       "size": {
         "width": 636,
         "height": 244
@@ -393,8 +393,8 @@
     },
     {
       "file": "canopy-c01/canopy-890-2x.png",
-      "sha256": "0e4ad5db3183ed66d561e644fb89cbdbf39f315953a5043cd0a54b1f2b876779",
-      "bytes": 224191,
+      "sha256": "daa65dfc58d7200f9ded8a876f5f3620fbe2d40bbc998152c53e2f7f28babad7",
+      "bytes": 594572,
       "size": {
         "width": 1272,
         "height": 488
@@ -406,8 +406,8 @@
     },
     {
       "file": "canopy-c01/pane-890-2x.png",
-      "sha256": "25b578c0b54870739b8e430282b6f4b16ffd59dcea9a27f5e13fdd2e9857f80b",
-      "bytes": 222720,
+      "sha256": "e6bd8f2988ea6dc8389a862948b381ecf6b37b7e0c141d783a8dee9b247ec931",
+      "bytes": 6797,
       "size": {
         "width": 1272,
         "height": 488
@@ -419,8 +419,8 @@
     },
     {
       "file": "canopy-c01/window-890-2x.png",
-      "sha256": "52bd727f8beea1cb054f1e635e8b8d05a23b0382344c0ce0362dbd9cc19c524c",
-      "bytes": 47091,
+      "sha256": "af70ead4d67298e260f766330cc7c3b5771626127e58cfc66b34532b639d75c0",
+      "bytes": 7364,
       "size": {
         "width": 1272,
         "height": 488
@@ -432,8 +432,8 @@
     },
     {
       "file": "canopy-c01/aperture-890-2x.png",
-      "sha256": "925ddcc6064e6edfc708f792be7a243673f9715cad27583b2cf271ebecc1d321",
-      "bytes": 43965,
+      "sha256": "89ff290e54efe4429b1b03d6ab45f3b5800869be4a69944d2518ea86e9e3462d",
+      "bytes": 6615,
       "size": {
         "width": 1272,
         "height": 488
@@ -445,8 +445,8 @@
     },
     {
       "file": "canopy-c01/solid-outline-890-2x.png",
-      "sha256": "16560adb9f4f1e118e02ce88fc95c707d6f0e24706000b62ef3d8f1c04bb1324",
-      "bytes": 49706,
+      "sha256": "025a3a7355fc8390eee374252edf5659f3c5e4dd8629330125a5a92aaac31adb",
+      "bytes": 8800,
       "size": {
         "width": 1272,
         "height": 488
@@ -459,15 +459,15 @@
     {
       "file": "porthole-stills/manifest.json",
       "kind": "porthole-manifest",
-      "sha256": "0cbd89e5c96c2263f052beec20b491e315b998586a5b18a873ed4b459700d72a",
-      "bytes": 634914,
+      "sha256": "f158602583a29288c62f41fc5701ba5880ec3e08c35d0fb1616b36a5d30c7db0",
+      "bytes": 634895,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": null
     },
     {
       "file": "porthole-stills/SHA256SUMS",
       "kind": "porthole-checksums",
-      "sha256": "1aea39a68f9c7d2d45336b6236e48137721c654b596481df237fa8e9590be0f4",
+      "sha256": "a894240a12bc76944c5f3147dddda73ad9c422474b34821ae78aa7065126589b",
       "bytes": 108292,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": null
@@ -4599,8 +4599,8 @@
     {
       "file": "porthole-stills/assets/projected/306bdee30163-background.png",
       "kind": "porthole-background",
-      "sha256": "2c2860ff45e23a9f57e987d7aacf09711a4bf6043100374feef611f727980dc0",
-      "bytes": 67306,
+      "sha256": "2e7c3e6a99d3e6a02a5e752cce0428028a4c0055d3ebdcd0e78d54b8277a7544",
+      "bytes": 142122,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 1272,
@@ -4664,8 +4664,8 @@
     {
       "file": "porthole-stills/assets/projected/306bdee30163-haiku-halo-1x.png",
       "kind": "porthole-halo",
-      "sha256": "6829fc2b52a28062e9538609a20aecebd2e965fe852bdda3b7bda1a3dd1ffb2c",
-      "bytes": 4940,
+      "sha256": "00d69450465b010883952a5f0b51492da2d30f369a39caff81f94048452faace",
+      "bytes": 1312,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 159,
@@ -4677,8 +4677,8 @@
     {
       "file": "porthole-stills/assets/projected/306bdee30163-haiku-halo-2x.png",
       "kind": "porthole-halo",
-      "sha256": "a2de0511d62d5fdbd1fe0a839fed86563c1a88a11902606eb5f1165a2d116d67",
-      "bytes": 11965,
+      "sha256": "5c848e0a02079eb6169e822e8a1e02c625c9fa3b107fb340a89908452a9904c6",
+      "bytes": 3425,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 318,
@@ -4742,8 +4742,8 @@
     {
       "file": "porthole-stills/assets/projected/306bdee30163-opus-halo-1x.png",
       "kind": "porthole-halo",
-      "sha256": "1aa98dee520173fed564928bbe7d3e17adc88212640b7e0bd0bb58c9e2cc279e",
-      "bytes": 3371,
+      "sha256": "0077836427e8b4627f983c485722f77a861230958f165a4adaee6d25c373a08a",
+      "bytes": 1113,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 159,
@@ -4755,8 +4755,8 @@
     {
       "file": "porthole-stills/assets/projected/306bdee30163-opus-halo-2x.png",
       "kind": "porthole-halo",
-      "sha256": "4ee5ef0f01b6f16eda41b1a063c8eb81144e8195de26a6d8a6c76f1927208214",
-      "bytes": 7266,
+      "sha256": "9d06318a6876bda08f73c6eb3ef4927e5f7167380a534ed231193b69e375a928",
+      "bytes": 2833,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 318,
@@ -4820,8 +4820,8 @@
     {
       "file": "porthole-stills/assets/projected/306bdee30163-sonnet-halo-1x.png",
       "kind": "porthole-halo",
-      "sha256": "e801d6a9fc3fa2305806b5b1d33c8e8349455ada24326f5be5b8bc68cd6c9b8c",
-      "bytes": 3325,
+      "sha256": "894cd68a8b70e4a192e1c1f25bd5ddd10bf2a0964685c866684a7137e40c2af6",
+      "bytes": 1216,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 155,
@@ -4833,8 +4833,8 @@
     {
       "file": "porthole-stills/assets/projected/306bdee30163-sonnet-halo-2x.png",
       "kind": "porthole-halo",
-      "sha256": "aeeb143127e9817bc6b91677579f853f14b9c9cb4062a1ba00fc1e02ad839895",
-      "bytes": 8152,
+      "sha256": "35b7e3dd41fa23321be15b96d84208300b3d397264d352a54fd4a2ab03690105",
+      "bytes": 3433,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 310,
@@ -4846,8 +4846,8 @@
     {
       "file": "porthole-stills/assets/projected/3486f2a61abe-background.png",
       "kind": "porthole-background",
-      "sha256": "21be004e4582611daec08f39db84a61af03533aed15fb1a8206aa9412c5a74ca",
-      "bytes": 67008,
+      "sha256": "eded260023501f76d13031fc117d66b7731fc93277ec88809f5f986a4df95857",
+      "bytes": 137965,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 1272,
@@ -4911,8 +4911,8 @@
     {
       "file": "porthole-stills/assets/projected/3486f2a61abe-glm-halo-1x.png",
       "kind": "porthole-halo",
-      "sha256": "4f1ead683b101d47f18ae18b0a98235ff171bc74ac6fc434c9f278882ba948c1",
-      "bytes": 2567,
+      "sha256": "2bc974f379950c910e78ef336882a5e954668ca8dd36bc4c87f0ae223cc4cee2",
+      "bytes": 350,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 53,
@@ -4924,8 +4924,8 @@
     {
       "file": "porthole-stills/assets/projected/3486f2a61abe-glm-halo-2x.png",
       "kind": "porthole-halo",
-      "sha256": "aad7a61d310b0b8111aa3f98169dc789383ce4b9df99257c67b7d0858a22c3bb",
-      "bytes": 4364,
+      "sha256": "e9bc7002de1091d845174f70ab21db71b0c79f73276ee6e73a756dca397b1f17",
+      "bytes": 658,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 106,
@@ -4989,8 +4989,8 @@
     {
       "file": "porthole-stills/assets/projected/3486f2a61abe-haiku-halo-1x.png",
       "kind": "porthole-halo",
-      "sha256": "9a61c5d77f2046f014571316d15157883a77ebe2da3ec77b07c4e362904bf906",
-      "bytes": 4645,
+      "sha256": "5b2c3330c0ee4ac8f1e3df4ebac6390930f2645cfb85491848f8c147966573fb",
+      "bytes": 1147,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 159,
@@ -5002,8 +5002,8 @@
     {
       "file": "porthole-stills/assets/projected/3486f2a61abe-haiku-halo-2x.png",
       "kind": "porthole-halo",
-      "sha256": "67031435d85443bdee16060dcc53753a4c84574f1f14da9c88a3d7146954bf34",
-      "bytes": 10931,
+      "sha256": "8946a4d572e2b76af5da8af4f6452e78a0e3cf2538520359e63e7a468ba8289b",
+      "bytes": 3376,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 318,
@@ -5067,8 +5067,8 @@
     {
       "file": "porthole-stills/assets/projected/3486f2a61abe-opus-halo-1x.png",
       "kind": "porthole-halo",
-      "sha256": "262c8f675ba9c57b1ddddbceee693fbb4c02e412d6be8cdcc9ed79e0a5644156",
-      "bytes": 2849,
+      "sha256": "2547bcf7cfac79bb2173370cd5a090cae619414470a53fac875d915a1886aaa4",
+      "bytes": 1124,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 159,
@@ -5080,8 +5080,8 @@
     {
       "file": "porthole-stills/assets/projected/3486f2a61abe-opus-halo-2x.png",
       "kind": "porthole-halo",
-      "sha256": "1512186b37f723d08bc76ec61c1d078ad0a54dc27b4fb13ee06cc68b9e9f9b11",
-      "bytes": 6496,
+      "sha256": "4401f8456bfecdd83543b34e55b63a51eb6c98dd8f486c2a9fedb9cde471c4da",
+      "bytes": 2854,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 318,
@@ -5145,8 +5145,8 @@
     {
       "file": "porthole-stills/assets/projected/3486f2a61abe-sonnet-halo-1x.png",
       "kind": "porthole-halo",
-      "sha256": "ef59c7f3575357328ece01757d18ca81c6c23b95c010294a2382bbc0be1efd96",
-      "bytes": 2835,
+      "sha256": "1c4345088f4dcf61257a07017d56c9b7fb2bc3d63044965bb057d49427e0d77f",
+      "bytes": 1034,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 151,
@@ -5158,8 +5158,8 @@
     {
       "file": "porthole-stills/assets/projected/3486f2a61abe-sonnet-halo-2x.png",
       "kind": "porthole-halo",
-      "sha256": "5c5e8c92578165a3ac61b0f25a41f0ee3dba9811d9ad0ffd643ccc4b3243b152",
-      "bytes": 7261,
+      "sha256": "3c1c73f438cac8afa54be3e002b7a90941b6d40396e9dd92545c3bab4a5c2f99",
+      "bytes": 2959,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 302,
@@ -5223,8 +5223,8 @@
     {
       "file": "porthole-stills/assets/projected/3918fdc04666-astra-halo-1x.png",
       "kind": "porthole-halo",
-      "sha256": "a8b79ff4f950d5bab27db911d4884ff6fe66ff056ac382f7897b35df22546d1a",
-      "bytes": 3759,
+      "sha256": "c5a2656bd64e1c77b554f5cc53e17e805fbda6a124db3b6cbb937d29907a839a",
+      "bytes": 1273,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 159,
@@ -5236,8 +5236,8 @@
     {
       "file": "porthole-stills/assets/projected/3918fdc04666-astra-halo-2x.png",
       "kind": "porthole-halo",
-      "sha256": "ef71647c5843c211619aaac382fd1378343ddd5412ef51015912bcb0358d3bc1",
-      "bytes": 8180,
+      "sha256": "5ee06ac6c49cd1bb0ec4433ccabbeaf15a91a8eddc9aecb8ab0c65daa3d7ac70",
+      "bytes": 3080,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 318,
@@ -5249,8 +5249,8 @@
     {
       "file": "porthole-stills/assets/projected/3918fdc04666-background.png",
       "kind": "porthole-background",
-      "sha256": "9b8816845dd5a057623258c01d3c877fbec2915e4d56b1107ed0e4bf215088d7",
-      "bytes": 66900,
+      "sha256": "e6a31f20eddcf861dba6638045b858eb12df77adc8e1259c15197ea48c53b951",
+      "bytes": 139027,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 1272,
@@ -5314,8 +5314,8 @@
     {
       "file": "porthole-stills/assets/projected/3918fdc04666-luna-halo-1x.png",
       "kind": "porthole-halo",
-      "sha256": "628ef4f6d4f8137820ef0be06b096c8188f3ef0eb30268d566cfd9f298dbdfa0",
-      "bytes": 4794,
+      "sha256": "46f212e3037cf295debd26b5456fe63861d46bb58f9103c576c698d63dbe78d9",
+      "bytes": 954,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 159,
@@ -5327,8 +5327,8 @@
     {
       "file": "porthole-stills/assets/projected/3918fdc04666-luna-halo-2x.png",
       "kind": "porthole-halo",
-      "sha256": "e36debbe690d8cd0e8150ee57b3a9b05577a4b9ee8902410949f82579d8e3a2b",
-      "bytes": 11029,
+      "sha256": "52c2f810dba24d16dadb5f491b3ac120d7c397d9f25214bf5ed16bdf5674b0ba",
+      "bytes": 2767,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 318,
@@ -5392,8 +5392,8 @@
     {
       "file": "porthole-stills/assets/projected/3918fdc04666-sol-halo-1x.png",
       "kind": "porthole-halo",
-      "sha256": "01d18b737896658a6f22eca9172b916643ab0242ed151294a4ea3f3a3a13d6b3",
-      "bytes": 1968,
+      "sha256": "0b6014bbad28aafc540e75f324df7ceaa29a0fbcd69f9504e8df1a502080b109",
+      "bytes": 633,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 72,
@@ -5405,8 +5405,8 @@
     {
       "file": "porthole-stills/assets/projected/3918fdc04666-sol-halo-2x.png",
       "kind": "porthole-halo",
-      "sha256": "0462afeb00a7b6bbcc8a72bf7ea8c8855aed04a88829d693544abbd072f27833",
-      "bytes": 3524,
+      "sha256": "e2dc10e2045f4458c2abd890d925c8cededd4f46eb82358be99f21fa6c0a141a",
+      "bytes": 1460,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 144,
@@ -5743,8 +5743,8 @@
     {
       "file": "porthole-stills/assets/projected/4996478d09de-background.png",
       "kind": "porthole-background",
-      "sha256": "7a0bc435fe40799be1302063da11a61e32567061ef8c36eae43b3f28861892d6",
-      "bytes": 58632,
+      "sha256": "4fd202c10a497d4f5968b939cdf958ec5fc2c9ae23ffb64a09b8cfede195835b",
+      "bytes": 155237,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 1272,
@@ -5808,8 +5808,8 @@
     {
       "file": "porthole-stills/assets/projected/4996478d09de-glm-halo-1x.png",
       "kind": "porthole-halo",
-      "sha256": "90672eaa4019a996b47e7163fee4efd4b3889e9c8ee1f9cc0b22341e6f16f41b",
-      "bytes": 5304,
+      "sha256": "d3c25cab241c1550707b9ed3b667a3957885e2c212358a1692a414d7555b0dba",
+      "bytes": 1938,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 159,
@@ -5821,8 +5821,8 @@
     {
       "file": "porthole-stills/assets/projected/4996478d09de-glm-halo-2x.png",
       "kind": "porthole-halo",
-      "sha256": "de7bf83455a18c423a12320497e9110fa76a72a50e8b1c710642c9b10c44aa93",
-      "bytes": 11948,
+      "sha256": "fedfe645cdcb684b03854343e8666869062772e20e87fd816ead7c9db3631832",
+      "bytes": 4250,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 318,
@@ -6211,8 +6211,8 @@
     {
       "file": "porthole-stills/assets/projected/4ff2bad27654-astra-halo-1x.png",
       "kind": "porthole-halo",
-      "sha256": "8082eb04dacc88292b97824df106fcec0ab4abcfeb7c226d45b56ed3b3c8e99e",
-      "bytes": 3707,
+      "sha256": "4297c9325b3ef23fd0813fc98612c3b695bfb665b9d03226a3787281478dfe2b",
+      "bytes": 1325,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 159,
@@ -6224,8 +6224,8 @@
     {
       "file": "porthole-stills/assets/projected/4ff2bad27654-astra-halo-2x.png",
       "kind": "porthole-halo",
-      "sha256": "7e1ac38e9123a59bc901b222fc7cbbfc4ab233905ec81637206ce349718ef7cc",
-      "bytes": 10196,
+      "sha256": "2daeda6c1be790ad28133a6276b6fc5da13dc2b1bb86b2198d8efc350bd7229a",
+      "bytes": 3662,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 318,
@@ -6237,8 +6237,8 @@
     {
       "file": "porthole-stills/assets/projected/4ff2bad27654-background.png",
       "kind": "porthole-background",
-      "sha256": "199fdbb3a3f791a66b73dfd2436d3f2f4d66e153925839f9f17a39c95a36f714",
-      "bytes": 64582,
+      "sha256": "e2a945f88b016ded2ce78517a399ef12c81e03a46734aa5bfc3ddd2989dbf534",
+      "bytes": 138099,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 1272,
@@ -6302,8 +6302,8 @@
     {
       "file": "porthole-stills/assets/projected/4ff2bad27654-glm-halo-1x.png",
       "kind": "porthole-halo",
-      "sha256": "80d01693bfefdf9ed0c4eb5cb5aa07ee30115b3860a1422c02fb8fb845cfc421",
-      "bytes": 2835,
+      "sha256": "ff1bf69da4ab351351919f9c0bfdd29f4fb644103dee40a2cf4997a7280e051b",
+      "bytes": 791,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 153,
@@ -6315,8 +6315,8 @@
     {
       "file": "porthole-stills/assets/projected/4ff2bad27654-glm-halo-2x.png",
       "kind": "porthole-halo",
-      "sha256": "f2a8ac1f1c4ea33f2c83717427590d37846fcc98c9477afec0678e75d48f11ea",
-      "bytes": 6858,
+      "sha256": "fec29b532ef4883b355507fe8226f7d249aa63d2ddeb5981660743949972bbf8",
+      "bytes": 2169,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 306,
@@ -6380,8 +6380,8 @@
     {
       "file": "porthole-stills/assets/projected/4ff2bad27654-haiku-halo-1x.png",
       "kind": "porthole-halo",
-      "sha256": "32191533b9e6affbcce5289188978f031391e0999dd5caca7293ca1372ad0a56",
-      "bytes": 1647,
+      "sha256": "05ac3b69c3af741954f5cb1d98180d120d542fe70866a143995ca4d5c229ad16",
+      "bytes": 222,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 36,
@@ -6393,8 +6393,8 @@
     {
       "file": "porthole-stills/assets/projected/4ff2bad27654-haiku-halo-2x.png",
       "kind": "porthole-halo",
-      "sha256": "f85565bea05f27c8f97781280ebeb788b77643d01f2e29b0b8cfaf84e212a8a9",
-      "bytes": 2746,
+      "sha256": "c88aacf79cbc413d15247d46b464425de75e1ea814e5bc42a9eaf1c69e93078d",
+      "bytes": 406,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 72,
@@ -6458,8 +6458,8 @@
     {
       "file": "porthole-stills/assets/projected/4ff2bad27654-luna-halo-1x.png",
       "kind": "porthole-halo",
-      "sha256": "f0f0d2e09aa7d3ca807002e626ec1727c6611bf7191d1e0e7d6a20d41675f022",
-      "bytes": 3961,
+      "sha256": "c1c8a98c32e5f56667e690d4d6893c80a93cfa7868b2a85649d608408acf4ae4",
+      "bytes": 281,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 128,
@@ -6471,8 +6471,8 @@
     {
       "file": "porthole-stills/assets/projected/4ff2bad27654-luna-halo-2x.png",
       "kind": "porthole-halo",
-      "sha256": "a1fc6ffb63e0c8ff9b5be9cd641aaa35ca0953e5a3d6d2de0fe528ffed20645c",
-      "bytes": 8132,
+      "sha256": "063e81f415916158d2fd152ea1aded4e285d06fe333a9d4547c0e6dbfe08d7bd",
+      "bytes": 631,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 256,
@@ -6536,8 +6536,8 @@
     {
       "file": "porthole-stills/assets/projected/4ff2bad27654-opus-halo-1x.png",
       "kind": "porthole-halo",
-      "sha256": "cb2a0b58bf9bcf3e571ac0db10462b0416701efa3efd855fbe3f29c40b9412b0",
-      "bytes": 2859,
+      "sha256": "4e1c35d03fd22fb7e4b57a591c852a40c76314194bc2f56c86c178a46923d1aa",
+      "bytes": 1316,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 155,
@@ -6549,8 +6549,8 @@
     {
       "file": "porthole-stills/assets/projected/4ff2bad27654-opus-halo-2x.png",
       "kind": "porthole-halo",
-      "sha256": "462d7e2aa4a04b6eb2f68637d6655857f1702ae03b6871f1a7da94ae26385655",
-      "bytes": 7613,
+      "sha256": "82a0e0d11a2531f1ea560fd9ba7ee61d5a91b37ff80891ff73b6b94f57f92b89",
+      "bytes": 3130,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 310,
@@ -6614,8 +6614,8 @@
     {
       "file": "porthole-stills/assets/projected/4ff2bad27654-sol-halo-1x.png",
       "kind": "porthole-halo",
-      "sha256": "30cac8522148c6792654558e4cc0dc2d1802ae220c8281b4798cd8fec2344086",
-      "bytes": 3056,
+      "sha256": "f7ae815228004a0ef17fea8419bb08788734bae7518b5a49af47e7db3a61cfed",
+      "bytes": 748,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 156,
@@ -6627,8 +6627,8 @@
     {
       "file": "porthole-stills/assets/projected/4ff2bad27654-sol-halo-2x.png",
       "kind": "porthole-halo",
-      "sha256": "26f22712a038bc5f64cba4727482eab4d7be6c9cdff5baef313b59586eaab6af",
-      "bytes": 7893,
+      "sha256": "c768e92b2575df82bc1e963d8eec5873a9cc4f18b59ae705d51edc98cf757bc4",
+      "bytes": 2062,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 312,
@@ -6692,8 +6692,8 @@
     {
       "file": "porthole-stills/assets/projected/4ff2bad27654-sonnet-halo-1x.png",
       "kind": "porthole-halo",
-      "sha256": "ed6f0625e742483bfbdf0677f93da09bcf98e0c0aa993fdf537625575cbb6ba5",
-      "bytes": 2333,
+      "sha256": "9f7d0bf24bcfb3c485f60fc662a83b0754af9e18a1589e1cd76ed45d119a1ddd",
+      "bytes": 884,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 159,
@@ -6705,8 +6705,8 @@
     {
       "file": "porthole-stills/assets/projected/4ff2bad27654-sonnet-halo-2x.png",
       "kind": "porthole-halo",
-      "sha256": "a1f6b5ef9932800087084ec07631af5b9e8ce20df27219b04dc299aa50365975",
-      "bytes": 6575,
+      "sha256": "654bde34a382e050cedf370b2e8a5d4eff9b95f091316c8f4f28423efcf73d23",
+      "bytes": 2540,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 318,
@@ -9110,8 +9110,8 @@
     {
       "file": "porthole-stills/assets/projected/9b5c04263dca-astra-halo-1x.png",
       "kind": "porthole-halo",
-      "sha256": "07685f8e5996d202bf92197f6288f1597ef20bd896fa38312f573bf7ccf8a331",
-      "bytes": 3676,
+      "sha256": "8c7fc67e2473ca7e88585e35d3f178e09c158ac0f91cc563bcee7ac0c07e57d1",
+      "bytes": 982,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 158,
@@ -9123,8 +9123,8 @@
     {
       "file": "porthole-stills/assets/projected/9b5c04263dca-astra-halo-2x.png",
       "kind": "porthole-halo",
-      "sha256": "86773516e79fc5ee7fdc3cb15bcbe57880bba0c80bc63504645a5f92bc04a006",
-      "bytes": 8073,
+      "sha256": "f416cfe7718453c473bc088c7d76acd5fd2589922c3e30b4868e2c26b22def2e",
+      "bytes": 2810,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 316,
@@ -9136,8 +9136,8 @@
     {
       "file": "porthole-stills/assets/projected/9b5c04263dca-background.png",
       "kind": "porthole-background",
-      "sha256": "4980c717eb3488a27def6f0c039f21e9cd817ec6f9a3a4a43a3815d9e074b976",
-      "bytes": 66091,
+      "sha256": "ae6efc34d92eb4b3020b79da53e7e6af56fda6ea480f8a1c71691ff15d43a5af",
+      "bytes": 139253,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 1272,
@@ -9201,8 +9201,8 @@
     {
       "file": "porthole-stills/assets/projected/9b5c04263dca-glm-halo-1x.png",
       "kind": "porthole-halo",
-      "sha256": "c246572dd91916d2c5ae0ec2265ed1b80a473effdb32613f627330b89491dc38",
-      "bytes": 1054,
+      "sha256": "ebb4eb62db28526d4df85914206d9c32e3ab12533485177e3b02975d6612973a",
+      "bytes": 313,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 26,
@@ -9214,8 +9214,8 @@
     {
       "file": "porthole-stills/assets/projected/9b5c04263dca-glm-halo-2x.png",
       "kind": "porthole-halo",
-      "sha256": "358a5197cc3b3722fada613021d00a6999219bfdf80754e8c4b97b5b52ec71ec",
-      "bytes": 2090,
+      "sha256": "afdd49fee1b654739aaceb608d91850d379af776391fe440d2337faec49fd126",
+      "bytes": 498,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 52,
@@ -9279,8 +9279,8 @@
     {
       "file": "porthole-stills/assets/projected/9b5c04263dca-luna-halo-1x.png",
       "kind": "porthole-halo",
-      "sha256": "d291263f29728b6c99600c3b05d46306827eab5d4606344afb69cef5d035130a",
-      "bytes": 4443,
+      "sha256": "1a14e66bdbd1b84bad2e755afaaff9f20d066d98a27775cce4f90915dbb148fa",
+      "bytes": 669,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 159,
@@ -9292,8 +9292,8 @@
     {
       "file": "porthole-stills/assets/projected/9b5c04263dca-luna-halo-2x.png",
       "kind": "porthole-halo",
-      "sha256": "2b5675c7d155a51bb406b67d263d2dc87d32e69ffa3100805ef70a6e5f0c2ca4",
-      "bytes": 10130,
+      "sha256": "cfeb9c71ccb8e84c8db0b2fb6bdf90af26155f8305fe85240458c1816876bbdf",
+      "bytes": 1906,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 318,
@@ -9357,8 +9357,8 @@
     {
       "file": "porthole-stills/assets/projected/9b5c04263dca-sol-halo-1x.png",
       "kind": "porthole-halo",
-      "sha256": "d19a37252a4d49918bdc1630c32a00b868512931f189629278756f5b81142db8",
-      "bytes": 2758,
+      "sha256": "1efed795e245393f4143561e049ab9f9f1627fe45eb789c508d589e88a95fe1e",
+      "bytes": 601,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 154,
@@ -9370,8 +9370,8 @@
     {
       "file": "porthole-stills/assets/projected/9b5c04263dca-sol-halo-2x.png",
       "kind": "porthole-halo",
-      "sha256": "dc4bfd2f646d4c8772b4ed56ce3c2341f790629da901f30d1625c0c23e1ac2ff",
-      "bytes": 6495,
+      "sha256": "2208f2bbf842fc056911f1833405e5ab90da9420ebeaa8725e58552122cb84a0",
+      "bytes": 1672,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 308,
@@ -11554,8 +11554,8 @@
     {
       "file": "porthole-stills/assets/projected/f87e4058a747-astra-halo-1x.png",
       "kind": "porthole-halo",
-      "sha256": "e3c19aa2d3b5ebaa41dd88bfbef8f3ec52c89621da050df9af7fcb4d024ce45d",
-      "bytes": 3790,
+      "sha256": "1de51578236db35693c297766855af38778e33ced4b07db8b86de46b0e3b10e5",
+      "bytes": 1098,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 155,
@@ -11567,8 +11567,8 @@
     {
       "file": "porthole-stills/assets/projected/f87e4058a747-astra-halo-2x.png",
       "kind": "porthole-halo",
-      "sha256": "3fe06d0b391362d9347f851ada68fd250e802b5b659105cf93e083c0ee9f66a2",
-      "bytes": 9174,
+      "sha256": "9b8d814cc204a4da7fa18c034f4cf7c1207f8c2678b0922ec6b4c140025b4f50",
+      "bytes": 3051,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 310,
@@ -11580,8 +11580,8 @@
     {
       "file": "porthole-stills/assets/projected/f87e4058a747-background.png",
       "kind": "porthole-background",
-      "sha256": "ee83c355ca4d9bc283d5f7beabb6dcdffbd4ffd1de8055d2dad52c2465ff9191",
-      "bytes": 66801,
+      "sha256": "20a34cf5fc6a08af01097828bffc489bcb1fc8d7cebbc11f5851edaf7f3a7a61",
+      "bytes": 139228,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 1272,
@@ -11645,8 +11645,8 @@
     {
       "file": "porthole-stills/assets/projected/f87e4058a747-haiku-halo-1x.png",
       "kind": "porthole-halo",
-      "sha256": "311a4b062fcbecba7e8f25c912f714d3a54c5fe3adcfb1c828b504356d3ee05c",
-      "bytes": 1677,
+      "sha256": "bb99390e0f5a9841fd4f6ad1272085337170e3211102c3ec8d5d7f6d29d08e77",
+      "bytes": 318,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 39,
@@ -11658,8 +11658,8 @@
     {
       "file": "porthole-stills/assets/projected/f87e4058a747-haiku-halo-2x.png",
       "kind": "porthole-halo",
-      "sha256": "b917bc712ba35e2a7e300895b1178a6e839f3b3f23ee510308d2af2eaf5e73c4",
-      "bytes": 2819,
+      "sha256": "aacac0883bb85b8e00e3d30bb8a6f38772aa3d8b769d6d83e30f312bf19a814a",
+      "bytes": 575,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 78,
@@ -11723,8 +11723,8 @@
     {
       "file": "porthole-stills/assets/projected/f87e4058a747-luna-halo-1x.png",
       "kind": "porthole-halo",
-      "sha256": "ff9b17bc5122dcbfaa20585b983cd484d0fae9493bb2b204ee73c7be5b44db25",
-      "bytes": 4290,
+      "sha256": "1ec45a0c5bdf5b69973cc1343dfa06ef83e7e1794dec2849b1e391f450c017db",
+      "bytes": 791,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 159,
@@ -11736,8 +11736,8 @@
     {
       "file": "porthole-stills/assets/projected/f87e4058a747-luna-halo-2x.png",
       "kind": "porthole-halo",
-      "sha256": "a05a71e1e11354b4b7eaf29c995b10039dccd049bff5431a45a4e7dc74028d5d",
-      "bytes": 9967,
+      "sha256": "5abb47d917d8ab703d25531397d78ed6e1caf9eca683dc2cb92b54241983329c",
+      "bytes": 2330,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 318,
@@ -11801,8 +11801,8 @@
     {
       "file": "porthole-stills/assets/projected/f87e4058a747-opus-halo-1x.png",
       "kind": "porthole-halo",
-      "sha256": "5b92ac98088441d0ecb0cd8dfa9ce5ee97a3ea9cc5d2ff59b31f5c0c85c07f24",
-      "bytes": 2360,
+      "sha256": "64338864aa897bed24a650f53ec08a19a5bf700d09302446632b603d1d61a4ed",
+      "bytes": 1170,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 155,
@@ -11814,8 +11814,8 @@
     {
       "file": "porthole-stills/assets/projected/f87e4058a747-opus-halo-2x.png",
       "kind": "porthole-halo",
-      "sha256": "c488cd6e11282ea4528c5b4899cc76aa106a4a125d37d0bfa51453787def6c82",
-      "bytes": 6055,
+      "sha256": "209989fc564c1a35c221407360eed06788a8b92f85f22690fc3bd79ba1fb1728",
+      "bytes": 2969,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 310,
@@ -11879,8 +11879,8 @@
     {
       "file": "porthole-stills/assets/projected/f87e4058a747-sol-halo-1x.png",
       "kind": "porthole-halo",
-      "sha256": "782cbb2653fdbd705a929c5f0214e58783315da690b066f82b5dac77b53fe7cf",
-      "bytes": 3044,
+      "sha256": "fe71d315044ca8b0cc9c411b7fdb96f2224174d25e5e1e2f3886973b068c5007",
+      "bytes": 891,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 151,
@@ -11892,8 +11892,8 @@
     {
       "file": "porthole-stills/assets/projected/f87e4058a747-sol-halo-2x.png",
       "kind": "porthole-halo",
-      "sha256": "976137042c394edc7f76e51aa084c59b9aae2bfcc326d372bfe0cfdaceb1d3ee",
-      "bytes": 7882,
+      "sha256": "b02db6fbb82e6a2ff29789bc40ca4a591afde46422a7a202a6b105111bf41329",
+      "bytes": 2471,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 302,
@@ -11957,8 +11957,8 @@
     {
       "file": "porthole-stills/assets/projected/f87e4058a747-sonnet-halo-1x.png",
       "kind": "porthole-halo",
-      "sha256": "e33e155df7a7ee4fc65ef3d73d3c1225d5df684078fac32328e8d05695ab1f3c",
-      "bytes": 2144,
+      "sha256": "5a8d746d164ab8977ca02102c70c85588c69e50c287e48f16442c1878dbd824e",
+      "bytes": 1189,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 159,
@@ -11970,8 +11970,8 @@
     {
       "file": "porthole-stills/assets/projected/f87e4058a747-sonnet-halo-2x.png",
       "kind": "porthole-halo",
-      "sha256": "b1d46486d9f5b9315b9c198e87dda5b6e9d99154674834d25f8cb25e77730e1b",
-      "bytes": 5584,
+      "sha256": "743d7b87cc8256af4312aff13f101b45dd66e2613036ac8021fdf2f87e895141",
+      "bytes": 3577,
       "license": "LicenseRef-ModelPlan-Visuals-1.0",
       "size": {
         "width": 318,

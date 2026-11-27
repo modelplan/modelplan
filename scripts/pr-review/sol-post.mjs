@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { client } from "../merge-gates/github.mjs";
 import { feed, isShadowLane, parseGlmTiers, pathTier, prPaths, tierOverride, TRUSTED } from "../merge-gates/rules.mjs";
 import { secretHits } from "./brief.mjs";
-import { agreement, parseAnswer, postLane, postProblem, noVerdictNoted, renderNoVerdictNote, renderScopeNote, renderSolComment, renderWaitNote, scopeNoted, SCOPE_CHANGED } from "./sol.mjs";
+import { postWhy, agreement, parseAnswer, postLane, postProblem, noVerdictNoted, glmAdvisory, prClass, waitNoted, renderNoVerdictNote, renderScopeNote, renderSolComment, renderWaitNote, scopeNoted, SCOPE_CHANGED } from "./sol.mjs";
 
 const env = process.env;
 const dir = join(env.RUNNER_TEMP, "pr-review-sol");
@@ -75,14 +75,19 @@ if (waiting) {
 
 let usage = null;
 try { usage = JSON.parse(read(join(dir, "usage.json"))); } catch {}
-const fellBack = read(join(dir, "why")).trim() ? `quota fallback to ${provider}` : "";
-// A labelled PR (review:gpt) answered by GLM means GPT had no quota: say so in the provider line for the coordinator.
-const why = env.GPT_REQUESTED === "true" && provider !== "openai" ? `review:gpt requested; GPT quota out${fellBack ? `; ${fellBack}` : ""}` : fellBack;
+// The reason line (postWhy, sol.mjs): quota fallback, a refused model and a model mismatch are stated apart.
+const why = postWhy({ quota: read(join(dir, "why")), note: read(join(dir, "note")), provider, gptRequested: env.GPT_REQUESTED === "true", tier: tierNow });
 const meta = { why, model: read(join(dir, "model")).trim() || env.MODEL, effort: provider === "openai" ? env.EFFORT : "default", seconds: read(join(dir, "seconds")).trim() || "?", usage, runUrl: env.RUN_URL };
 // Shadow runs log how the lane that counts has judged this head so far (D352: compare on three PRs before cutover).
 const agreeNow = isShadowLane(lane) ? agreement([...items, { kind: "comment", user: TRUSTED, body: `VERDICT: ${answer.verdict} @ ${head} (${lane})`, at: "~" }], head, lane, tierNow, parseGlmTiers(env.REVIEW_GLM_TIERS)) : null;
-const body = renderSolComment({ answer, head, lane, mode: env.MODE, base: env.BASE, tier: tierNow, meta, agree: agreeNow?.text ?? "", gptFallback: env.GPT_REQUESTED === "true" && provider === "glm" });
+const body = renderSolComment({ answer, head, lane, mode: env.MODE, base: env.BASE, tier: tierNow, meta, agree: agreeNow?.text ?? "" });
 if (secretHits(body)) fail("the comment looks like it contains a credential");
 await gh.post(`/issues/${n}/comments`, { body });
+// macrev2-1254: a GLM answer where GLM may not decide is advice; the head still waits for a Sol/GPT verdict, so raise the
+// waiting event once (the same coordinator event as when every provider is out).
+if (provider === "glm" && lane === "ghglm" && glmAdvisory(prClass(pr, files, tierNow), tierNow, parseGlmTiers(env.REVIEW_GLM_TIERS)) && !waitNoted(items, head)) {
+  const note = renderWaitNote({ head, lane: env.LANE, tier: tierNow, who: ["openai"], why: read(join(dir, "why")).trim() || "GPT quota out; GLM answered as advice", runUrl: env.RUN_URL });
+  await gh.post(`/issues/${n}/comments`, { body: note });
+}
 say(`posted ${answer.verdict} @ ${head} as (${lane}) from ${provider}; ${meta.seconds} s${usage ? `, tokens in ${usage.input} (cached ${usage.cached}) out ${usage.output}` : ""}`);
 if (agreeNow) say(agreeNow.text);

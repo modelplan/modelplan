@@ -6,7 +6,7 @@
 # scratch, thrown away with the job); with SEED_WRITE=1 (trusted main runs only) a successful build is published to it.
 # For each plan row (from plan.mjs): one `swift build --build-tests` (product and test targets, one compile), then `swift test --skip-build` on the selected classes (or the whole package
 # minus the never-run classes, or only --build-tests; ModelPlanAppIntegration is never run whole, see plan.mjs). Each package gets at most PACKAGE_MINUTES (default 25) for
-# build and test together. Writes the summary to $GITHUB_STEP_SUMMARY (first line "COMPILE ok|fail @ <sha8>")
+# build and test together. Writes the summary to $GITHUB_STEP_SUMMARY (first line "COMPILE ok|fail @ <sha8>"; each row carries its wall time: build seconds, whole row seconds, to measure warm-seed cost per row)
 # and exits non-zero on any failure.
 set -u
 PLAN=$1; SCRATCH_ROOT=$2; SHA=$3
@@ -32,14 +32,16 @@ limited() {
   return "$rc"
 }
 
-while IFS=$'\t' read -r dir scratch mode filter skip; do
+while IFS=$'\t' read -r dir scratch mode filter skip flags; do
   [ -n "$dir" ] || continue
+  fl=(); [ -z "${flags:-}" ] || [ "$flags" = - ] || fl=(-Xswiftc "$flags") # only the fixed flags plan.mjs names
   sp="$SCRATCH_ROOT/$scratch"; blog="$LOGS/$scratch-build.log"; tlog="$LOGS/$scratch-test.log"
-  deadline=$(( $(date +%s) + LIMIT ))
+  row_start=$(date +%s); deadline=$(( row_start + LIMIT ))
   clear_path "$sp" || { echo "::error::could not clear or move aside $sp"; exit 1; }
   if [ -n "$SEED_ROOT" ]; then seed_restore "$dir" "$scratch" "$sp"; [ $? != 2 ] || { echo "::error::could not clear or move aside $sp"; exit 1; }; fi
   echo "::group::$dir: swift build --build-tests"
-  limited swift build --build-tests --package-path "$dir" --scratch-path "$sp" >"$blog" 2>&1; brc=$?
+  limited swift build --build-tests --package-path "$dir" --scratch-path "$sp" ${fl[@]+"${fl[@]}"} >"$blog" 2>&1; brc=$?
+  build_secs=$(( $(date +%s) - row_start ))
   tail -40 "$blog"; echo "::endgroup::"
   build=ok; test="not run"; : >"$tlog"
   if [ "$brc" != 0 ]; then
@@ -47,8 +49,8 @@ while IFS=$'\t' read -r dir scratch mode filter skip; do
   else
     echo "::group::$dir: tests ($mode)"
     case $mode in
-      filter) limited swift test --skip-build --package-path "$dir" --scratch-path "$sp" --filter "$filter" --skip "$skip" >"$tlog" 2>&1; trc=$? ;;
-      skip) limited swift test --skip-build --package-path "$dir" --scratch-path "$sp" --skip "$skip" >"$tlog" 2>&1; trc=$? ;;
+      filter) limited swift test --skip-build --package-path "$dir" --scratch-path "$sp" --filter "$filter" --skip "$skip" ${fl[@]+"${fl[@]}"} >"$tlog" 2>&1; trc=$? ;;
+      skip) limited swift test --skip-build --package-path "$dir" --scratch-path "$sp" --skip "$skip" ${fl[@]+"${fl[@]}"} >"$tlog" 2>&1; trc=$? ;;
       *) trc=0 ;; # the one build above already built the test targets
     esac
     tail -60 "$tlog"; echo "::endgroup::"
@@ -68,7 +70,7 @@ while IFS=$'\t' read -r dir scratch mode filter skip; do
   if [ "$SEED_WRITE" = 1 ] && [ "$build" = ok ] && [ "$test" != "not run" ] && [ "$trc" = 0 ]; then
     seed_publish "$dir" "$scratch" "$sp" || exit 1
   fi
-  rows="$rows- \`$dir\`: build $build; test $test"$'\n'
+  rows="$rows- \`$dir\`${fl[*]:+ ($flags)}: build $build ${build_secs}s; test $test; row $(( $(date +%s) - row_start ))s"$'\n'
   errors="$errors$(cat "$blog" "$tlog" | grep -E '^[^ :]+:[0-9]+:[0-9]+: error:' | sed "s#^$PWD/##")"$'\n'
 done <"$PLAN"
 

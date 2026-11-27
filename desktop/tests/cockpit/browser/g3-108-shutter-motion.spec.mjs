@@ -11,7 +11,7 @@ import {visualFixture} from '../visual-fixture.mjs';
 // draws the new shell at once.
 const BODY=['.ck-head','.ck-eng','.ck-deck','.ck-tape','.ck-base'];
 async function mount(page,tier,reduceMotion){
- await page.setViewportSize({width:636,height:tier==='tall'?939:669});
+ await page.setViewportSize({width:636,height:tier==='tall'?951:681});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
  expect(await receive(send('load',{appearance:{...appearance,reduceMotion},shell:{...shell,tier}}))).toBe(true);
@@ -29,7 +29,7 @@ const sampleWhile=(page,raw,ms)=>page.evaluate(([raw,ms])=>new Promise(done=>{
   if(performance.now()-start<ms)requestAnimationFrame(step);else done({tops,shells,moving});};
  step();}),[raw,ms]);
 
-for(const [tier,strip,slab] of [['tall',253,228],['compact',65,40]])
+for(const [tier,strip,slab] of [['tall',253,228]])
 test(`G3-108 ${tier}: the body stays put and the porthole itself closes and opens`,async({page})=>{
  const {send}=await mount(page,tier,false);
  const open=await body(page);

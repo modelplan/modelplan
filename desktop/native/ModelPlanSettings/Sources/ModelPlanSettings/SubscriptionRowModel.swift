@@ -95,6 +95,10 @@ public struct SubscriptionRowModel: Equatable, Sendable {
             case .notSignedIn:
                 return (SettingsText("Not signed in to \(name). Sign in first.", "尚未登录 \(name)，请先登录。"), true)
             case .unsupportedLogin:
+                // G3-155: ZCode's QR-code sign-in is readable behind its own opt-in (D369); "no readable sign-in", never "unsupported".
+                if tool.tool == "zai" {
+                    return (SettingsText("No readable GLM sign-in found in ZCode.", "没有在 ZCode 里找到可读取的 GLM 登录。"), true)
+                }
                 return (SettingsText("This sign-in type cannot be read yet.", "这种登录方式暂不支持读取。"), true)
             }
         }
@@ -106,10 +110,12 @@ public struct SubscriptionRowModel: Equatable, Sendable {
             return (entry.reason, true)
         }
         if tool.promptsKeychain {
-            return (SettingsText("A Keychain prompt will appear once; choose Always Allow.", "会弹出一次钥匙串授权，请选“始终允许”。"), false)
+            return (keychainPromptLine, false)
         }
         return (SettingsText("Ready: nothing else is needed.", "已就绪，无需其他操作。"), false)
     }
+
+    public static let keychainPromptLine = SettingsText("A Keychain prompt will appear once; choose Always Allow.", "会弹出一次钥匙串授权，请选“始终允许”。")
 
     /// Merge the engine's consent facts, row status, cause code and visibility into one row per subscription.
     /// - subscriptions/orderedIDs: the shared order (hidden ones keep their place);

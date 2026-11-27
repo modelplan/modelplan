@@ -23,6 +23,8 @@ public enum SettingsPresentationOrigin: Sendable { case userInitiated, restorati
          presence: PulseDockPresence) {
         controller = SettingsWindowController(editor: editor, environmentProvider: environment, scopeConsentEntry: scopeConsentEntry)
         self.presence = presence
+        // G3-161: an engine update does not rebuild Settings while its window is closed; showing it refreshes once.
+        controller.defersContextRefreshWhileHidden = true
     }
     func prepare() async { await controller.prepare() }
     func show(paneID: String?) {
@@ -57,7 +59,7 @@ public enum SettingsPresentationOrigin: Sendable { case userInitiated, restorati
     private var surface: (any SettingsWindowSurface)? {
         didSet { attachPlugins() }
     }
-    /// Settings › Subscriptions › Plugins (switch, interval, pin to page 1) edits this model.
+    /// Settings › Plugins (switch, interval, pin to page 1) edits this model.
     public var cockpitPlugins: CockpitPluginSettingsModel? { didSet { attachPlugins() } }
     private func attachPlugins() {
         guard let cockpitPlugins, let native = surface as? NativeSettingsWindowSurface else { return }

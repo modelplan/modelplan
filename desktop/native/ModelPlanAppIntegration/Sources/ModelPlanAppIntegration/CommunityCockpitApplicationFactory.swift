@@ -112,6 +112,7 @@ import ModelPlanResources
         owner.presence = application.dockPresence
         application.currentCockpitPage = { [weak owner] in owner?.currentPage }
         owner.anchor = { [weak application] in application?.cockpitAnchor }
+        owner.statusScreen = { [weak application] in application?.cockpitStatusScreen }
         owner.openPoint = { [weak application] in application?.cockpitOpenPoint }
         owner.ignitionFrame = { [weak application] in application?.composition.dock.ignitionScreenFrame }
         owner.widgetFrame = { [weak application] in application?.composition.dock.widgetScreenFrame }
@@ -160,7 +161,19 @@ import ModelPlanResources
             let bridge = await CockpitPluginBridge.load(directory: directory, coordinator: owner?.coordinator)
             bridge.showCockpit = { [weak application] in application?.showConsole() }
             guard let application else { return }
+            // D376: the cockpit key's right-click Remove asks through the same closer (same NSAlert) as the widget ring, for every
+            // plugin and whether or not resource sampling is installed. The widget ring's "Turn Off <plugin>…" below uses it too.
+            let closer = CockpitPluginCloser(model: bridge.model, language: { [weak application] in
+                application?.composition.latestSettings?.snapshot.preferences.language ?? .fallback
+            })
+            bridge.closer = closer
             application.cockpitPlugins = bridge
+            // D371 B4e: a subscription card's footer row ("在驾驶舱查看 <name> ›") opens the cockpit on that subscription:
+            // select its scope, then show the cockpit (an already open one only switches).
+            application.composition.dock.subscriptionCockpitRequested = { [weak owner, weak application] dockID in
+                owner?.coordinator?.selectScope(dockID)
+                application?.showConsole()
+            }
             if installsResources {
                 #if MODELPLAN_TEST_ONLY_SPI
                 let reader: ResourceReader = resourceReader?() ?? verificationResourceReader?() ?? SystemResourceReader()
@@ -183,6 +196,11 @@ import ModelPlanResources
                 dock.pluginScreenRequested = { [weak bridge, weak application] dockID in
                     guard let id = ResourceDockBridge.pluginID(dockID: dockID) else { application?.showConsole(); return }
                     bridge?.openScreen(id)
+                }
+                dock.pluginCloseTitle = { dockID in ResourceDockBridge.pluginID(dockID: dockID).flatMap { closer.prompt($0)?.menuTitle } }
+                dock.pluginCloseRequested = { dockID in
+                    guard let id = ResourceDockBridge.pluginID(dockID: dockID) else { return }
+                    Task { @MainActor in await closer.requestClose(id) }
                 }
                 dock.widgetShownChanged = { [weak host] shown in host?.setWidgetShown(shown) }
                 // macrevb-1096-3: the expanded widget, not the ordered-in auto-hide sliver.
@@ -235,6 +253,7 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     var openWebsite: @MainActor (URL) -> Void = { NSWorkspace.shared.open($0) }
     var pageFailure: ((CockpitWindowFailure) -> Void)?
     var anchor: (() -> CGRect?)?
+    var statusScreen: (() -> CGRect?)?
     /// Build 14c (G3-79): where the latest open was clicked; only a detached open uses it (G3-128: attached is always
     /// the menu bar icon's display).
     var openPoint: (() -> CGPoint?)?
@@ -321,14 +340,14 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
         }
         appearance = .init(theme:CockpitDayPolicy.resolve(theme),locale:snapshot.preferences.language == .english ? .en:.zhCN,profile:.full,
             redBelow:snapshot.preferences.redBelow,showProjectNames:snapshot.preferences.showProjectNames,showUsedPercent:snapshot.preferences.percentageMode == .used,showAllModels:snapshot.preferences.showAllModels,
-            size:CockpitSize(snapshot.preferences.cockpitSize),memberOrder:snapshot.preferences.subscriptions.order)
+            size:CockpitSize(snapshot.preferences.cockpitSize),memberOrder:snapshot.preferences.subscriptions.order,hiddenMembers:snapshot.preferences.subscriptions.hiddenIDs.sorted())
         if let applied { appearance=cockpitAppearance(applied) }
     }
     func cockpitAppearance(_ value: SettingsApplication) -> CockpitAppearance {
         let e=value.effective
         return .init(theme:appearance.theme,locale:e.language == .english ? .en:.zhCN,profile:.full,
             reduceMotion:e.reduceMotion,reduceTransparency:e.reduceTransparency,redBelow:e.redBelow,showProjectNames:e.showProjectNames,showUsedPercent:e.showUsedPercent,showAllModels:e.showAllModels,
-            size:CockpitSize(e.cockpitSize),memberOrder:value.snapshot.preferences.subscriptions.order)
+            size:CockpitSize(e.cockpitSize),memberOrder:value.snapshot.preferences.subscriptions.order,hiddenMembers:value.snapshot.preferences.subscriptions.hiddenIDs.sorted())
     }
     func makePage(context: CockpitEngineContext, executable: URL) throws -> CockpitWindowController {
         guard executable.standardizedFileURL == bundle.appendingPathComponent("Contents/Helpers/modelplan").standardizedFileURL
@@ -339,8 +358,10 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
     }
     func makePage(context: CockpitEngineContext, verified: VerifiedCockpitBundle) -> CockpitWindowController {
         let page=CockpitWindowController(bundle:verified,context:context,appearance:appearance,
-            shellSession:shell,anchor:{ [weak self] in self?.anchor?() },openPoint:{ [weak self] in self?.openPoint?() },
+            shellSession:shell,anchor:{ [weak self] in self?.anchor?() },
+            statusScreen:{ [weak self] in self?.statusScreen?() },openPoint:{ [weak self] in self?.openPoint?() },
             systemSignals:systemSignals?())
+        page.keepClearedPageAfterClose = coordinator?.prewarmEnabled == true
         page.ignitionFrame = { [weak self] in self?.ignitionFrame?() }
         page.widgetFrame = { [weak self] in self?.widgetFrame?() }
         // Spec item 4: a detached cockpit gives the app its Dock icon and Cmd-Tab entry, through the one presence.
@@ -572,7 +593,7 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
     /// WP-22 (D298): `mine` is the published models the connected tools can run (CockpitFieldFleet), `asOf` the
     /// publication's date for the menu header.
     private struct FieldPayload:Encodable {
-        let language:String,reduceMotion:Bool,lowPower:Bool,models:[WireCockpitPublicationModel],mine:[String],focus:String?,asOf:String?
+        let language:String,reduceMotion:Bool,lowPower:Bool,models:[WireCockpitPublicationModel],mine:[String],onlyMine:Bool,focus:String?,asOf:String?
     }
     private(set) var fieldPanel:CockpitFieldPanel? // read by tests (WP-22 site keys)
     /// G3-80 seams: where the pointer is, the cockpit's frame and the displays the field is placed on.
@@ -586,10 +607,12 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
     /// `lowPower` is the Low Power Mode state at open (D63): the scene mounts quiet and on demand when it is on.
     func fieldPayload(focusName:String?=nil,lowPower:Bool=ProcessInfo.processInfo.isLowPowerModeEnabled) -> String? {
         guard let data=composition.store.snapshot.cockpit,let details=data.details,let models=details.publishedModels,!models.isEmpty else { return nil }
-        let mine=CockpitFieldFleet.runnable(data)
+        let hidden=Set(owner.appearance.hiddenMembers)
+        let onlyMine=CockpitFieldFleet.hasHiddenMembers(data,hiddenMembers:hidden)
+        let mine=CockpitFieldFleet.runnable(data,hiddenMembers:hidden)
         let focus=focusName.flatMap { name in models.first { $0.name == name }?.id }
         let asOf=details.publication.map { String($0.publishedAt.rawValue.prefix(10)) }
-        let value=FieldPayload(language:owner.appearance.locale == .en ? "en":"zh",reduceMotion:owner.appearance.reduceMotion,lowPower:lowPower,models:models,mine:mine,focus:focus,asOf:asOf)
+        let value=FieldPayload(language:owner.appearance.locale == .en ? "en":"zh",reduceMotion:owner.appearance.reduceMotion,lowPower:lowPower,models:models,mine:mine,onlyMine:onlyMine,focus:focus,asOf:asOf)
         return (try? JSONEncoder().encode(value)).flatMap { String(data:$0,encoding:.utf8) }
     }
     func handle(_ intent:CockpitIntent) {
@@ -603,7 +626,7 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
         case .openWebsite(let link):owner.openWebsite(link.url)
         case .refreshMember(let key):owner.refreshMember?(key)
         case .close:owner.coordinator?.requestClose()
-        case .detach,.putBack,.shutterToggle,.scopeSelect,.rangeSelect,.cautionAck,.pinnedModels,.pluginsRunning,.pluginsEdit:
+        case .detach,.putBack,.shutterToggle,.scopeSelect,.rangeSelect,.cautionAck,.pinnedModels,.pluginsRunning,.pluginsEdit,.pluginClose:
             // The page owns shell controls; the coordinator validates and
             // consumes scope selection. An unexpected escape fails closed.
             hide()
@@ -644,8 +667,8 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
     var attachmentHintAnchor: CockpitAttachmentHintAnchor? { wantsVisible ? owner.coordinator?.attachmentHintAnchor : nil }
     func show() { show(fromStatusItem: false) }
     func show(fromStatusItem: Bool) {
-        // CKP-SHELL-33 (D186): the menu bar icon opens rack-first; the ignition keeps its own fade.
-        entrance = fromStatusItem ? .fromIcon : .fade
+        // CKP-SHELL-33 (D186): an attached status-item or ignition open starts with the launch rack.
+        entrance = fromStatusItem && !owner.shell.detached ? .fromIcon : .fade
         wantsVisible=true
         attempt += 1
         // A new click starts its own grace period and opens at once. Recovery contract: it does not reset the rebuild

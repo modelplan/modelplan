@@ -4,8 +4,10 @@ import ModelPlanDock
 import ModelPlanResources
 
 /// The resource plugin on the widget (D324, D327): the sampler's face and hover card as one more ring in the Dock.
-/// The ring is the subscription ring's size (D163): outer arc memory (solid used, faint cached), inner thin arc CPU,
-/// always in orchid; only the readout's number takes a tone (D236). The card rows follow variant A. B4f (owner 11-21):
+/// The ring is the subscription ring's size (D163): outer arc memory (solid used, faint cached), inner thin arc CPU.
+/// D371 B4c (owner 11-21): each arc, each card bar and the readout number take the status colour of what they measure
+/// (normal / amber from 80 % / red from 90 %, 3-point hysteresis; the 11-13 round-4 status colour, the quota rings'
+/// family), not the plugin's orchid. The card rows follow variant A. B4f (owner 11-21):
 /// the readout under the ring is the percentage alone ("77%"); VoiceOver reads "内存 77%" (`spokenReadout`).
 public enum ResourceDockBridge {
     public static let subscriptionID = "plugin:resources"
@@ -18,8 +20,10 @@ public enum ResourceDockBridge {
         let id = String(dockID.dropFirst(dockIDPrefix.count))
         return id.isEmpty ? nil : id
     }
+    /// The plugin's identity ink (the cockpit tab underline). Not used on the ring or the bars any more (D371).
     public static let ink = "#da66c2"
-    static let rgb = (red: Double(0xda) / 255, green: Double(0x66) / 255, blue: Double(0xc2) / 255)
+    /// The ring's base ink: the normal status colour (`DockPluginStatusColour`); the arcs take their own tone on top.
+    static let normalInk = "#5ad9ba"
 
     public static func tone(_ t: ResourceTone) -> DockQuotaStatus {
         switch t { case .normal: return .normal; case .warning: return .warning; case .critical: return .critical }
@@ -30,21 +34,23 @@ public enum ResourceDockBridge {
     public static func row(_ r: ResourceCard.Row) -> DockCardRow {
         var row = DockCardRow(id: "resource:" + r.id.rawValue, kind: .quota, label: r.label, value: "\(r.percent)%", detail: r.side,
                               remainingFraction: nil, fillFraction: .some(r.fill), tone: tone(r.tone), emphasised: r.ink == .full)
-        row.plugin = DockCardPluginStyle(red: rgb.red, green: rgb.green, blue: rgb.blue, faintFill: r.cachedFill, notch: r.notch, tinted: r.tinted)
+        let colour = DockPluginStatusColour.rgb(row.tone)
+        row.plugin = DockCardPluginStyle(red: colour.red, green: colour.green, blue: colour.blue, faintFill: r.cachedFill, tinted: r.tinted)
         return row
     }
 
-    /// The hover card's rows, footer and its "驾驶舱大屏 ›" action (D327) for the Dock.
+    /// The hover card's rows, footer and its cockpit entry label ("在驾驶舱查看", D371 B4e) for the Dock.
     public static func card(_ card: ResourceCard) -> DockPluginCard {
-        DockPluginCard(rows: card.rows.map(row), footer: card.footer, action: card.screenLink)
+        DockPluginCard(rows: card.rows.map(row), footer: card.footer, action: card.screenLink, source: card.cadence)
     }
 
     public static func ring(face: ResourceFace, card: ResourceCard, language: ResourceLanguage) -> DockPluginRing? {
         let live = Self.card(card)
-        return DockPluginRing(hex: ink, outer: min(1, max(0, face.memoryUsed)), outerFaint: min(1 - min(1, max(0, face.memoryUsed)), max(0, face.memoryCached)),
+        return DockPluginRing(hex: normalInk, outer: min(1, max(0, face.memoryUsed)), outerFaint: min(1 - min(1, max(0, face.memoryUsed)), max(0, face.memoryCached)),
                               inner: min(1, max(0, face.cpu)), readout: "\(face.shown.percent)%", readoutTone: tone(face.shown.tone),
                               animates: face.animates, cardRows: live.rows, cardFooter: live.footer, cardAction: live.action,
-                              spokenReadout: face.shown.text(language))
+                              spokenReadout: face.shown.text(language),
+                              outerTone: tone(face.levels.memory), innerTone: tone(face.levels.cpu), cardSource: live.source)
     }
 
     /// The Dock input for the resource ring; nil while there is no sample yet (the ring is not shown empty).
@@ -94,16 +100,20 @@ public enum ResourceDockBridge {
     private let language: () -> ResourceLanguage
     private let refresh: () -> Void
     private let refreshCard: () -> Void
+    /// G3-161: repaints only the Resources ring; false = it could not, run the full `refresh`.
+    private let refreshRing: (DockInstrumentInput) -> Bool
     public init(sampler: ResourceSampler, provider: ResourceDockContentProvider, language: @escaping () -> ResourceLanguage,
-                refreshCard: @escaping () -> Void = {}, refresh: @escaping () -> Void) {
+                refreshCard: @escaping () -> Void = {}, refreshRing: @escaping (DockInstrumentInput) -> Bool = { _ in false },
+                refresh: @escaping () -> Void) {
         self.sampler = sampler; self.provider = provider; self.language = language; self.refresh = refresh; self.refreshCard = refreshCard
+        self.refreshRing = refreshRing
         sampler.onRedraw = { [weak self] face in self?.redraw(face) }
         sampler.onCardChange = { [weak self] in self?.cardChanged() }
     }
     /// The card for the latest sample, the readout shown now and the current cadence.
     func card(_ shown: ResourceShown) -> ResourceCard? {
         guard let sample = sampler.history.samples.last, let interval = ResourceCadence.interval(sampler.visibility) else { return nil }
-        return ResourceCard(sample: sample, shown: shown, cpuPeak: sampler.history.peakCPU, interval: interval, language: language())
+        return ResourceCard(sample: sample, shown: shown, cpuPeak: sampler.history.peakCPU, interval: interval, language: language(), levels: sampler.levels)
     }
     func card(_ face: ResourceFace) -> ResourceCard? { card(face.shown) }
     /// What the hover card shows now (nil while there is no sample or the plugin is off).
@@ -119,13 +129,34 @@ public enum ResourceDockBridge {
     /// redraws with the latest ring. A redraw in the gap painted the plugin ring alone and the subscription rings
     /// vanished for a moment.
     private var baseAdmitted: Bool { provider.baseAdmitted?() ?? true }
+    /// What the ring shows: the rounded numbers and tones. Two faces with the same key look the same.
+    private struct RingKey: Equatable {
+        let shown: ResourceShown, memoryTone: ResourceTone, cpuTone: ResourceTone
+        let memory: Int, cached: Int, cpu: Int, animates: Bool, language: ResourceLanguage
+        init(_ face: ResourceFace, _ language: ResourceLanguage) {
+            shown = face.shown; memoryTone = face.levels.memory; cpuTone = face.levels.cpu; animates = face.animates; self.language = language
+            memory = Int((face.memoryUsed * 100).rounded()); cached = Int((face.memoryCached * 100).rounded()); cpu = Int((face.cpu * 100).rounded())
+        }
+    }
+    private var drawnKey: RingKey?
+    /// G3-161: a sample whose displayed numbers and tones equal the drawn ones repaints nothing (the open card still
+    /// follows through `onCardChange`). A changed one repaints the ring alone; the full Dock pass is the fallback.
     private func redraw(_ face: ResourceFace) {
-        provider.resourceInput = ResourceDockBridge.input(face: face, card: card(face), language: language())
-        if baseAdmitted { refresh() }
+        let lang = language()
+        let key = RingKey(face, lang)
+        if key == drawnKey, provider.resourceInput != nil { return }
+        guard let input = ResourceDockBridge.input(face: face, card: card(face), language: lang) else {
+            drawnKey = nil; provider.resourceInput = nil
+            if baseAdmitted { refresh() }
+            return
+        }
+        drawnKey = key; provider.resourceInput = input
+        if baseAdmitted, !refreshRing(input) { refresh() }
     }
     /// Plugin state, cockpit column and widget visibility; off removes the ring at once.
     public func setVisibility(_ v: ResourceVisibility) {
         sampler.setVisibility(v)
+        if !v.pluginEnabled { drawnKey = nil }
         if !v.pluginEnabled, provider.resourceInput != nil { provider.resourceInput = nil; if baseAdmitted { refresh() } }
     }
 }

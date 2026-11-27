@@ -49,6 +49,9 @@ type GrantHooks struct {
 // EnsureStore establishes an epoch before a client takes its first floor. The
 // cache-only Load path remains read-only on a fresh home.
 func EnsureStore(file string) (State, error) {
+	if err := writable(); err != nil {
+		return Empty(), err
+	}
 	if err := os.MkdirAll(filepath.Dir(file), 0700); err != nil {
 		return Empty(), err
 	}
@@ -175,7 +178,9 @@ func ApplyGrant(file string, grant Grant, hooks GrantHooks) (GrantReceipt, error
 			tool := s.Tools[d.Tool]
 			tool.ReaderID, tool.Backend, tool.Region, tool.KeyEnv = r.ReaderID, r.Backend, r.Region, r.KeyEnv
 			tool.Allowed, tool.ConsentTextVersion = true, TextVersion
-			if d.Keychain {
+			// Only Claude's tool record carries the legacy Keychain fields; ZCode's choice (D380)
+			// lives on its scope record alone, so the shared GLM tool record is left as it was.
+			if d.Keychain && d.Tool == "claude" {
 				tool.Keychain, tool.DeniedSources = r.Keychain, r.DeniedSources
 			}
 			s.Tools[d.Tool] = tool
@@ -221,6 +226,7 @@ func ApplyGrant(file string, grant Grant, hooks GrantHooks) (GrantReceipt, error
 			forgetScopes[id] = true
 		}
 		s.Requests[key] = Receipt{RequestHash: requestHash, Result: encoded, PendingForget: cleanup, ForgetScopes: forgetScopes}
+		pruneReceipts(s, key)
 		return nil
 	}, func(s *State) error {
 		if len(cleanup) == 0 {
@@ -331,7 +337,9 @@ func ReceiptKey(epoch, requestID string) string { return epoch + "/" + requestID
 
 func syncScopeTool(s *State, tool string) {
 	record := s.Tools[tool]
-	record.Allowed = false
+	// The independent Z.ai key can still be admitted by default after the saved
+	// login is denied or forgotten. Preserve the legacy route descriptor in that case.
+	record.Allowed = tool == "zai" && s.AllowsScope(ScopeZaiAccountUsageAPIKey, Automatic)
 	record.ConsentTextVersion = TextVersion
 	// Prefer an explicitly configured key when both key and saved-login scopes
 	// are granted. Local scope metadata never changes an account reader's route.
@@ -349,4 +357,81 @@ func syncScopeTool(s *State, tool string) {
 		record.DeniedSources = cloneRecord(r).DeniedSources
 	}
 	s.Tools[tool] = record
+}
+
+// receiptWindow bounds the grant receipts a store keeps (review 11-24 #2). Every committed request
+// used to keep its receipt for ever, so a long-lived profile could fill the 256 KiB store and then
+// refuse the next Deny or Forget, leaving the old grant authoritative.
+const receiptWindow = 64
+
+// owedReceiptID names the receipt that carries erasure still owed by receipts that left the
+// window (macrevb-1218-1). It is longer than any request ID ApplyGrant accepts, so no request can
+// replay or overwrite it. Older CLIs read it as an ordinary pending receipt and retry it.
+var owedReceiptID = strings.Repeat("~", 129) + "owed-erasure"
+
+var owedReceiptHash = strings.Repeat("0", 64)
+
+// pruneReceipts keeps the receipt being written and the newest receipts up to receiptWindow,
+// whether or not they still owe cleanup. A dropped receipt's owed erasure moves into one owed
+// receipt, merged per scope (a Forget stays a Forget), so obligations are bounded by the scopes
+// that exist rather than by how many revocations failed to erase. A dropped receipt's request
+// expected a generation older than the store's, so replaying its ID is refused as
+// stale_generation and can never apply a second time.
+func pruneReceipts(s *State, keep string) {
+	type entry struct {
+		key        string
+		generation uint64
+	}
+	owedKey := ReceiptKey(s.StoreEpoch, owedReceiptID)
+	var all []entry
+	for key, receipt := range s.Requests {
+		if key == keep || key == owedKey {
+			continue
+		}
+		var result GrantReceipt
+		var generation uint64
+		if json.Unmarshal(receipt.Result, &result) == nil && result.CommittedGeneration != nil {
+			generation = *result.CommittedGeneration
+		}
+		all = append(all, entry{key, generation})
+	}
+	if len(all) < receiptWindow {
+		return
+	}
+	sort.Slice(all, func(i, j int) bool {
+		if all[i].generation != all[j].generation {
+			return all[i].generation > all[j].generation
+		}
+		return all[i].key < all[j].key
+	})
+	owed := s.Requests[owedKey]
+	for _, old := range all[receiptWindow-1:] {
+		receipt := s.Requests[old.key]
+		delete(s.Requests, old.key)
+		for _, scope := range receipt.PendingForget {
+			owed = owe(owed, scope, receipt.ForgetScopes[scope])
+		}
+	}
+	if len(owed.PendingForget) > 0 {
+		owed.RequestHash, owed.Result = owedReceiptHash, json.RawMessage(`{}`)
+		s.Requests[owedKey] = owed
+	}
+}
+
+func owe(r Receipt, scope string, forget bool) Receipt {
+	found := false
+	for _, have := range r.PendingForget {
+		found = found || have == scope
+	}
+	if !found {
+		r.PendingForget = append(r.PendingForget, scope)
+		sort.Strings(r.PendingForget)
+	}
+	if forget {
+		if r.ForgetScopes == nil {
+			r.ForgetScopes = map[string]bool{}
+		}
+		r.ForgetScopes[scope] = true
+	}
+	return r
 }

@@ -606,6 +606,40 @@ extension CoordinatorTests {
     replacement.onIntent?(.scopeSelect("0123456789abcdef"));XCTAssertEqual(coordinator.selectedScope,"all")
     await coordinator.shutdown();await client.stop()
   }
+  @MainActor func testHidingSelectedMemberResetsAndRejectsItsScope() async {
+    let coordinator = EngineCockpitCoordinator { PageProbe($0) }
+    let ref = "0123456789abcdef"
+    coordinator.selectScope(ref)
+    XCTAssertEqual(coordinator.selectedScope, ref)
+    coordinator.updateAppearance(.init(theme: .night, locale: .en, profile: .full, hiddenMembers: [ref]))
+    XCTAssertEqual(coordinator.selectedScope, "all")
+    coordinator.selectScope(ref)
+    XCTAssertEqual(coordinator.selectedScope, "all")
+    coordinator.updateAppearance(.init(theme: .night, locale: .en, profile: .full))
+    coordinator.selectScope(ref)
+    XCTAssertEqual(coordinator.selectedScope, ref)
+    await coordinator.shutdown()
+  }
+  /// D371 B4e: a subscription card's footer row selects that subscription's scope (tab lit, engine table turned to it)
+  /// through the coordinator, the same state as a tab click; an unknown key and a numbered fallback do nothing.
+  @MainActor func testSelectScopeFromACardFooterSwitchesTheOpenPage() async throws {
+    var pages:[PageProbe]=[]
+    let coordinator=EngineCockpitCoordinator { context in let page=PageProbe(context);pages.append(page);return page }
+    let client=HeldClient();coordinator.bind(client:client)
+    let delivery=EngineDeliveryContext(sessionID:"s-00000000-0000-0000-0000-000000000001",floor:.init(storeEpoch:"synthetic",generation:1),revision:1)
+    await coordinator.consume(.context(delivery));coordinator.open()
+    for _ in 0..<100 { if await client.requests==1 { break };await Task.yield() }
+    let data=try JSONDecoder().decode(WireCockpitData.self,from:Data(contentsOf:XCTUnwrap(Bundle.module.url(forResource:"cockpit",withExtension:"json",subdirectory:"Fixtures"))))
+    await coordinator.consume(.response(requestID:.string("scope-card"),.cockpit(.init(envelope:try .init(sessionId:delivery.sessionID,storeEpoch:delivery.floor.storeEpoch,consentGeneration:1,data:data),delivery:delivery))))
+    let page=try XCTUnwrap(pages.last)
+    coordinator.selectScope("not-a-current-member");XCTAssertEqual(coordinator.selectedScope,"all","an unknown member is ignored")
+    coordinator.selectScope("codex#saved_login_api#2");XCTAssertEqual(coordinator.selectedScope,"all","a numbered fallback is never selected")
+    coordinator.selectScope("0123456789abcdef")
+    XCTAssertEqual(coordinator.selectedScope,"0123456789abcdef")
+    XCTAssertEqual(page.scopeUpdates.last?.0,"0123456789abcdef","the already open page only switches")
+    coordinator.selectScope("all");XCTAssertEqual(coordinator.selectedScope,"all")
+    await client.complete();await coordinator.shutdown();await client.stop()
+  }
   @MainActor func testUnverifiedIndexedSelectionResetsAfterMemberReorder() async throws {
     var page:PageProbe?
     let coordinator=EngineCockpitCoordinator { context in let value=PageProbe(context);page=value;return value }

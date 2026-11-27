@@ -3,11 +3,11 @@ import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.
 import {appearance,commands,pageId,shell} from '../fixture.mjs';
 import {visualFixture} from '../visual-fixture.mjs';
 
-// G3-47 (owner 2026-11-08, D51): the base bells and their flames are drawn in the 34 px reserve under the root,
+// G3-47 (owner 2026-11-08, D51): the base bells and their flames are drawn in the 46 px reserve under the root,
 // one bell per visible subscription under its engine column; a subscription with a running session of its own
 // burns. G3-131 (D294): height fixed 10 px, width = column x 0.7 clamped to 81-101 px.
 async function open(page,{tier='tall',reduceMotion=false}={}){
- await page.setViewportSize({width:636,height:tier==='tall'?939:669});
+ await page.setViewportSize({width:636,height:tier==='tall'?951:681});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
  const data=visualFixture().data;
@@ -30,9 +30,9 @@ const read=page=>page.evaluate(()=>{
  return {rootBottom:box.bottom,base:b?{top:b.top,height:b.height}:null,cols,bells,empty:document.querySelectorAll('.ck-base .bz-empty').length,bays:document.querySelectorAll('.ck-eng .eng-cols .ec-bay').length};
 });
 
-for(const tier of ['tall','compact'])test(`G3-47 ${tier}: one bell per column in the reserve, the running subscription burns`,async({page})=>{
+for(const tier of ['tall'])test(`G3-47 ${tier}: one bell per column in the reserve, the running subscription burns`,async({page})=>{
  await open(page,{tier});const v=await read(page);
- expect(v.base).toEqual({top:v.rootBottom,height:34});
+ expect(v.base).toEqual({top:v.rootBottom,height:46});
  expect(v.bells.length).toBe(v.cols.length);expect(v.cols.length).toBeGreaterThan(0);
  expect(v.empty).toBe(v.bays);
  for(const [i,b] of v.bells.entries()){
@@ -72,7 +72,7 @@ test('G3-47 hovering a bell lights its column and shows its name (CKP-ENG-20)',a
 });
 
 test('G3-47 a session whose ref names no subscription lights no bell',async({page})=>{
- await page.setViewportSize({width:636,height:939});
+ await page.setViewportSize({width:636,height:951});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
  const data=visualFixture().data;

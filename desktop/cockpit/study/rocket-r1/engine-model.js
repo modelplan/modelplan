@@ -57,7 +57,10 @@ function extraCell(a, w, ui, grey) {
   const period = PERIODS[w.period || w.kind] || w.kind, c = cellOf(a, {...w, kind: period}, ui, null, grey);
   c.runOutMin = w.trend != null && w.trend < 0 && w.runOutMin != null && c.remaining != null && !grey && a.state !== 'stale' ? w.runOutMin : null;
   const name = w.name || w.scope?.label || '';
-  return {...c, extra: true, period, name, label: w.label || name, tag: name.length <= 3 ? name : [...name][0], tagPeriod: name.length > 3};
+  // D417: only a window the engine names (a model scope or MCP) is shown in full, up to 6 characters; an unnamed
+  // window's generic label ("Other limit", 其他限额) keeps the compact first-character fallback.
+  const full = w.named ? [...name].length <= 6 : [...name].length <= 3;
+  return {...c, extra: true, named: !!w.named, period, name, label: w.label || name, tag: full ? name : [...name][0], tagPeriod: !full};
 }
 // Owner C01, 2026-10-25: headings remain 5小时 / 每周 / 其他. Only matching general windows enter the first two
 // rows; every other general window and scoped quota enters Other, tightest first with +N/full details.
@@ -93,7 +96,7 @@ function columnOf(a, i, ui, status, now) {
   return {id: a.id, name: a.name, short: a.short, alias:a.alias, colour: a.colour, logo: a.logo, key: i + 1,
     on: ui.scope === a.id, off: !!ui.scope && ui.scope !== a.id,
     state: a.state, grey, ageMin: a.ageMin ?? null, status: st, tint: ui.tint && st ? st : null,
-    quotaOnly: a.support === 'quota-only' && (a.state === 'ok' || a.state === 'stale'), today: a.todayTokens ?? null,
+    quotaOnly: a.support === 'quota-only' && (a.state === 'ok' || a.state === 'stale'), noUsage: !!a.noUsage && a.support === 'quota-only' && (a.state === 'ok' || a.state === 'stale'), today: a.todayTokens ?? null,
     cost: a.state === 'ok' || a.state === 'stale' ? a.rangeCost ?? null : null,
     // Never substitute the current/recent-seven-day rate for today's subscription average.
     speed: a.state === 'ok' && a.support !== 'quota-only' ? a.todayAverageGenerationTps ?? null : null,
@@ -103,7 +106,7 @@ function columnOf(a, i, ui, status, now) {
 
 /* ---------- the table ---------- */
 // {empty, pages, page, cls, rows, reserve, cols, leds, caution, used, scoped}. Rows: fixed 5h, Weekly, Other,
-// then the combined today row, then reserve when a column on the page has reset cards
+// then the combined today row, then reserve when a column on the page has banked resets
 // or credits (spec 4). Columns keep the user's order (never by activity); 6 to a page.
 export function engineModel(d, ui) {
   const list = d.accounts || [], pages = pageCount(list.length), page = clamp(ui.page | 0, 0, pages - 1);
@@ -118,5 +121,5 @@ export function engineModel(d, ui) {
     level: list.slice(p * PER, p * PER + PER).reduce((l, a) => GREY.has(a.state) ? l : worse(l, status.get(a.id) || null), null)}));
   const c = d.caution || {level: null, key: ''};
   return {empty: !list.length, pages, page, slots, rich, cls: widthClass(slots), rows, reserve: cols.some(x => x.reserve),
-    rowPeriods: {first:'5h', second:'week', other:null}, cols, leds, caution: {level: c.level || null, flash: !!c.level && ui.ack !== c.key}, used: ui.pctMode === 'used', scoped: !!ui.scope};
+    rowPeriods: {first:'5h', second:'week', other:null}, cols, leds, caution: {level: c.level || null, flash: !!c.level && ui.ack !== c.key}, used: ui.pctMode === 'used', scoped: !!ui.scope, range: ui.range || 'today'};
 }

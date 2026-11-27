@@ -1,53 +1,24 @@
 // SPDX-License-Identifier: MIT
-// The porthole HUD from public published data: on the tall profile a mini frontier above the first six chart models,
-// on the compact profile one strip: a small frontier beside three stacked rows. It reads no scores of its own and shows nothing personal except which
+// The porthole HUD from public published data: a mini frontier above the first six chart models (D444: the one
+// layout; the 640 strip is retired). It reads no scores of its own and shows nothing personal except which
 // effort a running session last reported. Prototype: rocket-r1/porthole.js:49-76 for behaviour; the code is written here.
+import {hudAxisPath} from './hud-axis.js';
 import {ht} from './host-text.js';
 import type {WireCockpitData} from '../generated/wire.js';
-import {FIELD_LIMIT,fieldModel,type FieldModel} from './field-model.js';
-import {cockpitMembers} from './members.js';
-import {memberModelList} from './plan-models.js';
-import {sessionMember} from './session-binding.js';
+import {FIELD_LIMIT,type FieldModel} from './field-model.js';
+import {chartFleetOf,frontierFleetOf,fleetOf,type HudModel,type HudOptions} from './hud-fleet.js';
 import {shortLabel} from '../study/rocket-r1/short-label.js';
 
-const SVG='http://www.w3.org/2000/svg',TALL_ROWS=6,COMPACT_ROWS=3;
+export type {HudModel,HudOptions};
+const SVG='http://www.w3.org/2000/svg',ROWS=6;
 const svg=<K extends keyof SVGElementTagNameMap>(tag:K,attributes:Record<string,string|number>)=>{const e=document.createElementNS(SVG,tag);for(const [k,v] of Object.entries(attributes))e.setAttribute(k,String(v));return e;};
 
-// A subscription's tool to its model developer, the same map as eligibleCockpitVendors in the CLI.
-const toolDevelopers:Readonly<Record<string,string>>={codex:'openai',claude:'anthropic',gemini:'google',grok:'xai',kimi:'kimi',zai:'zhipuai',minimax:'minimax',qwen:'alibaba'};
-const WEEK=7*864e5,USED_LIMIT=3;
-export interface HudOptions {readonly scope?:string;readonly now?:number;readonly selected?:string|null;readonly closed?:boolean}
-export type HudModel=FieldModel&{readonly dominated:boolean;readonly latestEffort?:string|null;readonly running?:boolean};
-function roundRobin(list:readonly HudModel[]) {
- const groups=new Map<string,HudModel[]>();for(const m of list)(groups.get(m.dev)??groups.set(m.dev,[]).get(m.dev)!).push(m);
- const out:HudModel[]=[];for(let slot=0;slot<Math.max(0,...[...groups.values()].map(g=>g.length));slot++)for(const g of groups.values())if(g[slot])out.push(g[slot]!);
- return out;
-}
-/** One order for the scope (hud-selection/selection.js): models used this week, the lineup, then developers in turn; dominated last. */
-export function publishedFleet(data:WireCockpitData|null|undefined,scope='all',now=Date.now(),limit=FIELD_LIMIT):HudModel[] {
- const published=data?.details?.publishedModels??[],developerOf=new Map(published.map(m=>[m.id,m.developerId]));
- const members=data?cockpitMembers(data):[],member=scope==='all'?null:members.find(m=>m.key===scope)??null;
- if(scope!=='all'&&!member)return [];
- // D86: "All" is the union of the user's own subscriptions, never the whole published field. A model counts when its plan lists it (planModels), or, without a list, when its
- // developer is one of those subscriptions' developers, or a session bound to one of them used it this week (on a model that subscription carries).
- const owned=member?[member]:members;
- // The models the tool reports for the account (D98), else a published plan model list the member's plan matches, decide for that subscription; otherwise its developer does.
- const lists=new Map(data?owned.map(m=>[m.key,{list:memberModelList(data,m.row.id,m.account.plan.id,m.account.subscriptionRef),developer:toolDevelopers[m.row.id]}]):[]);
- const carries=(l:{list:ReadonlySet<string>|null|undefined;developer:string|undefined},id:string)=>l.list?l.list.has(id):l.developer!==undefined&&l.developer===developerOf.get(id);
- const usable=(id:string)=>[...lists.values()].some(l=>carries(l,id));
- // WP-14 (V1-FINAL §5): a session adds its model only when its subscription carries it; a subscription that names neither a model list nor a developer
- // (OpenCode Go, Cursor) cannot say, so its sessions still count. A Claude Code session pointed at another vendor's model is not that subscription's model.
- const recent=[...(data?.details?.sessions??[])].filter(s=>{const at=Date.parse(s.lastObservedAt),bound=sessionMember(members,s),l=bound?lists.get(bound.key):undefined;return !!l&&(!l.list&&l.developer===undefined||carries(l,s.model))&&at>=now-WEEK&&at<=now;}).sort((a,b)=>Date.parse(b.lastObservedAt)-Date.parse(a.lastObservedAt));
- const latest=new Map<string,string|null>();for(const s of recent)if(!latest.has(s.model))latest.set(s.model,s.effort);
- const running=new Set(recent.filter(s=>s.state==='running').map(s=>s.model));
- const candidates=published.flatMap(m=>{const f=fieldModel(m,shortLabel);return f&&(usable(m.id)||latest.has(m.id))?[f]:[];});
- const beaten=(m:FieldModel)=>candidates.some(n=>n.id!==m.id&&n.sel[2]>0&&m.sel[2]>0&&n.sel[1]>=m.sel[1]&&n.sel[2]<=m.sel[2]&&(n.sel[1]>m.sel[1]||n.sel[2]<m.sel[2]));
- const models=candidates.map((m):HudModel=>({...m,dominated:beaten(m),...(latest.has(m.id)?{latestEffort:latest.get(m.id)??null}:{}),...(running.has(m.id)?{running:true}:{})}));
- const byId=new Map(models.map(m=>[m.id,m]));
- const used=[...latest.keys()].flatMap(id=>{const m=byId.get(id);return m?[m]:[];}).slice(0,USED_LIMIT),taken=new Set(used.map(m=>m.id));
- const rest=models.filter(m=>!taken.has(m.id)),lineup=(data?.details?.publication?.models??[]).flatMap(p=>{const m=rest.find(x=>x.id===p.id&&!x.dominated);return m?[m]:[];}),picked=new Set(lineup.map(m=>m.id));
- return [...used,...lineup,...roundRobin(rest.filter(m=>!m.dominated&&!picked.has(m.id))),...roundRobin(rest.filter(m=>m.dominated&&!picked.has(m.id)))].slice(0,limit);
-}
+/** The scope's models in the order the enlarged chart takes them (frontier first, then dim points). */
+export const publishedFleet=(data:WireCockpitData|null|undefined,scope='all',now=Date.now(),limit=FIELD_LIMIT):HudModel[]=>chartFleetOf(shortLabel,data,scope,now,limit);
+/** The Models list retains its recent-use ordering independently of the chart's frontier order. */
+export const listFleet=(data:WireCockpitData|null|undefined,scope='all',now=Date.now(),limit=FIELD_LIMIT):HudModel[]=>fleetOf(shortLabel,data,scope,now,limit,Infinity);
+/** D386: the small HUD lists only the ability frontier, best ability first. */
+export const hudFleet=(data:WireCockpitData|null|undefined,scope='all',now=Date.now()):HudModel[]=>frontierFleetOf(shortLabel,data,scope,now);
 /** Each model's most recently seen effort, when a session reported one that the model publishes. */
 function seenEfforts(models:readonly HudModel[]) {
  const seen=new Map<string,readonly [string,number,number,number]>();
@@ -55,8 +26,8 @@ function seenEfforts(models:readonly HudModel[]) {
  return seen;
 }
 /** One point per model at ★: log cost relative to the cheapest ★, linear ability, as the study's hud-selection/chart.js
- * draws it (axis corner, "Ability ↑" and "Cost ×" captions, rank numbers on the first three points). No names inside. */
-export function miniChart(models:readonly FieldModel[],seen:ReadonlyMap<string,readonly [string,number,number,number]>,width:number,height:number,label:string,captions:{ability:string;cost:string}={ability:'Ability',cost:'Cost'}) {
+ * draws it (axis corner, no captions since D386, rank numbers on the first three points). No names inside. */
+export function miniChart(models:readonly FieldModel[],seen:ReadonlyMap<string,readonly [string,number,number,number]>,width:number,height:number,label:string) {
  const root=svg('svg',{class:'hud-mini',viewBox:`0 0 ${width} ${height}`,width,height,role:'img','aria-label':label});
  type Row=readonly [string,number,number,number];
  const valid=(r:Row|undefined):r is Row=>!!r&&Number.isFinite(r[1])&&r[2]>0;
@@ -67,10 +38,7 @@ export function miniChart(models:readonly FieldModel[],seen:ReadonlyMap<string,r
  const a0=Math.floor((Math.min(...values.map(r=>r[1]))-4)/5)*5,a1=Math.ceil((Math.max(...values.map(r=>r[1]))+4)/5)*5;
  const L=8,R=9,T=6,B=12,X=(r:Row)=>L+(Math.log2(r[2]/base)-lx0)/(lx1-lx0)*(width-L-R),Y=(r:Row)=>T+(a1-r[1])/(a1-a0)*(height-T-B);
  const f=(v:number)=>v.toFixed(1);
- root.append(svg('path',{class:'hud-axis',d:`M${L} ${T}V${height-B}H${width-R}`}));
- const ability=svg('text',{class:'hud-axis-label',x:1,y:height-1});ability.textContent=captions.ability+' ↑';
- const cost=svg('text',{class:'hud-axis-label',x:width-1,y:height-1,'text-anchor':'end'});cost.textContent=captions.cost+' ×';
- root.append(ability,cost);
+ root.append(svg('path',{class:'hud-axis',d:hudAxisPath(width,height,L,R,T,B)}));
  const front:typeof points=[];for(const p of [...points].sort((a,b)=>a.r[2]-b.r[2]||b.r[1]-a.r[1]))if(!front.length||p.r[1]>front.at(-1)!.r[1])front.push(p);
  const leaders=new Set(front.map(p=>p.m.id));
  root.append(svg('polyline',{class:'hud-front',points:front.map(p=>`${f(X(p.r))},${f(Y(p.r))}`).join(' ')}));
@@ -87,15 +55,14 @@ export function miniChart(models:readonly FieldModel[],seen:ReadonlyMap<string,r
  }
  return root;
 }
-export function paintHud(host:HTMLElement,data:WireCockpitData|null|undefined,compact:boolean,locale:string,options:HudOptions={}) {
- const fleet=publishedFleet(data,options.scope,options.now),rows=fleet.slice(0,compact?COMPACT_ROWS:TALL_ROWS);
- host.replaceChildren();host.hidden=!!options.closed||!rows.length;host.classList.toggle('hud-b',!compact);host.classList.toggle('hud-strip',compact);if(host.hidden)return;
+export function paintHud(host:HTMLElement,data:WireCockpitData|null|undefined,locale:string,options:HudOptions={}) {
+ const fleet=hudFleet(data,options.scope,options.now),rows=fleet.slice(0,ROWS);
+ host.replaceChildren();host.hidden=!!options.closed||!rows.length;host.classList.add('hud-b');if(host.hidden)return;
  host.setAttribute('role','group');host.setAttribute('aria-label',ht(locale,'host.hudAria'));
- // G3-48: the compact strip follows the study at 640 (86x30 chart, then three 10 px rows), not three columns.
- const chart=document.createElement('div');chart.className='hud-chart';chart.append(miniChart(rows,seenEfforts(rows),compact?86:162,compact?30:77,ht(locale,'host.hudChartLabel'),{ability:ht(locale,'host.hudAbility'),cost:ht(locale,'host.hudCost')}));host.append(chart);
+ const chart=document.createElement('div');chart.className='hud-chart';chart.append(miniChart(rows,seenEfforts(rows),162,77,ht(locale,'host.hudChartLabel')));host.append(chart);
  const list=document.createElement('div');list.className='hud-list';
  for(const [i,m] of rows.entries()){
-  const row=document.createElement('button');row.type='button';row.className='hp'+(m.id===options.selected?' selected':'')+(!compact&&m.dominated?' dominated':'');row.dataset.hudModel=m.id;row.dataset.hudName=m.name;row.title=m.name;
+  const row=document.createElement('button');row.type='button';row.className='hp'+(m.id===options.selected?' selected':'')+(m.dominated?' dominated':'');row.dataset.hudModel=m.id;row.dataset.hudName=m.name;row.title=m.name;
   const n=document.createElement('span');n.className='hp-n';n.textContent=String(i+1);
   // A running session at ★ glows the star; at any other effort the name turns gold (porthole.js:56-63).
   const atStar=m.latestEffort!==undefined&&m.latestEffort?.toLowerCase()===m.rec.toLowerCase(),elsewhere=m.latestEffort!==undefined&&!atStar;
@@ -106,7 +73,15 @@ export function paintHud(host:HTMLElement,data:WireCockpitData|null|undefined,co
   if(m.running){const on=document.createElement('i');on.className='hp-on';on.setAttribute('role','img');on.setAttribute('aria-label',ht(locale,'host.running'));row.append(on);}
   list.append(row);
  }
- host.append(list);
+ host.append(list);fitRows(host,list);
+}
+/** D371 B2 (CKP-PORT-04): when six rows do not fit above the safe-area line (10 px in from the port's bottom edge), show fewer
+ *  whole rows; never a cut row, never an ellipsis. */
+function fitRows(host:HTMLElement,list:HTMLElement):void {
+ const port=host.closest('.ck-port');if(!port)return;
+ const edge=port.getBoundingClientRect();if(edge.height<=0)return;
+ const limit=edge.bottom-10;
+ for(const row of [...list.children].reverse()){if(list.children.length<=1||row.getBoundingClientRect().bottom<=limit+.5)break;row.remove();}
 }
 /** A row or point opens the model on 模型; hovering one tells the porthole which rocket to light. */
 export function wireHud(host:HTMLElement,pick:(id:string)=>void):()=>void {

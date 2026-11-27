@@ -118,6 +118,25 @@ class BundlePinGuardTests(unittest.TestCase):
                 guard.write(self.root)
             self.reserve(origin, data, registered=False)
 
+    def test_flame_outputs_beside_the_bells_map_to_the_flames_sources(self):
+        # D454 (macrev2-1269-2): build.mjs ships the flame set and its notes into assets/bells/; their reserved source is
+        # cockpit/flames/, not the bells' folder.
+        outputs = {
+            'assets/bells/flame-full-strip-2x.png': ('cockpit/flames/assets/flame-full-strip-2x.png', PNG + b'full'),
+            'assets/bells/flame-ember-1x.png': ('cockpit/flames/assets/flame-ember-1x.png', PNG + b'ember'),
+            'assets/bells/FLAMES-SOURCES.md': ('cockpit/flames/SOURCES.md', b'flame sources'),
+            'assets/bells/SOURCES.md': ('cockpit/bells/SOURCES.md', b'bell sources'),
+        }
+        for origin, data in outputs.values():
+            self.reserve(origin, data, registered=not guard.is_text(data))
+        build(self.root, 'official', {name: data for name, (_, data) in outputs.items()})
+        guard.write(self.root)
+        for name, (origin, data) in outputs.items():
+            self.reserve(origin, data + b'edited', registered=False)
+            with self.assertRaisesRegex(ValueError, 'reserved source: ' + name):
+                guard.write(self.root)
+            self.reserve(origin, data, registered=False)
+
     def test_new_mappings_still_require_register_entries(self):
         self.reserve('cockpit/hull/assets/taper-890-1x.png', PNG, registered=False)
         build(self.root, 'official', {'assets/hull/taper-890-1x.png': PNG})

@@ -24,7 +24,7 @@ public struct CockpitPluginSettingSpec: Equatable, Sendable {
 public struct CockpitPluginDefinition: Equatable, Sendable {
     public let id: String
     public let title: SettingsText
-    /// CKP-PLG-54: the one sentence shown beside the toggle in Settings › Subscriptions › Plugins. The same words as the
+    /// CKP-PLG-54: the one sentence shown beside the toggle in Settings › Plugins. The same words as the
     /// page's `plugin.<id>Summary` string (desktop/cockpit/study/rocket-r1/strings/plugins.js).
     public let summary: SettingsText
     /// A white line-art SF Symbol that stands for the page's icon in Settings.
@@ -62,7 +62,7 @@ public enum CockpitPluginCatalogue {
         CockpitPluginDefinition(id: "resources", title: .init("Resources", "资源占用"),
                                 summary: .init("CPU, memory and disk of this Mac; sampled only while shown.", "显示这台 Mac 的 CPU、内存和磁盘，只在看得见时采样。"),
                                 symbol: "waveform.path.ecg.rectangle", defaultEnabled: true, settings: [
-            CockpitPluginSettingSpec(key: "intervalSeconds", minimum: 2, maximum: 10, defaultValue: 5, title: .init("Sampling interval", "采样间隔"),
+            CockpitPluginSettingSpec(key: "intervalSeconds", minimum: 2, maximum: 10, defaultValue: 5, title: .init("While the Resources column is shown, every", "资源栏显示时 每"),
                                      choices: [2, 5, 10]),
         ]),
     ]

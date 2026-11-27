@@ -63,7 +63,10 @@ func Definitions() []ScopeDefinition {
 		if id == ScopeZaiAccountUsageSavedLogin {
 			d.DefaultCheck = false
 		}
-		d.Keychain = id == ScopeClaudeAccountUsageSavedLogin
+		// D380: ZCode 3.19+ keeps its credential-store key in the macOS Keychain. Reading it is
+		// the saved-login scope's own recorded Keychain choice, unset (off) until the user allows
+		// it, exactly as for Claude Code (D41).
+		d.Keychain = id == ScopeClaudeAccountUsageSavedLogin || id == ScopeZaiAccountUsageSavedLogin
 		out = append(out, d)
 	}
 	return out
@@ -156,6 +159,30 @@ func setToolScopes(s *State, tool string, r Record) {
 			}
 		}
 	}
+}
+
+// ScopeKeychainStatus (D380) is a Keychain scope's own recorded choice: "allowed" only when the
+// scope itself is allowed in this mode and its Keychain choice is Allow; "denied" for a recorded
+// refusal; "unset" otherwise. It never infers a choice from the tool record or a legacy grant.
+func (s State) ScopeKeychainStatus(id, mode string) string {
+	d, known := Definition(id)
+	if !known || !d.Keychain {
+		return "unset"
+	}
+	r, decided := s.Scopes[id]
+	if !decided {
+		return "unset"
+	}
+	r.restoreKeychain()
+	switch {
+	case r.Keychain == "denied":
+		return "denied"
+	case r.Keychain != "allowed":
+		return "unset"
+	case !s.AllowsScope(id, mode):
+		return "denied"
+	}
+	return "allowed"
 }
 
 func (s State) AllowsScope(id, mode string) bool {

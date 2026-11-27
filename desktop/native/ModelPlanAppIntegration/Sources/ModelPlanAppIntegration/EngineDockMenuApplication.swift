@@ -78,10 +78,19 @@ struct StatusNoticePresentation {
     /// WP-17: a cockpit open asked for during launch. The launch pause dropped every early click (4 to 6 attempts per
     /// launch on the owner's Mac); now the click is kept, the icon shows it pressed, and the cockpit opens the moment
     /// the lifecycle is ready. Its page still shows data only from an admitted delivery (the consent fence).
-    private(set) var launchOpen: (fromStatusItem: Bool, openPoint: CGPoint?)?
+    private(set) var launchOpen: (rackEntrance: Bool, openPoint: CGPoint?)?
     /// WP-17: the launch pause (lifecycle started, never ready yet), as opposed to an OS pause. Every cockpit open
     /// entry (icon click, menu item, shortcut, ignition, reopen) keeps its open during it through `showConsole`.
-    var inLaunchPause: Bool { lifecyclePaused && lifecycleController != nil && !lifecycleEverReady }
+    var inLaunchPause: Bool { lifecyclePaused && lifecycleController != nil && !lifecycleEverReady && dockPresentationGateOpen }
+    /// v1 full review 11-24 #10: local Settings, About and diagnostics follow the OS gate, not engine readiness. A
+    /// completed profile whose helper is missing or cannot start keeps the gate open while no fresh rows arrive; Settings
+    /// must still open then. Account data stays withdrawn (the paused store shows none) and reader actions stay gated.
+    /// Review 11-24 macrevb-1215-3: before the lifecycle exists, the pre-lifecycle OS watcher is the gate, with the
+    /// same setup exception as the lifecycle's pause.
+    var settingsAvailable: Bool {
+        !terminating && (setupActive || (!earlyOSPaused
+            && (!lifecyclePaused || (lifecycleController != nil && dockPresentationGateOpen))))
+    }
     private var accessibilityObserver: NSObjectProtocol?
     private var showSettingsObserver: UUID?
     private var showRequestInFlight = false
@@ -182,7 +191,7 @@ struct StatusNoticePresentation {
     public var makeFirstRunSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)?
     public var makeFirstRunSurfaceWithConsent: (@MainActor (SettingsEditor, ScopeConsentEntry) -> any SettingsWindowSurface)?
     private let activateSettings: @MainActor () -> Void
-    public private(set) lazy var settingsHost = SettingsWindowHost(application: settings, canPresent: { [weak self] in self?.terminating == false && (self?.lifecyclePaused == false || self?.setupActive == true) }, activate: activateSettings, scopeConsentEntry: scopeConsentEntry, presence: dockPresence, makeSurface: makeSettingsSurface)
+    public private(set) lazy var settingsHost = SettingsWindowHost(application: settings, canPresent: { [weak self] in self?.settingsAvailable == true }, activate: activateSettings, scopeConsentEntry: scopeConsentEntry, presence: dockPresence, makeSurface: makeSettingsSurface)
     /// Native-shell spec item 4 (CodexBar `DockIconController`, Pulse `PulseDockPresence`): one owner of the Dock icon and
     /// Cmd-Tab entry. The app is regular while Settings or a detached cockpit is open or minimised, accessory otherwise.
     /// A flip posts resign/become active on its own, so the attached cockpit is told to ignore that for 250 ms; no flip
@@ -280,7 +289,6 @@ struct StatusNoticePresentation {
         composition.dock.menuNoticeDidChange = { [weak self] notice, first in self?.applyMenuNotice(notice, first: first) }
         composition.dock.showSettings = settingsHost.action
         composition.dock.resetPosition = { [weak self] in self?.resetPositions() }
-        // Build 14c (G3-79): the ignition opens the cockpit on the display the widget is on, where the user clicked.
         composition.dock.showConsole = { [weak self] in self?.showConsole(openPoint: NSEvent.mouseLocation) }
         // D204 (G3-94): the ignition itself toggles an attached cockpit and brings a detached one to the front.
         composition.dock.pressIgnition = { [weak self] point in self?.pressIgnition(at: point) }
@@ -381,9 +389,8 @@ struct StatusNoticePresentation {
     private func activateMember(_ id: String) {
         guard !terminating, !lifecyclePaused,
               composition.presentedContent.snapshot.inputs.contains(where: { $0.id == id }) else { return }
-        _ = composition.dock.sweepRefresh(id)
-        // G3-98: a repeated click while this member's refresh runs keeps its number hidden for that result.
         guard !memberRefreshInFlight.contains(id) else { return }
+        _ = composition.dock.sweepRefresh(id)
         var handedOff = false
         defer { if !handedOff { composition.dock.resolveRefreshReadout(id) } }
         guard let member = composition.accountMembers.members.first(where: { $0.id == id && $0.isStable }),
@@ -397,11 +404,16 @@ struct StatusNoticePresentation {
         }
         unavailableMemberRefreshes.remove(id)
         memberRefreshInFlight.insert(id)
+        currentCockpitPage?()?.updateMemberRefreshInFlight(true)
         handedOff = true
         Task { @MainActor [weak self, weak adapter] in
             guard let self else { return }
             var landed = true
-            defer { self.memberRefreshInFlight.remove(id); if !landed { self.composition.dock.resolveRefreshReadout(id) } }
+            defer {
+                self.memberRefreshInFlight.remove(id)
+                self.currentCockpitPage?()?.updateMemberRefreshInFlight(!self.memberRefreshInFlight.isEmpty)
+                if !landed { self.composition.dock.resolveRefreshReadout(id) }
+            }
             guard let adapter, !self.terminating, !self.lifecyclePaused,
                   self.composition.client.isCurrent(delivery),
                   self.composition.presentedContent.snapshot.inputs.contains(where: { $0.id == id }),
@@ -425,16 +437,38 @@ struct StatusNoticePresentation {
         try await foundationStore.updateCore(value, expectedRevision: expectedRevision)
     }
     var currentSettingsContext: SettingsPageContext { settings.editor.context }
+    /// Checks drive the app's own Settings coordinator (the one the Dock catalogue reports to).
+    var settingsCoordinatorForChecks: SettingsApplicationCoordinator { settings }
     public func presentSettings(paneID: String? = nil) async { await settingsHost.present(paneID: paneID) }
-    /// G3-46: a menu bar full enough to hide the icon (G3-22) leaves no icon to open under. Then there is
-    /// no anchor, and the cockpit opens at the top-right of the screen below the menu bar.
+    /// G3-46: a squeezed status item has no visible icon anchor. The cockpit uses the notch edge
+    /// on the status item's display for that fallback (D378).
+    /// Build 5 (owner 11-25): resolved by `StatusItemAnchor` from the button window's rect, accepted only once the menu
+    /// bar has placed it, and the click that opened the cockpit, so a parking frame or another display's copy of the
+    /// item never becomes the anchor.
     var cockpitAnchor: CGRect? {
-        guard !statusItemHidden, let status, status.isVisible, let button = status.button, let window = button.window,
-              window.isVisible else { return nil }
-        let rect = window.convertToScreen(button.convert(button.bounds, to: nil))
-        guard NSScreen.screens.contains(where: { $0.frame.intersects(rect) }) else { return nil }
-        return rect
+        guard !statusItemHidden, let status, status.isVisible, let button = status.button else { return nil }
+        let window = button.window.flatMap { window in
+            window.isVisible ? window.convertToScreen(button.convert(button.bounds, to: nil)) : nil
+        }
+        return StatusItemAnchor.resolve(window: window, click: statusClickAnchor, itemWidth: button.bounds.width,
+                                        displays: statusDisplays(), menuHeight: NSStatusBar.system.thickness)
     }
+    /// The status item's display even when the item is squeezed out: the clicked copy's display while that click is
+    /// current, else the button window's.
+    var cockpitStatusScreen: CGRect? {
+        // macrev2-1251-1: the clicked display does not depend on the item's width.
+        if let display = StatusItemAnchor.clickedDisplay(statusClickAnchor, displays: statusDisplays(), menuHeight: NSStatusBar.system.thickness) {
+            return display.frame
+        }
+        return status?.button?.window?.screen?.frame
+    }
+    /// The press on the status item that opened the cockpit; nil for every other entry and after the cockpit closes.
+    /// A press becomes this only on its release over the item (`statusPress` holds it until then, so an aborted press
+    /// never moves the anchor).
+    private(set) var statusClickAnchor: StatusItemAnchor?
+    private(set) var statusPress: StatusItemAnchor?
+    var statusDisplays: @MainActor () -> [StatusItemAnchor.Display] = { StatusItemAnchor.Display.system() }
+
     /// Build 14c (G3-79): the screen point the latest open came from (the widget's ignition click). Nil for the menu
     /// bar icon, the status menu and shortcuts. Only a detached open uses it; attached, the cockpit always opens under
     /// the menu bar icon's display (G3-128).
@@ -443,24 +477,31 @@ struct StatusNoticePresentation {
     /// `openPoint` is the click that opened it elsewhere (the widget's ignition): a detached cockpit with no remembered
     /// place opens on that display; an attached one still opens under the icon (G3-128).
     public func showConsole(fromStatusItem: Bool = false, openPoint: CGPoint? = nil) {
+        // Only the status item's own click knows which copy of the item was pressed.
+        if !fromStatusItem { statusClickAnchor = nil }
+        openConsole(rackEntrance: fromStatusItem, openPoint: fromStatusItem ? nil : openPoint)
+    }
+
+    private func openConsole(rackEntrance: Bool, openPoint: CGPoint?) {
         guard cockpitEntryEnabled, !terminating else { return }
         if lifecyclePaused {
             // An OS pause (sleep, lock, displays off) keeps refusing; only the launch keeps the click.
             guard inLaunchPause else { return }
-            launchOpen = (fromStatusItem, fromStatusItem ? nil : openPoint)
+            launchOpen = (rackEntrance, openPoint)
             refreshStatusTooltip()
             return
         }
         // Opened before the lifecycle started: its launch pause hides the console, so the ready reopens it.
-        if !lifecycleEverReady { launchOpen = (fromStatusItem, fromStatusItem ? nil : openPoint) }
-        cockpitOpenPoint = fromStatusItem ? nil : openPoint
+        if !lifecycleEverReady { launchOpen = (rackEntrance, openPoint) }
+        cockpitOpenPoint = openPoint
         composition.dock.acknowledgeCockpitOpening()
         if console == nil {
             console = makeConsole?(composition) ?? EngineRowsConsole(composition: composition)
             console?.onShowingChanged = { [weak self] in self?.cockpitPresentationChanged() }
         }
         if let value = composition.latestSettings { console?.applySettings(value) }
-        console?.show(fromStatusItem: fromStatusItem)
+        console?.show(fromStatusItem: rackEntrance && console?.isDetached != true)
+        currentCockpitPage?()?.updateMemberRefreshInFlight(!memberRefreshInFlight.isEmpty)
         refreshStatusTooltip()
     }
     /// D88: the cockpit opened, closed, detached or was put back: the icon highlight and the one-time
@@ -469,6 +510,9 @@ struct StatusNoticePresentation {
         // The user closed a cockpit opened before the lifecycle started: the ready does not bring it back. A hide by
         // the launch pause itself runs while paused and keeps the open.
         if console?.isShowing != true, !lifecyclePaused { launchOpen = nil }
+        // A closed cockpit forgets the click; the next open reads the item again.
+        if console?.isShowing != true, launchOpen == nil { statusClickAnchor = nil }
+        currentCockpitPage?()?.updateMemberRefreshInFlight(!memberRefreshInFlight.isEmpty)
         refreshStatusTooltip()
         dockHelp?.refresh()
     }
@@ -481,13 +525,14 @@ struct StatusNoticePresentation {
     func pressIgnition(at point: CGPoint) {
         guard cockpitEntryEnabled, !terminating, !lifecyclePaused || inLaunchPause else { return }
         if let console, console.isShowing, !console.isDetached { console.requestClose(); refreshStatusTooltip(); return }
-        showConsole(openPoint: point)
+        statusClickAnchor = nil
+        openConsole(rackEntrance: true, openPoint: point)
     }
     /// G3-40: the status icon toggles the cockpit where it is, attached or detached. Every other
     /// entry (menu item, shortcut, reopening the app) only ever opens; the ignition follows D204 (`pressIgnition`).
     func toggleConsole() {
         // A second click during launch takes the kept open back, like closing an open cockpit.
-        if launchOpen != nil, lifecyclePaused { launchOpen = nil; refreshStatusTooltip(); return }
+        if launchOpen != nil, lifecyclePaused { launchOpen = nil; statusClickAnchor = nil; refreshStatusTooltip(); return }
         if let console, console.isShowing { console.requestClose(); refreshStatusTooltip() } else { showConsole(fromStatusItem: true) }
     }
     /// OS accessibility changes are presentation facts, never saved user choices.
@@ -544,6 +589,9 @@ struct StatusNoticePresentation {
             let vendor = self.settings.editor.context.subscriptions.first { $0.id == id }?.vendor
             if self.scopeConsentEntry.controller.needsKeychainAccess, vendor == nil || vendor == "claude" {
                 Task { await self.scopeConsentEntry.controller.allowKeychain() }
+            } else if let vendor, self.scopeConsentEntry.controller.needsKeychainAccess(tool: vendor), vendor != "claude" {
+                // D380: ZCode's Keychain card asks for its own Keychain choice the same way.
+                Task { await self.scopeConsentEntry.controller.allowKeychain(tool: vendor) }
             } else {
                 Task { await self.composition.refresh() }
             }
@@ -659,11 +707,18 @@ struct StatusNoticePresentation {
                         lockEvents: NotificationCenter = DistributedNotificationCenter.default(),
                         displayIDs: @escaping @MainActor () -> Set<UInt32> = { SystemEvents.currentDisplayIDs() },
                         onConsole: @escaping @MainActor () -> Bool? = { SystemEvents.currentConsoleState() },
-                        displaysAsleep: @escaping @MainActor (Set<UInt32>) -> Bool = { SystemEvents.allDisplaysAsleep($0) }) {
+                        displaysAsleep: @escaping @MainActor (Set<UInt32>) -> Bool = { SystemEvents.allDisplaysAsleep($0) },
+                        screenLocked: (@MainActor () -> Bool?)? = nil) {
         guard !terminating, lifecycleController == nil else { return }
+        // Review 11-24 macrevb-1215-1/-5: every active pre-lifecycle reason crosses the handoff in the same main-actor turn
+        // that ends the watcher, so no edge falls between the two. Edge-only reasons (system sleep, lock) are carried;
+        // queryable ones (no display, inactive session, display sleep) are re-read by the lifecycle's seeds from the same
+        // queries the watcher used. An unknown lock stays open (fail open).
+        let carried = earlyWindowActive ? earlyPauseReasons.intersection(SystemEvents.edgeOnlyReasons) : []
+        endEarlyStartWindow()
         lifecyclePaused = true
         let controller = EngineLifecycleController(composition: composition, workspace: workspace, local: local,
-            lockEvents: lockEvents, displayIDs: displayIDs, onConsole: onConsole, displaysAsleep: displaysAsleep,
+            lockEvents: lockEvents, displayIDs: displayIDs, onConsole: onConsole, displaysAsleep: displaysAsleep, screenLocked: screenLocked, carried: carried,
             onPause: { [weak self] in self?.withdrawForLifecycle() },
             onReady: { [weak self] in
                 guard let self, !self.terminating else { return }
@@ -672,7 +727,7 @@ struct StatusNoticePresentation {
                 self.allowDockPresentation(); self.dockHelp?.resume(); self.renderMenu()
                 if let open = self.launchOpen {
                     self.launchOpen = nil
-                    if self.console?.isShowing != true, !self.setupActive { self.showConsole(fromStatusItem: open.fromStatusItem, openPoint: open.openPoint) }
+                    if self.console?.isShowing != true, !self.setupActive { self.openConsole(rackEntrance: open.rackEntrance, openPoint: open.openPoint) }
                     self.refreshStatusTooltip()
                 }
                 Task { [weak self] in await self?.restoreFirstRunIfNeeded() }
@@ -710,12 +765,15 @@ struct StatusNoticePresentation {
     private func withdrawForLifecycle() {
         guard !terminating else { return }
         lifecyclePaused = true
+        if !dockPresentationGateOpen { launchOpen = nil }
         // Scrub before Dock suspension: its callbacks may synchronously rebuild the status menu.
         if let liveStatusMenu { LivePrivateMenus.scrub(liveStatusMenu) }
         statusHelpRequestID = nil
         spotlight.finish(.withdrawn)
         dockHelp?.suspend()
-        composition.suspendDeadlines(); composition.dock.pauseForLifecycle(); console?.hide(); settingsHost.suspend()
+        composition.suspendDeadlines(); composition.dock.pauseForLifecycle(); console?.hide()
+        // Review 11-24 #10: an engine failure or retry with the OS gate open leaves Settings open; an OS pause closes it.
+        if !dockPresentationGateOpen { settingsHost.suspend() }
         // Owner 11-12: the guide window shown at launch stays through the reader's start, a failed start and a retry.
         if !(setupActive && firstRunFlow?.isPresentingSetup == true) { firstRunFlow?.suspend() }
         // A retry or engine failure can withdraw rows while the OS gate remains open.
@@ -819,13 +877,96 @@ struct StatusNoticePresentation {
     func reopenSetup() async { await firstRunFlow?.reopenSetup() }
     /// The same restore used by the real launch; it never grants access itself.
     public func restoreFirstRunIfNeeded() async { await firstRunFlow?.restoreFirstRunIfNeeded() }
+    /// v1 full review 11-24 #4: the OS pause reasons at the start of the pre-lifecycle window (console, displays, display
+    /// sleep; the lock has no documented query and starts unknown = open). Test seam; the default reads the live session.
+    var earlyPauseSeed: @MainActor () -> Set<LifecycleCoordinator.PauseReason> = { SystemEvents.pauseReasonsNow() }
+    /// Review 11-24 macrevb-1215-2: the display set read on a screen-parameter change before the lifecycle (test seam).
+    var earlyDisplayIDs: @MainActor () -> Set<UInt32> = { SystemEvents.currentDisplayIDs() }
+    /// Review 11-24 #4: the centres watched between launch and the lifecycle (test seams).
+    var earlyPauseWorkspace: NotificationCenter = NSWorkspace.shared.notificationCenter
+    var earlyPauseLockEvents: NotificationCenter = DistributedNotificationCenter.default()
+    var earlyPauseLocal: NotificationCenter = .default
+    private var earlyStartRequested = false, earlyStopped = false, earlyWindowOpened = false
+    private var earlyStop: Task<Void, Never>?
+    private var earlyPauseTokens: [(NotificationCenter, NSObjectProtocol)] = []
+    /// The pre-lifecycle OS pause reasons: the lifecycle's reason set (same notifications, same seeds) before it exists.
+    private(set) var earlyPauseReasons: Set<LifecycleCoordinator.PauseReason> = []
+    private var earlyWindowActive: Bool { !earlyPauseTokens.isEmpty }
+    /// Review 11-24 macrevb-1215-3: the OS gate is closed before the lifecycle exists.
+    var earlyOSPaused: Bool { earlyWindowActive && lifecycleController == nil && !earlyPauseReasons.isEmpty }
     /// WP-17: starts the engine client for a profile whose setup is done, without waiting for it.
+    /// Review 11-24 #4: only while the OS gate would be open. Any pause reason the lifecycle knows (sleep, display sleep,
+    /// lock, inactive session, no display) before the lifecycle takes over stops the early session and closes Settings;
+    /// the lifecycle's seeded gate then owns every later start.
     func startEngineAlongsidePreparation() async {
-        guard !terminating, lifecycleController == nil,
+        beginEarlyPauseWindow()
+        guard !terminating, lifecycleController == nil, !earlyStartRequested,
               await foundationStore.snapshot().preferences.onboarding.completed else { return }
+        guard !terminating, lifecycleController == nil, !earlyStartRequested else { return }
+        guard !earlyOSPaused else { LaunchTimingLog.shared.mark("engine-early-start-skipped"); return }
         LaunchTimingLog.shared.mark("engine-early-start")
+        earlyStartRequested = true
         let client = composition.client
-        Task { _ = try? await client.start() }
+        Task { @MainActor [weak self] in
+            guard let self, !self.earlyStopped, !self.earlyOSPaused, self.lifecycleController == nil else { return }
+            _ = try? await client.start()
+        }
+    }
+    /// Opens the pre-lifecycle window once per launch: seeds the reasons and watches the lifecycle's own notifications.
+    func beginEarlyPauseWindow() {
+        guard !terminating, lifecycleController == nil, !earlyWindowOpened else { return }
+        earlyWindowOpened = true
+        earlyPauseReasons = earlyPauseSeed()
+        for (pause, resume, reason) in SystemEvents.workspacePausePairs {
+            observeEarly(earlyPauseWorkspace, pause) { [weak self] in self?.setEarlyPause(reason, blocked: true) }
+            observeEarly(earlyPauseWorkspace, resume) { [weak self] in self?.setEarlyPause(reason, blocked: false) }
+        }
+        observeEarly(earlyPauseLockEvents, SystemEvents.screenLockedNotification) { [weak self] in
+            self?.setEarlyPause(.screenLocked, blocked: true)
+        }
+        observeEarly(earlyPauseLockEvents, SystemEvents.screenUnlockedNotification) { [weak self] in
+            self?.setEarlyPause(.screenLocked, blocked: false)
+        }
+        observeEarly(earlyPauseLocal, NSApplication.didChangeScreenParametersNotification) { [weak self] in
+            guard let self else { return }
+            self.setEarlyPause(.noDisplay, blocked: self.earlyDisplayIDs().isEmpty)
+        }
+        if !earlyPauseReasons.isEmpty { settingsHost.suspend(); renderMenu() }
+    }
+    private func observeEarly(_ center: NotificationCenter, _ name: Notification.Name, _ action: @escaping @MainActor () -> Void) {
+        let token = center.addObserver(forName: name, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { action() }
+        }
+        earlyPauseTokens.append((center, token))
+    }
+    private func setEarlyPause(_ reason: LifecycleCoordinator.PauseReason, blocked: Bool) {
+        guard !terminating, earlyWindowActive, lifecycleController == nil else { return }
+        let wasPaused = !earlyPauseReasons.isEmpty
+        if blocked { earlyPauseReasons.insert(reason) } else { earlyPauseReasons.remove(reason) }
+        guard earlyPauseReasons.isEmpty == wasPaused else { return }
+        if wasPaused { renderMenu(); return }
+        // Closing: stop the early helper, retire admitted and in-flight Settings requests, close an open window.
+        stopEarlyEngine()
+        settingsHost.suspend()
+        renderMenu()
+    }
+    private func stopEarlyEngine() {
+        guard earlyStartRequested, !earlyStopped, lifecycleController == nil else { return }
+        earlyStopped = true
+        DiagnosticsLog.shared.info("lifecycle", "early engine stopped by an OS pause before the lifecycle")
+        let client = composition.client
+        earlyStop = Task { await client.stop() }
+    }
+    private func endEarlyStartWindow() {
+        for (center, token) in earlyPauseTokens { center.removeObserver(token) }
+        earlyPauseTokens.removeAll()
+        earlyPauseReasons.removeAll()
+    }
+    /// The launch waits for an early stop to finish before the lifecycle starts the engine again. The watcher stays on
+    /// while it waits; `startLifecycle` ends it in the same turn it seeds the lifecycle.
+    func finishEarlyStartWindow() async {
+        var awaited: Task<Void, Never>?
+        while let stop = earlyStop, stop != awaited { awaited = stop; await stop.value }
     }
     public func applicationDidFinishLaunching(_ notification: Notification) {
         LaunchTimingLog.shared.mark("did-finish-launching")
@@ -877,6 +1018,8 @@ struct StatusNoticePresentation {
             LaunchTimingLog.shared.mark("prepared")
             // Owner 11-12 (E1): the guide window comes first, from the local mark; the reader starts behind it.
             await beginSetupAtLaunch()
+            guard !terminating else { return }
+            await finishEarlyStartWindow()
             guard !terminating else { return }
             startLifecycle(); renderMenu()
             LaunchTimingLog.shared.mark("lifecycle-started")
@@ -1011,6 +1154,8 @@ struct StatusNoticePresentation {
     func displayParametersChanged() {
         guard !terminating else { return }
         forceStatusRewrite = true; displayEpoch += 1
+        // The item moves with the displays; a click on the old arrangement no longer names it.
+        statusClickAnchor = nil
         displayRecheck.displaysChanged()
     }
     /// Shows the one-line notice in the widget menu and Settings while the item is covered; clears it when visible.
@@ -1078,14 +1223,25 @@ struct StatusNoticePresentation {
         if event.type == .leftMouseUp {
             guard statusPressPending else { return false }
             statusPressPending = false
+            let press = statusPress; statusPress = nil
             if onStatusItem {
-                if setupActive { Task { await reopenSetup() } } else { toggleConsole() }
+                if setupActive { Task { await reopenSetup() } } else {
+                    // The completed click is the one that names the item; toggleConsole forgets it again on a close.
+                    if let press { statusClickAnchor = press }
+                    toggleConsole()
+                }
             }
             return true
         }
         guard event.type == .leftMouseDown, onStatusItem, event.modifierFlags.isDisjoint(with: [.control, .command]),
               !terminating, setupActive || (cockpitEntryEnabled && (!lifecyclePaused || inLaunchPause)) else { return false }
         statusPressPending = true
+        statusPress = status?.button.flatMap { button in
+            StatusItemAnchor.eventScreenPoint(event).flatMap { point in
+                StatusItemAnchor.click(pointer: point, local: button.convert(event.locationInWindow, from: nil),
+                                       buttonBounds: button.bounds, flipped: button.isFlipped, displays: statusDisplays())
+            }
+        }
         return true
     }
 
@@ -1101,7 +1257,7 @@ struct StatusNoticePresentation {
         guard let status else { return }
         self.status = nil
         if let statusClickMonitor { NSEvent.removeMonitor(statusClickMonitor) }
-        statusClickMonitor = nil; statusPressPending = false
+        statusClickMonitor = nil; statusPressPending = false; statusClickAnchor = nil; statusPress = nil
         noticeIndicator.removeFromSuperview(); usedUpDot.removeFromSuperview()
         status.menu = nil
         NSStatusBar.system.removeStatusItem(status)
@@ -1161,7 +1317,7 @@ struct StatusNoticePresentation {
         // HIG: "Quit AppName" and "About AppName" in a menu bar extra's menu.
         let quitTitle = EngineRowsText.quit.value(language)
         applicationSettingsItem.title = settingsTitle
-        applicationSettingsItem.isEnabled = available && !terminating
+        applicationSettingsItem.isEnabled = settingsAvailable
         applicationSettingsItem.keyEquivalent = applicationSettingsItem.isEnabled ? "," : ""
         applicationQuitItem.title = quitTitle
         applicationCloseItem.title = EngineRowsText.closeWindow.value(language)
@@ -1240,7 +1396,7 @@ struct StatusNoticePresentation {
             .init(title: EngineRowsText.resetPosition.value(language), accessibilityID: "status.resetPosition",
                   action: available ? { [weak self] in self?.resetPositions() } : nil),
             .init(title: nil),
-            .init(title: settingsTitle, keyEquivalent: available ? "," : "", action: available ? { [weak self] in self?.settingsHost.action() } : nil),
+            .init(title: settingsTitle, keyEquivalent: settingsAvailable ? "," : "", action: settingsAvailable ? { [weak self] in self?.settingsHost.action() } : nil),
             .init(title: label("Help…", "说明…"), accessibilityID: "status.help",
                   action: available ? { [weak self] in self?.showHelp(fromStatusMenu: true) } : nil),
             .init(title: nil),
@@ -1584,12 +1740,20 @@ struct StatusNoticePresentation {
         terminating = true
         retireApplicationSurfaces()
         Task {
-            if lifecycleController != nil { await stopLifecycle(); composition.dock.close() }
-            else { await composition.stop() }
-            await dockHelp?.dispose(); dockHelp = nil
+            await prepareForTermination(surfacesRetired: true)
             sender.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater
+    }
+    /// Everything quit does before the process may exit (checks call it directly and then reopen the same store).
+    func prepareForTermination(surfacesRetired: Bool = false) async {
+        terminating = true
+        if !surfacesRetired { retireApplicationSurfaces() }
+        // A hidden station already shown as hidden on its first account stays bound to that account across quit.
+        await settings.editor.finishAnonymousHideTakeover()
+        if lifecycleController != nil { await stopLifecycle(); composition.dock.close() }
+        else { await composition.stop() }
+        await dockHelp?.dispose(); dockHelp = nil
     }
     #if MODELPLAN_DOCK_NATIVE_JOURNEY
     var nativeJourneyStatusVisible: Bool {
@@ -1602,6 +1766,7 @@ struct StatusNoticePresentation {
         terminating = true
         if let status { NSStatusBar.system.removeStatusItem(status); self.status = nil }
         retireApplicationSurfaces()
+        await settings.editor.finishAnonymousHideTakeover()
         await stopLifecycle()
         await composition.stop()
         await dockHelp?.dispose()

@@ -6,12 +6,14 @@ import {renderVisualDeck,visualFixture} from '../visual-fixture.mjs';
 for(const locale of ['en','zh-CN'])test(`visual fixture populates the synthetic last-seen strip and test-only faders (${locale})`,async({page})=>{
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
- expect(await receive(send('load',{appearance:{...appearance,locale},shell}))).toBe(true);
+ // This fixture supplies today's readings, not seven-day history.
+ expect(await receive(send('load',{appearance:{...appearance,locale},shell:{...shell,range:'today'}}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('display',{data:sample()}))).toBe(true);
  // sample() is a client without details; the normal entry's faders are in publication-faders.spec.
  await expect(page.locator('.fd-ch.empty')).toHaveCount(3);await expect(page.locator('.ck-tape')).toHaveAttribute('data-sessions-available','false');
  const fixture=visualFixture();expect(await receive(send('display',{data:fixture.data}))).toBe(true);
+ await expect(page.locator('[data-range-key="today"]')).toHaveAttribute('aria-checked','true');
  await expect(page.locator('.ck-tape .t-observed')).toHaveCount(3);await expect(page.locator('.fd-ch.empty')).toHaveCount(3);
  const columns=page.locator('.eng-cols .ec[data-col]');await expect(columns).toHaveCount(4);
  for(const column of await columns.all()){
@@ -20,7 +22,7 @@ for(const locale of ['en','zh-CN'])test(`visual fixture populates the synthetic 
   await expect(column.locator('.qrow-t .qtokens')).not.toBeEmpty();
   await expect(column.locator('.qrow-t .qaverage')).not.toBeEmpty();
  }
- await expect(page.locator('.lb-other')).toHaveText(locale==='en'?'Other':'其他');
+ await expect(page.locator('.lb-other')).toHaveText(locale==='en'?'Extra':'额外');
  await renderVisualDeck(page,fixture,locale);await expect(page.locator('.fd-ch:not(.empty)')).toHaveCount(3);
  await expect(page.locator('.fd-strip').nth(0)).toContainText('Sol 6.1');await expect(page.locator('.fd-strip').nth(1)).toContainText('Opus 5.5');await expect(page.locator('.fd-strip').nth(2)).toContainText('GLM-5.3');
 });

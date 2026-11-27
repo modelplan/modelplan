@@ -15,7 +15,11 @@ import (
 // ZaiConfigSource is a CLIJIT-authorised selected profile, never an automatic
 // search list. Paths stay transient. No project-level configuration is scanned.
 // OpenCodeProvider must be the active provider; a model name alone proves nothing.
-type ZaiConfigSource struct{ Tool, SettingsPath, AuthPath, OpenCodeProvider, Region string }
+type ZaiConfigSource struct {
+	Tool, SettingsPath, AuthPath, OpenCodeProvider, Region string
+	// Keychain (D380) is set only on ZCode's sign-in route; in memory, never serialized.
+	Keychain *ZCodeKeychain `json:"-"`
+}
 type zaiConfigSourceKey struct{}
 
 // RefreshConfiguredZai uses the existing native Z.ai reader after both consent
@@ -93,6 +97,7 @@ func zaiConfiguredKey(source ZaiConfigSource) (region, key, state string) {
 	region, key, state, _ = zaiConfiguredKeyCode(source)
 	return
 }
+
 // relayCode: a base URL that is set but is not one of the official Coding Plan hosts is a relay
 // or another vendor's address; its quota cannot be read and its key is never sent anywhere.
 func relayCode(base string) string {
@@ -214,6 +219,8 @@ func fetchZaiConfigKey(ctx context.Context, c *http.Client, now time.Time) (code
 				state = "not_detected"
 			case "unsupported_login", "region_refused", "no_plan":
 				state = "not_supported_yet"
+			case "keychain_unset", "keychain_denied", "keychain_canceled", "keychain_confirmation_needed", "keychain_unavailable":
+				state = "keychain"
 			}
 			e.Error = zaiConfigNext(state)
 		}

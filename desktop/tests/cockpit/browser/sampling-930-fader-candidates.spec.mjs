@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Post-merge sampling #930 (2026-11-14), with Settings' "show all models" off (D123):
 // (1) a model used earlier this week is "in use" through the recorded sessions (details.recentSessions), not only the
-//     live ones, so it stays (D135) and leads the set;
+//     live ones, so it leads the set (D123); D391 (owner 11-22): the recorded session counts only when a ticked
+//     subscription runs its tool — one of no subscription keeps no model (g3-178 covers the exclusion);
 // (2) a stale reading does not remove a subscription's published models: the plan is still the user's.
 // The built page through its normal bridge; synthetic data only.
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
@@ -32,13 +33,14 @@ const names=page=>page.locator('.fd-ch:not(.empty) .fd-strip').evaluateAll(list=
 const allNames=async page=>{const out=[];const lcd=page.locator('.bank-lcd');const total=await lcd.count()?Number((await lcd.textContent()).match(/\/(\d+)/)[1]):1;
  for(let i=0;i<total;i++){out.push(...await names(page));if(i<total-1)await page.locator('[data-bank="1"]').click();}return out;};
 
-test('sampling-930 a model of no own plan recorded two days ago (no live session) stays and leads the in-use order',async({page})=>{
- const data=fixture();
- data.details.recentSessions=[{sessionRef:'00000000000000b1',source:'grok',subscriptionRef:null,model:'grok-a',effort:'medium',projectLabel:null,lastObservedAt:new Date(Date.now()-2*86_400_000).toISOString()}];
- await open(page,data);
- const all=await allNames(page);
- // No subscription runs xAI's models: only the recorded session keeps grok-a (D135), and it leads the set (D123).
- expect(all[0]).toBe('Synthetic grok-a');
+test('sampling-930 a model recorded two days ago by a ticked tool (no live session) leads the in-use order',async({page})=>{
+	const data=fixture();
+	data.details.recentSessions=[{sessionRef:'00000000000000b1',source:'claude',subscriptionRef:null,model:'claude-b',effort:'medium',projectLabel:null,lastObservedAt:new Date(Date.now()-2*86_400_000).toISOString()}];
+	await open(page,data);
+	const all=await allNames(page);
+	// The claude subscription runs the tool, so its recorded session is admitted (D391): claude-b is in use through the
+	// recorded session alone (D135) and leads the set (D123), ahead of the publication's starred recommendations.
+	expect(all[0]).toBe('Synthetic claude-b');
 });
 
 test('sampling-930 a stale reading keeps the subscription\'s published models',async({page})=>{

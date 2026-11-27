@@ -59,6 +59,8 @@ type Server struct {
 	backend                                         Backend
 	mu                                              sync.Mutex
 	refreshMu                                       sync.Mutex
+	grantsMu                                        sync.Mutex // guards grants
+	grants                                          int        // consent changes in flight; an ending session waits for them
 	initialized, initializing, subscribed, stopping bool
 	rowsPending                                     bool
 	session                                         string
@@ -118,6 +120,7 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.WriteCloser
 	s.started = time.Now()
 	defer s.stop()
 	s.out = newOutbound(s.ctx, s.stop, out, s.config.WriteTimeout, s.mayEmit)
+	s.out.commit = s.commitPrivate
 	writerDone := make(chan struct{})
 	go s.out.run(writerDone)
 	closerDone := make(chan struct{})
@@ -160,6 +163,7 @@ func (s *Server) Serve(ctx context.Context, in io.ReadCloser, out io.WriteCloser
 			<-closerDone
 			<-writerDone
 			<-readDone
+			s.awaitGrants()
 			return nil
 		case frame, ok := <-frames:
 			if !ok {
@@ -200,6 +204,26 @@ func (s *Server) cancelAll() {
 		delete(s.credentials, key)
 	}
 }
+
+// grantDrain bounds how long an ending session waits for consent changes in flight. A consent
+// writer waits up to a second for the publication lock, so a Deny that was waiting behind a
+// frame write still becomes durable before the process exits (#1262 macrevb-1262-1).
+const grantDrain = 3 * time.Second
+
+// awaitGrants returns once no consent change is in flight, or after grantDrain.
+func (s *Server) awaitGrants() {
+	deadline := time.Now().Add(grantDrain)
+	for {
+		s.grantsMu.Lock()
+		n := s.grants
+		s.grantsMu.Unlock()
+		if n == 0 || time.Now().After(deadline) {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 func (s *Server) isCurrent(stamp Stamp) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -217,6 +241,22 @@ func (s *Server) mayEmit(stamp Stamp) error {
 	}
 	if !s.isCurrent(stamp) {
 		return ProtocolError{wire.CodeConsentChanged}
+	}
+	return nil
+}
+
+// commitPrivate writes a whole private frame while holding the shared publication lock,
+// after a final check of the authoritative consent fence (review 11-24 #1, sampling 11-25).
+// An error before write runs means no byte of the frame was written.
+func (s *Server) commitPrivate(stamp Stamp, write func() error) error {
+	if !s.isCurrent(stamp) {
+		return ProtocolError{wire.CodeConsentChanged}
+	}
+	ctx, cancel := context.WithTimeout(s.ctx, s.config.WriteTimeout)
+	defer cancel()
+	if err := s.backend.Publish(ctx, stamp, write); err != nil {
+		s.scheduleRefresh()
+		return err
 	}
 	return nil
 }
@@ -303,7 +343,13 @@ func (s *Server) dispatch(r wire.Request) {
 		control := len(p.Deny) > 0 || len(p.Forget) > 0
 		s.start(r, false, control, false, func(ctx context.Context) (Reply, error) {
 			defer s.holdCredentialForGrant(p)()
+			s.grantsMu.Lock()
+			s.grants++
+			s.grantsMu.Unlock()
 			result, err := s.backend.Grant(ctx, p)
+			s.grantsMu.Lock()
+			s.grants--
+			s.grantsMu.Unlock()
 			if err != nil && !result.Receipt.Committed {
 				stamp := result.Stamp
 				if stamp.Epoch == "" {
@@ -534,6 +580,7 @@ func (s *Server) startPolicy(r wire.Request, query, control, data, private bool,
 				}
 				if reply.subscribe {
 					s.subscribed = true
+					s.armAccountTodayDeadline(s.view)
 					reply.Scopes = s.view.Scopes
 					reply.Data = wire.RowsSnapshot{Sequence: s.sequence, Projection: wire.ProjectWithEvents(s.view.Projection, s.view.ResetEvents, s.clientCapabilities[CapabilityResetEvents], s.clientCapabilities[CapabilityWindowSources], s.clientCapabilities[CapabilityMemberRefresh], s.clientCapabilities[CapabilityResetEventLinksV1], s.clientCapabilities[CapabilityAccountTodayV1], s.clientCapabilities[CapabilityCockpitForecastV1])}
 				}
@@ -672,6 +719,11 @@ func (s *Server) refresh(ctx context.Context) error {
 	return s.readView(ctx, false)
 }
 
+// RefreshAfterChange runs the refresh the serve loop starts after a backend change signal: the
+// view token capture, then the backend Get, with no reuse. The idle-work gates (D397) call it
+// in place of the loop so every cost of a change-driven refresh is measured.
+func (s *Server) RefreshAfterChange(ctx context.Context) error { return s.refresh(ctx) }
+
 // ViewReuse is a backend that can tell whether a view it built is still what Get would build
 // now (WP-17). ViewToken is taken just before a Get; ViewCurrent(token) is true only while
 // nothing that view depends on has changed since.
@@ -696,6 +748,18 @@ func (s *Server) refreshForRequest(ctx context.Context) error {
 	defer s.refreshMu.Unlock()
 	return s.readView(ctx, true)
 }
+
+// armAccountTodayDeadline follows the subscriber projection accepted for
+// delivery. Called with s.mu held so an earlier publish cannot arm a later view.
+func (s *Server) armAccountTodayDeadline(view View) {
+	if !s.clientCapabilities[CapabilityAccountTodayV1] {
+		return
+	}
+	if backend, ok := s.backend.(interface{ armAccountTodayDeadline(time.Time) }); ok {
+		backend.armAccountTodayDeadline(view.accountTodayDeadline)
+	}
+}
+
 func (s *Server) readView(ctx context.Context, reuse bool) error {
 	var v View
 	var token any
@@ -731,8 +795,14 @@ func (s *Server) readView(ctx context.Context, reuse bool) error {
 	if !reused {
 		s.viewToken = token
 	}
+	// Scheduling metadata does not constitute a new wire projection.
+	old.accountTodayDeadline = v.accountTodayDeadline
 	changed := !reflect.DeepEqual(old, v)
 	if !changed && !s.rowsPending {
+		s.view.accountTodayDeadline = v.accountTodayDeadline
+		if s.subscribed {
+			s.armAccountTodayDeadline(v)
+		}
 		s.mu.Unlock()
 		return nil
 	}
@@ -767,6 +837,7 @@ func (s *Server) readView(ctx context.Context, reuse bool) error {
 			s.mu.Lock()
 			if s.sequence == seq {
 				s.rowsPending = false
+				s.armAccountTodayDeadline(v)
 			}
 			s.mu.Unlock()
 			s.out.rowsMessage(notification(session, "rows/changed", v.Stamp, v.Scopes, wire.RowsSnapshot{Sequence: seq, Projection: wire.ProjectWithEvents(v.Projection, v.ResetEvents, eventsEnabled, sourcesEnabled, membersEnabled, linksEnabled, todayEnabled, forecastEnabled)}), v.Stamp, func(error) {

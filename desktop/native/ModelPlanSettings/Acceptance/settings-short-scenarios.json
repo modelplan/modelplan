@@ -54,7 +54,7 @@
   "scenarios": [
     {
       "id": "settings.panes",
-      "revision": 2,
+      "revision": 3,
       "fixture": "m4-settings-1",
       "profile": "en-day-1x-logical",
       "evidence": "offscreen",
@@ -99,6 +99,14 @@
         {
           "action": "checkpoint",
           "checkpoint": "pane.subscriptions"
+        },
+        {
+          "action": "visitPane",
+          "pane": "plugins"
+        },
+        {
+          "action": "checkpoint",
+          "checkpoint": "pane.plugins"
         },
         {
           "action": "visitPane",
