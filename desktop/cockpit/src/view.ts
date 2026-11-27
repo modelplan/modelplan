@@ -12,13 +12,14 @@ import { renderPrototypeEngine } from './prototype-engine.js';
 import { mountPrototypeDeck } from './prototype-deck.js';
 import { paintHud,wireHud } from './prototype-hud.js';
 import { mountPrototypeTape } from './prototype-tape.js';
-import { cockpitMembers,setMemberOrder,setHiddenMembers } from './members.js';
+import { cockpitMembers,setMemberOrder,setHiddenMembers,setSeenSubscriptions } from './members.js';
 import { mountPrototypeBase } from './prototype-base.js';
-import { cautionItems,lights,readWindows } from './caution.js';
+import { cautionItems,counted,lights,readWindows,type CautionItem } from './caution.js';
 import { createCautionMemory } from './caution-ack.js';
 import {currentWindow,withoutProjectNames} from './prototype-data-adapter.js';
 import {INITIAL_RANGE,nextCockpitRange,type CockpitRange} from './range.js';
 import {mountPluginHost,pluginHostOf,type PluginReports} from './plugin-host.js';
+import {newsClock,drawnNews,newsMark,renderedMarks} from './news-clock.js';
 const element=<K extends keyof HTMLElementTagNameMap>(tag:K,text?:string,className?:string):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(className)e.className=className;return e;};
 /** Controls focusable through their own tabindex that a pointer presses (B1): buttons, radios and sliders. */
 export const POINTER_UNFOCUSED='button,a[href],input,select,textarea,[tabindex],[role="button"],[role="radio"],[role="slider"]';
@@ -39,7 +40,7 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  const requestRange=(range:CockpitRange):boolean=>{if(!active||disposed||!nativeShell)return false;action('rangeSelect',range);nativeShell={...nativeShell,range};engineRange?.();return true;};
  let engineRange:(()=>void)|null=null,applyScope:((scope:string)=>void)|null=null,refreshEngine:((now?:number)=>void)|null=null,localiseEngine:((value:Appearance['locale'],now:number)=>void)|null=null,quotaFocusIdentity:((element:HTMLElement)=>string|null)|null=null,lastData:WireCockpitData|null=null;
  let heldHistory:{history:NonNullable<WireCockpitData['history']>;at:number}|null=null;
- let lastRenderedAt=0;const retiredUnstableScopes=new Set<string>();
+ let lastRenderedAt=0,present=false;const minDeadline=(a:number|null,b:number|null)=>a===null?b:b===null?a:Math.min(a,b);const retiredUnstableScopes=new Set<string>();
  let hudSelected:string|null=null;const hudOptions=()=>({scope:nativeShell?.scope??'all',now:lastRenderedAt,selected:hudSelected,closed:nativeShell?.profile==='closed'});
  let selectedRedBelow=effectiveRedBelow(undefined);const redBelow=()=>selectedRedBelow;let showUsedPercent=false;const showUsed=()=>showUsedPercent;
  let stripSelected:string|null=null;
@@ -56,7 +57,11 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  const rangeShortcut=(event:KeyboardEvent)=>{if(!event.isTrusted||!active||disposed||!nativeShell||event.altKey||event.ctrlKey||event.metaKey||event.repeat||event.key.toLowerCase()!=='t')return;const target=event.target;if(target instanceof Element&&(target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])')))return;const next=nextCockpitRange(nativeShell.range??INITIAL_RANGE);event.preventDefault();if(requestRange(next)){deck.range(next);headerRange.set(next);}};
  window.addEventListener('keydown',rangeShortcut);
  const caution=root.querySelector<HTMLButtonElement>('[data-caution]')!;const cautions=createCautionMemory(reportAcked);const motionQuery=matchMedia('(prefers-reduced-motion: reduce)');const finishCaution=(e:AnimationEvent)=>{if(e.animationName==='cockpit-caution-blink')caution.classList.remove('flash');};const syncReduced=()=>document.body.classList.toggle('reduced',reduceMotion||motionQuery.matches);/* body.reduced is the carried prototype CSS's Reduce Motion switch: app setting or OS preference. */const motionChanged=()=>{syncReduced();if(motionQuery.matches){caution.classList.remove('flash');stop();}};caution.addEventListener('animationend',finishCaution);motionQuery.addEventListener('change',motionChanged);
- function syncCaution(data:WireCockpitData,now:number){const items=cautionItems(data,now,redBelow()),fresh=cautions.update(items,readWindows(data,now),active&&nativeShell?.profile==='open'&&!reduceMotion&&!motionQuery.matches);if(!items.some(lights))caution.classList.remove('flash');else if(fresh&&active&&nativeShell?.profile==='open'&&!reduceMotion&&!motionQuery.matches){caution.classList.remove('flash');void caution.offsetWidth;caution.classList.add('flash');}}
+ function syncCaution(data:WireCockpitData,now:number){const items=cautionItems(data,now,redBelow());lampTip(items);const fresh=cautions.update(items,readWindows(data,now),active&&nativeShell?.profile==='open'&&!reduceMotion&&!motionQuery.matches);if(!items.some(lights))caution.classList.remove('flash');else if(fresh&&active&&nativeShell?.profile==='open'&&!reduceMotion&&!motionQuery.matches){caution.classList.remove('flash');void caution.offsetWidth;caution.classList.add('flash');}}
+ // D474 §7.1: the lamp's tooltip is the worst quota condition's long sentence, then how to open the list and its count
+ // (amber and red, the reserve included); no count in the first line. Unlit: no tooltip.
+ function lampTip(items:readonly CautionItem[]){const worst=items.find(lights),n=items.filter(counted).length;
+  if(!worst){caution.removeAttribute('title');return;}caution.title=`${locale==='en'?worst.text.en:worst.text.zh}\n${ht(locale,'host.lampHint',{n})}`;}
  caution.onclick=e=>{if(!e.isTrusted||!active)return;caution.classList.remove('flash');const uncovered=plugins.dismissScreen();if(uncovered&&deck.alertsOpen())return;deck.showAlerts(deck.alertsOpen()?undefined:cautions.acknowledge());};
  const head=root.querySelector<HTMLElement>('.ck-head')!;head.style.pointerEvents='auto';
  const shutter=root.querySelector<HTMLButtonElement>('[data-shutter]')!;
@@ -85,7 +90,9 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
  const pointerKeepsFocus=(e:MouseEvent)=>{pressed=null;if(!e.isTrusted||!(e.target instanceof Element))return;const c=e.target.closest(POINTER_UNFOCUSED);if(c instanceof HTMLElement&&root.contains(c)){pressed=c;if(document.activeElement===c)c.dataset.pointerFocus='';}};
  const pointerFocusStarts=(e:FocusEvent)=>{if(pressed&&e.target===pressed)pressed.dataset.pointerFocus='';};
  const pointerPressEnds=()=>{pressed=null;};
- const pointerFocusEnds=(e:FocusEvent)=>{if(e.target instanceof HTMLElement)delete e.target.dataset.pointerFocus;};
+ // G3-153: a blur because the whole window stopped being key (the page is no longer the focused document) is not the user
+ // leaving the control: macOS refocuses it on reactivation and WebKit treats that as keyboard focus, so the mark stays.
+ const pointerFocusEnds=(e:FocusEvent)=>{if(!(e.target instanceof HTMLElement))return;if(e.relatedTarget===null&&!document.hasFocus())return;delete e.target.dataset.pointerFocus;};
  root.addEventListener('mousedown',pointerKeepsFocus,true);root.addEventListener('focusin',pointerFocusStarts,true);
  window.addEventListener('mouseup',pointerPressEnds,true);root.addEventListener('focusout',pointerFocusEnds,true);
  frame.settings.classList.add('s6-strip-key');attach.classList.add('s6-strip-key');close.classList.add('s6-strip-key');
@@ -225,7 +232,16 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
   if(!target&&path&&key!=='data-al-id'){let e:Element|null=area;for(const i of path)e=e?.children.item(i)??null;if(e instanceof HTMLElement&&e.tagName===focused.tagName&&(key?e.getAttribute(key)===keyValue:e.className===focused.className))target=e;}
   if(target)restore(target);
  }
- function refreshDeadlines(now:number){if(!lastData||disposed)return;lastRenderedAt=now;preserveFocus(()=>{refreshEngine?.(now);deck.refresh(now);tape.refresh(now);syncCaution(lastData!,now);plugins.tick(now);});}
+ // D466 (macrevb-1290-1): the news clock records a look only for news whose mark is rendered on screen in this paint (a key
+ // dot on the shown page, a reserve +1, an alert line inside the overview budget or the open alert list). Called after
+ // every render and tick, and after the user's own clicks and keys (paging, the alert list), which repaint in place.
+ function noteNews(now:number):boolean{
+  if(!lastData||disposed)return false;const marks=renderedMarks(root);
+  return newsClock.observe(drawnNews(lastData,now).filter(e=>marks.has(newsMark(e))),now,present);
+ }
+ const noteAfterInput=()=>{if(noteNews(Math.max(lastRenderedAt,Date.now())))root.dispatchEvent(new CustomEvent('cockpit-deadline'));};
+ root.addEventListener('click',noteAfterInput);window.addEventListener('keyup',noteAfterInput);
+ function refreshDeadlines(now:number){if(!lastData||disposed)return;lastRenderedAt=now;preserveFocus(()=>{refreshEngine?.(now);deck.refresh(now);tape.refresh(now);syncCaution(lastData!,now);plugins.tick(now);});noteNews(now);}
  // Recovery contract: a render is transactional. If it throws, the last rendered data is painted again (or the page
  // returns to its waiting state when there was none) and the error goes back to the bridge, which refuses the display
  // and keeps the page. Whether that repaint succeeds or fails, the whole cockpit view is
@@ -291,6 +307,8 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
     setEmpty('empty',keep);if(keep){deck.scope('all');paintRecords(data,lastRenderedAt);}return;}root.dataset.engineEmpty='false';headerRange.dim(false);frame.engine.append(engine.table);engine.fit();plugins.display(data,now);applyScope=engine.applyScope;engineRange=engine.setRange;refreshEngine=engine.refresh;localiseEngine=engine.setLocale;quotaFocusIdentity=engine.focusIdentity;deck.scope(nativeShell?.scope??'all');paintRecords(data,lastRenderedAt);paintHud(frame.hud,data,locale,hudOptions());syncCaution(data,now);help.refresh();
    if(before!==displayedState())pulse();
   },true);
+  // D466: every surface has read the clock; now record looks for what this paint actually put on screen.
+  noteNews(now);
  }
  setEmpty('waiting');
  return {
@@ -306,14 +324,16 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
   fieldClosed(){root.dispatchEvent(new CustomEvent('field-closed'));},
   selectModel(id){hudSelected=id;markPorthole(id);deck.selectModel(id);if(lastData)preserveFocus(()=>paintHud(frame.hud,lastData!,locale,hudOptions()));},
   render:renderData,
-  nextDeadline(){if(!lastData)return null;const own=nextDeadline(lastData,lastRenderedAt),plugin=plugins.nextDeadline();return own===null?plugin:plugin===null?own:Math.min(own,plugin);},
+  nextDeadline(){if(!lastData)return null;const own=minDeadline(nextDeadline(lastData,lastRenderedAt),newsClock.nextChange(drawnNews(lastData,lastRenderedAt),lastRenderedAt)),plugin=plugins.nextDeadline();return own===null?plugin:plugin===null?own:Math.min(own,plugin);},
   tick(now){refreshDeadlines(now);},
   clear(){retiredUnstableScopes.clear();caution.classList.remove('flash');lastData=null;heldHistory=null;stop();setEmpty('cleared');if(nativeShell)nativeShell={...nativeShell,scope:'all'};delete root.dataset.scope;},
   active(value,now){const was=active;active=value;plugins.setInteractive(value);root.dataset.active=String(value);if(!value)finishShutter();frame.settings.disabled=!value;shellControls();if(!value){deck.cancelPress();stop();caution.classList.remove('flash');help.hide();}else if(!was&&lastData){if(now!==undefined)lastRenderedAt=now;syncCaution(lastData,lastRenderedAt);}},
-  visible(value){plugins.setVisible(value);},
+  news(items){newsClock.host(items);if(lastData)refreshDeadlines(lastRenderedAt);},
+  seen(ids){if(setSeenSubscriptions(ids)&&lastData)renderData(lastData,lastRenderedAt);},
+  visible(value){if(present!==value)newsClock.present(value,lastRenderedAt);present=value;plugins.setVisible(value);},
   plugins(raw){return plugins.applyHostState(raw);},
   pluginData(id,data){return plugins.deliver(id,data);},
   openPluginScreen(id){return plugins.openScreen(id,true);},
-  dispose(){if(disposed)return;disposed=true;shutterRun=null;plugins.dispose();base.dispose();unwireHud();document.removeEventListener('contextmenu',noMenu);root.removeEventListener('mousedown',pointerKeepsFocus,true);root.removeEventListener('focusin',pointerFocusStarts,true);window.removeEventListener('mouseup',pointerPressEnds,true);root.removeEventListener('focusout',pointerFocusEnds,true);pressed=null;window.removeEventListener('keydown',scopeShortcut);window.removeEventListener('keydown',rangeShortcut);caution.onclick=null;caution.removeEventListener('animationend',finishCaution);motionQuery.removeEventListener('change',motionChanged);applyScope=null;engineRange=null;refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;lastData=null;nativeShell=null;deck.dispose();help.dispose();stop();frame.settings.onclick=null;attach.onclick=null;shutter.onclick=null;shutter.onpointerdown=null;shutter.onpointermove=null;shutter.onpointerup=null;shutter.onpointercancel=null;shutter.onlostpointercapture=null;shutter.onkeydown=null;close.onclick=null;root.replaceChildren();root.removeAttribute('data-active');delete root.dataset.scope;},
+  dispose(){if(disposed)return;disposed=true;root.removeEventListener('click',noteAfterInput);window.removeEventListener('keyup',noteAfterInput);shutterRun=null;plugins.dispose();base.dispose();unwireHud();document.removeEventListener('contextmenu',noMenu);root.removeEventListener('mousedown',pointerKeepsFocus,true);root.removeEventListener('focusin',pointerFocusStarts,true);window.removeEventListener('mouseup',pointerPressEnds,true);root.removeEventListener('focusout',pointerFocusEnds,true);pressed=null;window.removeEventListener('keydown',scopeShortcut);window.removeEventListener('keydown',rangeShortcut);caution.onclick=null;caution.removeEventListener('animationend',finishCaution);motionQuery.removeEventListener('change',motionChanged);applyScope=null;engineRange=null;refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;lastData=null;nativeShell=null;deck.dispose();help.dispose();stop();frame.settings.onclick=null;attach.onclick=null;shutter.onclick=null;shutter.onpointerdown=null;shutter.onpointermove=null;shutter.onpointerup=null;shutter.onpointercancel=null;shutter.onlostpointercapture=null;shutter.onkeydown=null;close.onclick=null;root.replaceChildren();root.removeAttribute('data-active');delete root.dataset.scope;},
  };
 }

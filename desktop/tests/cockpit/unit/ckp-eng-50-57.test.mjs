@@ -3,7 +3,7 @@
 // account label. Pure study model/view plus the host's pure helpers; synthetic data only.
 // CKP-ENG-50 cell states · CKP-ENG-51 Other tag and +N · CKP-ENG-52 reserve names what it is, 0 is absent ·
 // CKP-ENG-53 range row ≈cost first · CKP-ENG-55 footer reads the shown page only and says when reads keep failing ·
-// CKP-ENG-26 (amended) "out ~40m" / "约40m用完" · §0 time format never prints "1h60".
+// CKP-ENG-26 (D474 §3.2) "est. out in 40m" / "预估 40m 用完" on line 2 · §0 time format never prints "1h60".
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {engineModel} from '../../../cockpit/study/rocket-r1/engine-model.js';
@@ -21,10 +21,11 @@ const account=(id,windows,more={})=>({id,name:id,short:id,alias:id,colour:'#8888
 const model=(accounts,lang,alerts=[],ui={})=>engineModel({accounts,alerts,now:NOW},{few:'c3',page:0,scope:null,tint:true,pctMode:'left',redAt:25,ack:null,lang,now:NOW,...ui});
 const view=(accounts,lang='en',alerts=[],ui={})=>{setLanguage(lang);return engineView(model(accounts,lang,alerts,ui),{changed:new Set(),lang,now:NOW});};
 const col=(html,id)=>html.split(`data-col="${id}" data-state`)[1]?.split('<div class="ec')[0]??'';
-const lines=html=>[...html.matchAll(/<em class="qtxt([^"]*)" data-full="([^"]*)"/g)].map(m=>({cls:m[1].trim(),full:m[2]}));
+// D474: each cell has line 1 (.ql1, the reset) and, when there is one, line 2 (.ql2, the estimate).
+const lines=html=>[...html.matchAll(/<em class="qtxt ql(\d)([^"]*)" data-full="([^"]*)"/g)].map(m=>({cls:m[2].trim(),full:m[3]}));
 const values=html=>[...html.matchAll(/<span class="qvalue">([^<]*)<\/span>/g)].map(m=>m[1]);
 
-for(const [lang,unreadable,usedUp,quotaOnly] of [['en','no reading','used up','Quota only'],['zh-CN','读不到','已用完','仅额度']])
+for(const [lang,unreadable,usedUp,quotaOnly,r90,r3000] of [['en','no reading','used up','Quota only','in 1h30','in 2d2h'],['zh-CN','读不到','已用完','仅额度','1h30后','2d2h后']])
  test(`CKP-ENG-50 the six cell states (${lang})`,()=>{
   const html=view([
    account('ok',[win('5h',75,90),win('week',40,3000)]),
@@ -34,8 +35,8 @@ for(const [lang,unreadable,usedUp,quotaOnly] of [['en','no reading','used up','Q
    account('used',[win('5h',0,90),win('week',30,3000)]),
    account('quota',[win('5h',80,90)],{support:'quota-only'}),
   ],lang);
-  // Normal: number, side text (the countdown), bar and time dots.
-  assert.deepEqual(values(col(html,'ok')),['75','40']);assert.deepEqual(lines(col(html,'ok')).map(l=>l.full),['1h30','2d2h']);
+  // Normal: number, line 1 = the reset (narrow form in six columns, never coloured), bar and time dots. No forecast: no line 2.
+  assert.deepEqual(values(col(html,'ok')),['75','40']);assert.deepEqual(lines(col(html,'ok')),[{cls:'',full:r90},{cls:'',full:r3000}]);
   // Loading: a dark placeholder block in every row, no text and no number.
   const loading=col(html,'loading');
   assert.equal((loading.match(/class="qph"/g)||[]).length,3);assert.equal(values(loading).length,0);assert.equal(lines(loading).length,0);
@@ -44,11 +45,11 @@ for(const [lang,unreadable,usedUp,quotaOnly] of [['en','no reading','used up','Q
   assert.deepEqual(values(error),['--']);assert.deepEqual(lines(error),[{cls:'dim',full:unreadable}]);
   // Stale: drawn exactly like a normal reading (no age text, no grey column).
   const stale=col(html,'stale');
-  assert.deepEqual(lines(stale).map(l=>l.full),['1h30','2d2h']);assert.ok(!html.includes('data-col="stale" data-state="stale" class'));
+  assert.deepEqual(lines(stale).map(l=>l.full),[r90,r3000]);assert.ok(!html.includes('data-col="stale" data-state="stale" class'));
   assert.doesNotMatch(html,/class="ec grey[^"]*" data-col="stale"/);
-  // Used up: red 0% and "used up" / "已用完".
+  // Used up: red 0%, line 1 keeps the reset, line 2 "used up" / "已用完" in red.
   const used=col(html,'used');
-  assert.equal(values(used)[0],'0');assert.deepEqual(lines(used)[0],{cls:'crit',full:usedUp});assert.match(used,/qcell lv-low/);
+  assert.equal(values(used)[0],'0');assert.deepEqual(lines(used).slice(0,2),[{cls:'',full:r90},{cls:'crit',full:usedUp}]);assert.match(used,/qcell lv-low/);
   // No usage record: the usage cell says "quota only".
   assert.match(col(html,'quota'),new RegExp(`<span class="qq">${quotaOnly}</span>`));
   assert.doesNotMatch(col(html,'ok'),/class="qq"/);
@@ -66,15 +67,20 @@ for(const [lang,tag] of [['en','MCP · mo'],['zh-CN','MCP · 月']])test(`CKP-EN
  const html=view([account('a',[win('5h',75,90),win('week',40,3000)],{extras})],lang);
  const other=[...html.matchAll(/data-row="other"[^>]*data-tag="([^"]*)" data-more="(\d)"/g)][0];
  assert.equal(other[1],tag);assert.equal(other[2],'1');
- assert.match(lines(html).at(-1).full,new RegExp(`^${tag} .* \\+1$`));
+ // C33: under the 额外 heading the cell names its window (no period in the cell; the hover says "MCP · 每月额度").
+ assert.match(lines(html).at(-1).full,/^MCP .* \+1$/);
+ assert.match(html,lang==='en'?/data-tip="[^"]*MCP · monthly quota/:/data-tip="[^"]*MCP · 每月额度/);
 });
 
-for(const [lang,cards,points] of [['en','2 resets · expires in 30h','Credits 2,368'],['zh-CN','重置 2 次 · 30h 后到期','点数 2,368']])
+// D474 §3.1 (amends CKP-ENG-52, C24): one quiet line; the expiry clause only within 48 h, in amber; a later expiry is not drawn.
+for(const [lang,cards,expiry,points] of [['en','2 resets','2 expire in 30h','Credits 2,368'],['zh-CN','重置 2 次','2 次 30h 后到期','点数 2,368']])
  test(`CKP-ENG-52 the reserve row names what it holds and leaves out zeros (${lang})`,()=>{
   const html=view([account('a',[win('5h',75,90)],{cards:[{count:2,expiresAt:NOW+30*H}],credits:{balance:2368}}),
-   account('b',[win('5h',75,90)],{cards:[{count:0,expiresAt:NOW+30*H}],credits:{balance:0}})],lang);
-  const a=col(html,'a'),b=col(html,'b');
-  assert.match(a,new RegExp(`<span class="qrv-c[^"]*" data-full="${cards}"`));assert.match(a,new RegExp(`>${points}</span>`));
+   account('b',[win('5h',75,90)],{cards:[{count:0,expiresAt:NOW+30*H}],credits:{balance:0}}),
+   account('d',[win('5h',75,90)],{cards:[{count:1,expiresAt:NOW+96*H}]})],lang);
+  const a=col(html,'a'),b=col(html,'b'),d=col(html,'d');
+  assert.match(a,new RegExp(`<span class="qrv-c[^"]*" data-full="${cards}"`));assert.match(a,new RegExp(`<span class="qrv-x warn" data-full="${expiry}"`));assert.match(a,new RegExp(`>${points}</span>`));
+  assert.doesNotMatch(d,/qrv-x/,'an expiry more than 48 h away is not written');
   assert.doesNotMatch(b,/qrv-c|qrv-p/,'nothing that is zero is shown');
   // Nothing anywhere: no reserve row at all.
   assert.equal(model([account('c',[win('5h',75,90)],{cards:[{count:0,expiresAt:null}],credits:{balance:0}})],lang).reserve,false);
@@ -98,9 +104,11 @@ test('CKP-ENG-53 ≈cost format (§0): two significant figures under $100, whole
  assert.equal(approxCost(null),null);assert.equal(approxCost(Number.NaN),null);assert.equal(approxCost(0),null);
 });
 
-for(const [lang,text] of [['en','out ~40m'],['zh-CN','约40m用完']])test(`CKP-ENG-26 (amended) the run-out wording (${lang})`,()=>{
+for(const [lang,text,narrow] of [['en','est. out in 40m','out 40m'],['zh-CN','预估 40m 用完','40m完']])test(`CKP-ENG-26 (D474 §3.2) the run-out wording on line 2 (${lang})`,()=>{
  const html=view([account('a',[win('5h',60,null,{trend:-1,runOutMin:40}),win('week',80,null)],{forecast:{runOutMin:40}})],lang);
- assert.equal(lines(html)[0].full,text);
+ assert.deepEqual(lines(html).find(l=>l.cls==='warn'),{cls:'warn',full:text});
+ assert.match(html,new RegExp(`data-short="${narrow}"`));
+ assert.doesNotMatch(html,/约|~/);
 });
 
 test('§0 times never read "1h60"',()=>{

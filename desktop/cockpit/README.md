@@ -52,6 +52,22 @@ Native navigation/new-window delegates must refuse remote navigation and files
 outside the verified local bundle. CSP additionally forbids connections, frames,
 objects, workers, base changes and form submission.
 
+D466 news clock (#1289): a host that keeps the shared news clock (`DockNewsClock`)
+sends `{type:'news', items:[{id, status, untilUnixMs}]}` (at most 64; `untilUnixMs`
+null = no longer news) whenever an answer changes. Its answers then decide every cockpit
+surface for those announcements, and the page posts `{action:'newsLook', events:[{id,
+status}]}` the first time the open cockpit draws one, for `recordNewsLook`. Without the
+message the page applies the same rule in its own memory.
+
+D474 decision 3 (#1289): a subscription gets a column only after its first good reading on
+this Mac. A host that keeps that memory (`seen-subscriptions.json`; cleared on Forget and a
+privacy clear) sends `{type:'seen', ids:[...]}`: at most 64 member keys (a verified
+subscription ref or a session fallback key, never `all`, no repeats; `[]` is valid). With it,
+a member has a column when its key is in the set or its reading is good now (current or
+retained); a never-read member lives in Settings and the alert list's grey line only. Without
+the message (older app, tests) every member shows. Both sides are held to
+`desktop/tests/shared/seen-subscriptions.json`.
+
 ```ts
 import { CockpitBridge, type BridgeSource, type HostMessage } from './src/bridge.js';
 import type { WireCockpitData } from './generated/wire.js';

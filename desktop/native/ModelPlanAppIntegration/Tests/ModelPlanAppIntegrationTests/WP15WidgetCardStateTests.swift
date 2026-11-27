@@ -251,11 +251,15 @@ actor WP15Engine: EngineClient {
             XCTAssertTrue(reserve.emphasised, "a usable reset brightens the reserve line under an alert")
             let order = content.rows.map(\.id)
             XCTAssertLessThan(try XCTUnwrap(order.firstIndex(of: "today")), try XCTUnwrap(order.firstIndex(of: "reserve")), "quota, today, reserve")
-            // D466: the footer sentence repeated the quota row above it; the card ends with the 接下来 block instead.
-            XCTAssertFalse(content.rows.contains { $0.kind == .alert }, "no footer alert sentence any more")
-            let footer = try XCTUnwrap(content.rows.last, "the 接下来 block closes the card")
-            XCTAssertEqual(footer.kind, .event)
+            // Master spec C2 (D474): the footer sentence is back in amber, red and used-up states; the 接下来 block sits above it.
             XCTAssertEqual(try XCTUnwrap(content.rows.first { $0.id == "next.0" }).value, en ? "Next" : "接下来")
+            XCTAssertLessThan(try XCTUnwrap(order.firstIndex(of: "next.0")), order.count - 1, "接下来 above the footer")
+            let footer = try XCTUnwrap(content.rows.last, "the alert sentence closes the card")
+            XCTAssertEqual(footer.kind, .alert); XCTAssertEqual(footer.tone, .critical)
+            let expected = AlertSentence.quota(subscription: .init("Tight", "Tight"), window: en ? .init("5h", "5h") : .init("5小时", "5小时"),
+                                               remaining: 9, runOutMinutes: 40, resetMinutes: 120).text.value(language)
+            XCTAssertEqual(footer.value, expected, "the footer is WP-11's one sentence")
+            XCTAssertEqual(footer.value, en ? "Tight 5h 9% · est. out in 40m · resets in 2h00" : "Tight 5小时 9% · 预估 40m 用完 · 2h00 后重置")
             XCTAssertEqual(content.actionLabel, "")
             XCTAssertNoThrow(try content.validate())
         }
