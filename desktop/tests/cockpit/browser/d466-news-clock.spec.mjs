@@ -40,7 +40,7 @@ test('D466 a confirmed banked reset: solid key dot and reserve +1, never a cell 
  await open(page,banked());
  await expect(key(page).locator('.ek-news')).toHaveCount(1);await expect(key(page).locator('.ek-news')).toHaveClass(/\bsolid\b/);
  await expect(col(page).locator('.qrow-r .qrv-plus')).toHaveText('+1');
- await expect(col(page).locator('.qrow-r .qrv-c')).toHaveText('重置 1 次');
+ await expect(col(page).locator('.qrow-r .qrv-c')).toHaveText('1次');// D474 §3.1: the narrow reserve form (4 columns are narrow)
  // The weekly cell keeps its own reading; no announcement in any cell, no "已重置" anywhere on the page.
  await expect(col(page).locator('.qcell[data-row="second"] .qvalue')).toHaveText('40');
  expect(await page.locator('#cockpit').innerText()).not.toMatch(/已重置|等读数/);
@@ -58,7 +58,7 @@ test('D466 the news clock ends 30 min after the look: dot, +1 and alert line go;
  expect(await receive(send('tick',{nowUnixMs:String(NOW+30*MIN),reason:'deadline'}))).toBe(true);
  await expect(key(page).locator('.ek-news')).toHaveCount(0);
  await expect(col(page).locator('.qrv-plus')).toHaveCount(0);
- await expect(col(page).locator('.qrow-r .qrv-c')).toHaveText('重置 1 次');
+ await expect(col(page).locator('.qrow-r .qrv-c')).toHaveText('1次');// D474 §3.1: the narrow reserve form (4 columns are narrow)
  await expect(page.locator('.pg-alerts .mfd-alerts.all li.al-blue')).toHaveCount(0);
 });
 test('D466 an announcement is a hollow dot on the key and in the list; other rows carry no bullet',async({page})=>{
@@ -111,7 +111,7 @@ test('macrevb-1290-2 the calendar line, key dot, +1 and alert row retire at the 
  await expect(line).toHaveCount(0);
  await expect(key(page).locator('.ek-news')).toHaveCount(0);await expect(col(page).locator('.qrv-plus')).toHaveCount(0);
  await expect(page.locator('.pg-overview .mfd-alerts li.al-blue')).toHaveCount(0);
- await expect(col(page).locator('.qrow-r .qrv-c')).toHaveText('重置 1 次');
+ await expect(col(page).locator('.qrow-r .qrv-c')).toHaveText('1次');// D474 §3.1: the narrow reserve form (4 columns are narrow)
 });
 // macrevb-1290-1 round 2: a look is recorded only for news whose mark is rendered in this paint. News of the seventh
 // subscription (page two) whose alert line falls outside the overview's four-line budget is drawn nowhere on opening:

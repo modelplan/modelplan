@@ -119,3 +119,31 @@ test('macrevb-1290-1 marks: observe reports a first look; renderedMarks reads on
  d.details.resetEvents=[{version:1,id:'m1',rowId:row.id,provider:'openai',status:'announced',publishedAt:iso(T0),expiresAt:iso(T0+7*24*H),source:{kind:'publication',publicationId:'p'}}];
  assert.equal(cautionItems(d,T0+MIN,25).find(x=>x.id.includes('reset')).news,'m1#announced');
 });
+
+// D474 §5.1: retirements beyond the clock. An undated announcement that is never confirmed retires 48 h after
+// publication; a confirmed direct reset clears once the reading shows its window restarted; a banked one never does.
+const {newsRetired,newsLive,NEWS_UNDATED_RETIRE_MS}=await import('../../../cockpit/.tmp/compiled/src/news-clock.js');
+function withWeekly(cycleStart,kind){
+ const data=capture(),row=data.projection.rows[0],a=row.accounts[0];
+ a.valueState='current';
+ a.windows=[{...a.windows[0],id:'week',role:'weekly',durationSeconds:604800,current:true,remainingPercent:100,validUntil:iso(T0+10*H),resetsAt:iso(cycleStart+7*24*H)}];
+ data.subscriptions=[{subscriptionRef:a.subscriptionRef,accounts:[{tool:row.id,account:structuredClone(a)}]}];
+ const e={id:'direct',status:'confirmed',kind,rowId:row.id,publishedAt:iso(T0-H),confirmedAt:iso(T0),expiresAt:iso(T0+7*24*H),provider:'x',source:'official',version:1};
+ return {data,e};
+}
+test('D474 an undated announcement that is never confirmed retires 48 h after publication',()=>{
+ const data=capture(),e={...announced,rowId:data.projection.rows[0].id};
+ assert.equal(NEWS_UNDATED_RETIRE_MS,48*H);
+ assert.equal(newsRetired(e,data,T0+47*H),false);
+ assert.equal(newsRetired(e,data,T0+48*H),true);
+ assert.equal(newsRetired({...e,schedule:{from:iso(T0+72*H),through:iso(T0+73*H),precision:'minute'}},data,T0+60*H),false,'a dated one stays for its time');
+ assert.equal(newsLive(e,data,T0+49*H),false);
+});
+test('D474 a confirmed direct reset clears when the window restarted; a banked reset does not',()=>{
+ const restarted=withWeekly(T0+10*MIN,'direct_reset');
+ assert.equal(newsRetired(restarted.e,restarted.data,T0+20*MIN),true,'the weekly cycle began after the confirmation');
+ const before=withWeekly(T0-3*24*H,'direct_reset');
+ assert.equal(newsRetired(before.e,before.data,T0+20*MIN),false,'not restarted yet');
+ const banked=withWeekly(T0+10*MIN,'reset_credit');
+ assert.equal(newsRetired(banked.e,banked.data,T0+20*MIN),false,'a banked reset never clears this way');
+});

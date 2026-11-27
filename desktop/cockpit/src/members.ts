@@ -30,11 +30,29 @@ export function setHiddenMembers(ids:readonly string[]):boolean {
  const next=new Set(ids),changed=next.size!==hiddenMembers.size||[...next].some(id=>!hiddenMembers.has(id));
  hiddenMembers=next;return changed;
 }
+// D474 decision 3 (C13, C45): a subscription gets a column only after its first good reading on this Mac. The host keeps
+// that memory (seen-subscriptions.json, #1289) and sends `seen {ids}`; until a host has sent it (older app, tests) every
+// member shows as before. With it, a member shows when its key is in the set or it has a good reading now (current or
+// retained: ok, stale, 失败·2h). A member that was never read lives in Settings and the grey line only.
+let seenSubscriptions:ReadonlySet<string>|null=null;
+/** Replaces the host's seen set (null: no host memory, today's rule); returns whether it changed. */
+export function setSeenSubscriptions(ids:readonly string[]|null):boolean{
+ const next=ids===null?null:new Set(ids),prev=seenSubscriptions;
+ const changed=next===null||prev===null?next!==prev:next.size!==prev.size||[...next].some(id=>!prev.has(id));
+ seenSubscriptions=next;return changed;
+}
+const goodReading=(account:WireAccount)=>account.valueState==='current'||account.valueState==='retained';
+/** Whether decision 3 lets this member have a column (and a ring); always true without a host seen set. */
+export const seenMember=(member:{key:string;account:WireAccount}):boolean=>seenSubscriptions===null||seenSubscriptions.has(member.key)||goodReading(member.account);
+/** Members kept out by decision 3 (never read on this Mac): the alert list still gives them their grey line. */
+export function unseenMembers(data:WireCockpitData):{key:string;row:WireRow;account:WireAccount;unstable:boolean}[]{
+ return seenSubscriptions===null?[]:emittedMembers(data).filter(m=>!hiddenMembers.has(m.key)&&!seenMember(m));
+}
 export function hasHiddenMembers(data:WireCockpitData):boolean {
  return emittedMembers(data).some(member=>hiddenMembers.has(member.key));
 }
 export function cockpitMembers(data:WireCockpitData,includeHidden=false):{key:string;row:WireRow;account:WireAccount;unstable:boolean}[] {
- const members=emittedMembers(data).filter(m=>includeHidden||!hiddenMembers.has(m.key));if(!savedOrder.length)return members;
+ const members=emittedMembers(data).filter(m=>(includeHidden||!hiddenMembers.has(m.key))&&seenMember(m));if(!savedOrder.length)return members;
  const rank=new Map(savedOrder.map((key,i)=>[key,i] as const));
  return members.map((member,i)=>({member,i,r:rank.get(member.key)??savedOrder.length})).sort((a,b)=>a.r-b.r||a.i-b.i).map(x=>x.member);
 }

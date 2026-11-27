@@ -118,12 +118,38 @@ export function createNewsClock():NewsClock {
  };
  return clock;
 }
+/** D474 §5.1: an undated announcement (no schedule) that is never confirmed retires 48 h after publication. */
+export const NEWS_UNDATED_RETIRE_MS=48*3_600_000;
+/** A direct reset counts as applied when a window's current cycle began no earlier than this before its confirmation. */
+const RESTART_SLACK_MS=5*60_000;
+/** D474 §5.1 retirements beyond the clock itself: (a) an undated, never-confirmed announcement 48 h after publication;
+ *  (b) a confirmed direct reset once the reading shows its window restarted (DOCK-3.7-03: a longer-than-5h window of that
+ *  subscription whose current cycle started at or after the confirmation). A confirmed banked reset never clears this
+ *  way: the credit stays in the reserve until it is used. */
+export function newsRetired(e:WireResetEvent,data:WireCockpitData,now:number):boolean {
+ const published=ms(e.publishedAt);
+ if(e.status==='announced'&&!e.schedule&&published!==null&&now>=published+NEWS_UNDATED_RETIRE_MS)return true;
+ if(e.status!=='confirmed'||e.kind==='reset_credit')return false;
+ const confirmed=ms(e.confirmedAt)??published;if(confirmed===null)return false;
+ for(const m of cockpitMembers(data,true)){
+  if(m.row.id!==e.rowId||(e.planIds?.length&&!e.planIds.includes(m.account.plan.id))||m.account.valueState!=='current')continue;
+  for(const w of m.account.windows){
+   const reset=ms(w.resetsAt),span=w.durationSeconds;
+   if(!w.current||reset===null||span===null||span<=18000||reset<=now)continue;
+   if(reset-span*1000>=confirmed-RESTART_SLACK_MS)return true;
+  }
+ }
+ return false;
+}
+/** Whether a reset event is news on the cockpit now: the shared clock, minus the retirements above. Every surface (key
+ *  dot, reserve "+1", alert list, calendar news line) asks this. */
+export const newsLive=(e:WireResetEvent,data:WireCockpitData,now:number):boolean=>!newsRetired(e,data,now)&&newsClock.isNews(e,now);
 /** D466 (macrevb-1290-1): the announcements the cockpit can draw: those of a shown subscription (its row, and its plan
  *  when the announcement names plans). One hidden in Settings, or of a tool the user does not have, is drawn nowhere, so
  *  the clock never records a look at it; its clock starts when the subscription is shown. */
-export function drawnNews(data:WireCockpitData):WireResetEvent[] {
+export function drawnNews(data:WireCockpitData,now?:number):WireResetEvent[] {
  const members=cockpitMembers(data);
- return (data.details?.resetEvents??[]).filter(e=>members.some(m=>m.row.id===e.rowId&&(!e.planIds?.length||e.planIds.includes(m.account.plan.id))));
+ return (data.details?.resetEvents??[]).filter(e=>members.some(m=>m.row.id===e.rowId&&(!e.planIds?.length||e.planIds.includes(m.account.plan.id)))&&(now===undefined||!newsRetired(e,data,now)));
 }
 /** D466 (macrevb-1290-1 round 2): the mark a surface puts on what it draws for an announcement (`data-news`, space
  *  separated). The clock records a look only for marks rendered on screen in this paint. */

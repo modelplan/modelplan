@@ -142,9 +142,9 @@ public struct EngineTablePresentation: Equatable, Sendable {
                 } else if valid, remaining != nil, let runout = value.runsOutAt {
                     let m = runout.timeIntervalSince(now) / 60
                     noteTone = .warning
-                    note = chinese ? "约\(format.duration(minutes: m))用完" : "out ~\(format.duration(minutes: m))"
-                    let shortRun = m >= 1440 ? "\(Int(m / 1440))d" : m >= 60 ? "\(Int(m / 60))h" : "\(Int(m))m"
-                    specialBrief = chinese ? "约\(shortRun)" : "~\(shortRun)"
+                    // D474 §3.2 (CKP-ENG-26): 预估 is our forecast; the narrow form is the time plus a one-word cue.
+                    note = chinese ? "预估 \(format.duration(minutes: m)) 用完" : "est. out in \(format.duration(minutes: m))"
+                    specialBrief = chinese ? "\(format.duration(minutes: m))完" : "out \(format.duration(minutes: m))"
                 }
                 let more = row == 2 && column.quotas.otherOverflow > 0 ? "+\(column.quotas.otherOverflow)" : ""
                 let full = [tag, note, more].filter { !$0.isEmpty }.joined(separator: " ")
@@ -175,7 +175,7 @@ public struct EngineTablePresentation: Equatable, Sendable {
                             facts[index] += " · " + detail
                         } else if extra.remaining != nil, let runout = extra.runsOutAt {
                             let time = format.duration(minutes: runout.timeIntervalSince(now) / 60)
-                            facts[index] += " · " + (chinese ? "约\(time)用完" : "out ~\(time)")
+                            facts[index] += " · " + (chinese ? "预估 \(time) 用完" : "est. out in \(time)")
                         }
                     }
                 }

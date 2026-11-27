@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Owner decision D277 (2026-11-16), cockpit first screen batch A. Synthetic data only.
 // CKP-ENG-26: an unknown reset time no longer repeats "reset ?" in every cell; the cell that will run out says
-// "out ~40m" in its alert's colour, also when its reset time is unknown.
+// "est. out in 40m" (D474: line 2) in its alert's colour, also when its reset time is unknown.
 // CKP-ENG-27: the subscription key carries the plan the reader knows; one quiet "updated" line has a refresh action
 // that crosses the bridge as a typed member key.
 import test from 'node:test';
@@ -23,6 +23,8 @@ const account=(id,windows,forecast=null)=>({id,name:id,short:id,alias:id,colour:
 const view=(accounts,lang)=>{setLanguage(lang);return engineView(engineModel({accounts,alerts:[],now:NOW},{few:'c3',page:0,scope:null,tint:true,pctMode:'left',redAt:25,ack:null,lang,now:NOW}),{changed:new Set(),lang,now:NOW});};
 const updatedText=(at,now,lang)=>{const c=updatedCopy(at,now);return tables[lang][c.key].replace('{n}',String(c.n));};
 const lines=html=>[...html.matchAll(/<em class="qtxt([^"]*)" data-full="([^"]*)" data-short="([^"]*)"/g)].map(m=>({cls:m[1].trim(),full:m[2],short:m[3]}));
+// D474: line 2 (.ql2) carries the estimate; line 1 (.ql1) the reset.
+const estimates=html=>lines(html).filter(l=>/\bql2\b/.test(l.cls));
 
 for(const [lang,unknown] of [['en','reset ?'],['zh-CN','重置未知']])test(`CKP-ENG-26 an unknown reset leaves the cell line empty, hover still says it (${lang})`,()=>{
  const html=view([account('a',[win('5h',75,null),win('week',40,null)]),account('b',[win('5h',60,null),win('week',30,null)])],lang);
@@ -32,21 +34,21 @@ for(const [lang,unknown] of [['en','reset ?'],['zh-CN','重置未知']])test(`CK
  assert.equal(html.split(`data-full="${unknown}"`).length,1);
 });
 
-for(const [lang,text] of [['en','out ~40m'],['zh-CN','约40m用完']])test(`CKP-ENG-26 the cell that will run out names it in its alert colour (${lang})`,()=>{
+for(const [lang,text] of [['en','est. out in 40m'],['zh-CN','预估 40m 用完']])test(`CKP-ENG-26 the cell that will run out names it in its alert colour (${lang})`,()=>{
  const amber=view([account('a',[win('5h',60,null,{trend:-1,runOutMin:40}),win('week',80,null)],{runOutMin:40})],lang);
- const [first,second]=lines(amber);
- assert.equal(first.full,text);assert.match(first.cls,/\bwarn\b/);assert.doesNotMatch(first.cls,/\bcrit\b/);
- assert.equal(second.full,'','only the window that runs out speaks');
+ const est=estimates(amber);
+ assert.equal(est.length,1,'only the window that runs out speaks');
+ assert.equal(est[0].full,text);assert.match(est[0].cls,/\bwarn\b/);assert.doesNotMatch(est[0].cls,/\bcrit\b/);
  const red=view([account('a',[win('5h',20,null,{trend:-1,runOutMin:40}),win('week',80,null)],{runOutMin:40})],lang);
- assert.equal(lines(red)[0].full,text);assert.match(lines(red)[0].cls,/\bcrit\b/);assert.doesNotMatch(lines(red)[0].cls,/\bwarn\b/);
+ assert.equal(estimates(red)[0].full,text);assert.match(estimates(red)[0].cls,/\bcrit\b/);assert.doesNotMatch(estimates(red)[0].cls,/\bwarn\b/);
  assert.deepEqual(checkTables().missing.filter(k=>/^eng\.|^host\./.test(k)),[]);
 });
 
 // Invariant: a cell's run-out line is its own window's validated forecast; another window's forecast never replaces it.
 test('CKP-ENG-26 a five-hour forecast does not hide the weekly forecast of the same subscription',()=>{
  const html=view([account('a',[win('5h',60,null,{trend:-1,runOutMin:40}),win('week',50,100,{trend:-1,runOutMin:30})],{runOutMin:40})],'en');
- const [first,second]=lines(html);
- assert.equal(first.full,'out ~40m');assert.equal(second.full,'out ~30m');
+ const [first,second]=estimates(html);
+ assert.equal(first.full,'est. out in 40m');assert.equal(second.full,'est. out in 30m');
 });
 
 test('CKP-ENG-26 a forecast run-out counts when the window has no reset time; a known later reset still bounds it',()=>{

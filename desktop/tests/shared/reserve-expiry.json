@@ -1,0 +1,16 @@
+{
+ "comment": "D474 §5.1 / C7: the one 48 h rule for a reserve item that expires soon (the reserve line's amber clause, the counted reserve alert, the widget card, the menu). The page helper (desktop/cockpit/study/rocket-r1/reserve-expiry.js) and the native helper (#1289, ReserveExpiry) are tested against these cases. `now` is fixed; `expiresAt` is an ISO time or null; `soon` is the answer.",
+ "hours": 48,
+ "now": "2026-11-27T12:00:00Z",
+ "cases": [
+  {"name": "47:59 left", "expiresAt": "2026-11-29T11:59:00Z", "soon": true},
+  {"name": "exactly 48:00 left", "expiresAt": "2026-11-29T12:00:00Z", "soon": true},
+  {"name": "48:01 left", "expiresAt": "2026-11-29T12:01:00Z", "soon": false},
+  {"name": "one minute left", "expiresAt": "2026-11-27T12:01:00Z", "soon": true},
+  {"name": "expires now", "expiresAt": "2026-11-27T12:00:00Z", "soon": false},
+  {"name": "already expired", "expiresAt": "2026-11-27T11:00:00Z", "soon": false},
+  {"name": "far future", "expiresAt": "2026-12-20T00:00:00Z", "soon": false},
+  {"name": "missing expiry", "expiresAt": null, "soon": false},
+  {"name": "unreadable expiry", "expiresAt": "soon", "soon": false}
+ ]
+}
