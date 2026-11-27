@@ -15,7 +15,14 @@ export const GLM_LANE = "ghglm";
 export const GLM_SHADOW_LANE = "ghglmshadow";
 // How a posted comment names the GLM model: the version of the model that answered ("GLM-5.4" for GLM-5.4 or
 // glm-5.4), so a title cannot name a version that did not review.
-export const glmName = (model) => { const v = /^glm-(\d+(?:\.\d+)?)/i.exec(String(model ?? "")); return v ? `GLM-${v[1]}` : "GLM"; };
+export const glmName = (model) => { const v = /^glm-(\d+(?:\.\d+)?)$/i.exec(String(model ?? "")); return v ? `GLM-${v[1]}` : "GLM"; };
+// The reason shown in a comment title. quota: sol-call's "why" (the quota errors that moved the run on); note: a refused
+// model or a model mismatch from the provider (built from ids and an HTTP status only). A labelled PR (review:gpt)
+// answered by GLM means GPT had no quota; a tier-0 head is only ever offered to GLM, so that is no fallback (macrevb-1237-2).
+export function postWhy({ quota = "", note = "", provider, gptRequested = false, tier }) {
+  const fell = [String(quota).trim() ? `quota fallback to ${provider}` : "", String(note).trim().slice(0, 200)].filter(Boolean).join("; ");
+  return gptRequested && provider !== "openai" && Number(tier) !== 0 ? `review:gpt requested; GPT quota out${fell ? `; ${fell}` : ""}` : fell;
+}
 // The lane a verdict is posted under: the run's lane (count or shadow) for the given provider.
 export const postLane = (lane, provider) => (provider === "glm" ? (lane === SOL_LANE ? GLM_LANE : GLM_SHADOW_LANE) : lane);
 // The lanes whose verdict at a head means this run's job is done there: the run's Sol lane, plus its GLM lane while

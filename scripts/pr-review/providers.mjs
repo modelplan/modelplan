@@ -77,14 +77,16 @@ export const GLM_MODEL = "GLM-5.4";
 // would otherwise end the run before the GPT fallback). The verdict says so and names glm-5.3, never GLM-5.4.
 export const GLM_FALLBACK_MODEL = "glm-5.3";
 const REFUSED_STATUS = new Set([400, 401, 403, 404]);
-// What the verdict may call the model: the model the response reports. It counts as the requested one only when the
-// reported name equals it (case aside); a different name is recorded as reported, and a missing or non-string name is
-// never filled in from the request.
+// What the verdict may call the model: the model the response reports, only when it is a plain model id (letters,
+// digits, dot, dash, underscore, at most 40 characters). Anything else (a non-string, empty or free-text value) is
+// never echoed: it becomes the controlled label "unknown (requested X)". The reported id is the requested one only when
+// it equals it (case aside); a different id, a suffixed variant such as glm-5.4-flash included, is recorded as reported.
+const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/;
 export function attributeModel(requested, reported) {
   const rep = typeof reported === "string" ? reported.trim() : "";
-  if (!rep) return { model: `unreported (requested ${requested})`, note: `${requested} requested, the response reported no model` };
+  if (!MODEL_ID.test(rep)) return { model: `unknown (requested ${requested})`, note: `${requested} requested, the response model is ${rep ? "invalid" : "missing"}` };
   if (rep.toLowerCase() === String(requested).toLowerCase()) return { model: rep };
-  return { model: rep, note: `${requested} requested, the response reported ${rep}` };
+  return { model: rep, note: `${requested} requested, answered by ${rep}` };
 }
 export function glmProvider({ key, baseUrl, model = GLM_MODEL, fallbackModel = GLM_FALLBACK_MODEL, fetchImpl = fetch, waitMs }) {
   if (!key || !baseUrl) throw new ProviderError("config", "GLM_API_KEY or GLM_BASE_URL is not set");
@@ -102,7 +104,7 @@ export function glmProvider({ key, baseUrl, model = GLM_MODEL, fallbackModel = G
       try { j = await call(model, input); }
       catch (e) {
         if (!(e instanceof ProviderError) || e.kind !== "other" || !REFUSED_STATUS.has(e.status) || !fallbackModel || fallbackModel.toLowerCase() === model.toLowerCase()) throw e;
-        refused = `${model} refused (${e.message}), fell back to ${fallbackModel}`;
+        refused = `${model} refused (HTTP ${Number(e.status) || "?"}), fell back to ${fallbackModel}`;
         asked = fallbackModel;
         j = await call(fallbackModel, input);
       }
@@ -143,8 +145,8 @@ export async function reviewInOrder({ input, order, build }) {
     try {
       const p = build(name);
       const { note, ...r } = await p.review(input);   // r.model, when the provider reports one, replaces the requested p.model
-      const why = [...out, ...(note ? [note] : [])].join("; ");
-      return { provider: p.name, model: p.model, ...(why ? { why } : {}), ...r };
+      // why: the quota errors that moved the run on; note: a refusal or a model mismatch, kept apart so the post says which.
+      return { provider: p.name, model: p.model, ...(out.length ? { why: out.join("; ") } : {}), ...(note ? { note } : {}), ...r };
     } catch (e) {
       if (!(e instanceof ProviderError) || e.kind !== "quota") throw e;
       out.push(e.message);
