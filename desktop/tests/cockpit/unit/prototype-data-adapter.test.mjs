@@ -27,3 +27,29 @@ test('today displays total usage while keeping output and generation rate distin
  assert.equal(got.todayTokens,33900000);
  assert.equal(got.todayAverageGenerationTps,66);
 });
+
+test('a subscription with no cockpit detail shows its own reset cards as the reserve (ZCode saved sign-in)',()=>{
+ const account=sample().projection.rows[0].accounts[0];
+ const at='2026-11-22T18:00:00Z',id=c=>c.repeat(64);
+ account.subscriptionRef=null;
+ account.resetCards={state:'complete',count:3,earliestExpiresAt:at,items:[{id:id('a'),expiresAt:at},{id:id('b'),expiresAt:at},{id:id('c'),expiresAt:'2026-11-25T00:00:00Z'}],truncated:false,sources:[{source:'zcode-account',observedAt:'2026-11-21T12:00:00Z'}]};
+ assert.deepEqual(prototypeEngineSupplement(account).resetCards,[{kind:'reset',count:2,expiresAt:at},{kind:'reset',count:1,expiresAt:'2026-11-25T00:00:00Z'}]);
+ // a partial list keeps the unlisted rest, with no expiry
+ account.resetCards={...account.resetCards,state:'partial',count:5};
+ assert.deepEqual(prototypeEngineSupplement(account).resetCards.at(-1),{kind:'reset',count:2,expiresAt:null});
+ // unknown, none left and an unreadable count say nothing
+ for(const facts of [{state:'unknown',count:null,sources:[],truncated:false},{state:'complete',count:0,items:[],sources:[],truncated:false},{state:'partial',count:null,sources:[],truncated:false}]){
+  account.resetCards=facts;
+  assert.equal(prototypeEngineSupplement(account).resetCards,null);
+ }
+ // an account that has a reference keeps the detail path only (Codex: no change)
+ account.subscriptionRef='fedcba9876543210';
+ account.resetCards={state:'complete',count:1,earliestExpiresAt:at,items:[{id:id('e'),expiresAt:at}],truncated:false,sources:[]};
+ assert.equal(prototypeEngineSupplement(account).resetCards,null);
+ // a verified subscription's detail still wins
+ const ref=account.subscriptionRef='0123456789abcdef';
+ account.resetCards={state:'complete',count:1,earliestExpiresAt:at,items:[{id:id('d'),expiresAt:at}],truncated:false,sources:[]};
+ const detail=[{kind:'full',count:4,expiresAt:null}];
+ const got=prototypeEngineSupplement(account,{subscriptions:[{subscriptionRef:ref}],details:{subscriptions:[{subscriptionRef:ref,today:[],resetCounts:detail}]}});
+ assert.deepEqual(got.resetCards,detail);
+});

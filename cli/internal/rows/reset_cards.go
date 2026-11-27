@@ -23,7 +23,7 @@ func sanitizeResetCards(v *ResetCards, now time.Time) *ResetCards {
 		return unknownResetCards()
 	}
 	source := v.Sources[0]
-	if (source.Source != ResetCardCodexAccount && source.Source != ResetCardCodexBar) || source.ObservedAt.IsZero() || source.ObservedAt.After(now) || !now.Before(source.ObservedAt.Add(time.Hour)) {
+	if (source.Source != ResetCardCodexAccount && source.Source != ResetCardCodexBar && source.Source != ResetCardZCodeAccount) || source.ObservedAt.IsZero() || source.ObservedAt.After(now) || !now.Before(source.ObservedAt.Add(time.Hour)) {
 		return unknownResetCards()
 	}
 	count := *v.Count

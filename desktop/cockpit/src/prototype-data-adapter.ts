@@ -7,6 +7,20 @@ export interface PrototypeEngineSupplement {
  readonly resetCards:WireCockpitDetails['subscriptions'][number]['resetCounts']|null;
  readonly reserveCredits:WireAccount['credits'];
 }
+type ResetCounts=NonNullable<PrototypeEngineSupplement['resetCards']>;
+// A subscription with no reference at all (ZCode's saved sign-in derives none by design) has no cockpit detail, so
+// its reserve is the account's own reset-card facts: one entry per expiry, the unlisted rest with no expiry. An unknown
+// count or none left says nothing, exactly like the detail path.
+export function accountResetCounts(account:WireAccount):ResetCounts|null {
+ const f=account.resetCards;
+ if(!f||(f.state!=='complete'&&f.state!=='partial')||f.count===null||!(f.count>0))return null;
+ const byExpiry=new Map<string|null,number>();
+ for(const item of f.items??[])byExpiry.set(item.expiresAt,(byExpiry.get(item.expiresAt)??0)+1);
+ const listed=[...byExpiry.values()].reduce((n,v)=>n+v,0);
+ const out:{kind:string;count:number|null;expiresAt:string|null}[]=[...byExpiry].map(([expiresAt,count])=>({kind:'reset',count,expiresAt}));
+ if(f.count>listed)out.push({kind:'reset',count:f.count-listed,expiresAt:out.length?null:f.earliestExpiresAt??null});
+ return out;
+}
 export function prototypeEngineSupplement(account:WireAccount,data?:WireCockpitData):PrototypeEngineSupplement {
  const ref=account.subscriptionRef;
  const verified=ref!==null&&data?.subscriptions.some(s=>s.subscriptionRef===ref);
@@ -16,7 +30,7 @@ export function prototypeEngineSupplement(account:WireAccount,data?:WireCockpitD
  const eligible=detail?.today.filter(t=>t.bindingBasis==='source-wide-current-binding'&&t.observedOutputTokens>=0&&(t.generationTps===null||t.generationTps>=0))??[];
  const today=eligible.length===1&&detail?.today.length===1?eligible[0]:null;
  const wireCredits=detail?.credits;
- return {todayTokens:today?.observedTotalTokens??today?.observedOutputTokens??null,todayAverageGenerationTps:today?.generationTps??null,resetCards:detail?.resetCounts??null,
+ return {todayTokens:today?.observedTotalTokens??today?.observedOutputTokens??null,todayAverageGenerationTps:today?.generationTps??null,resetCards:detail?detail.resetCounts:ref===null?accountResetCounts(account):null,
   reserveCredits:wireCredits?{balance:wireCredits.balance,unit:'credits'}:detail?null:account.credits};
 }
 export const cockpitDetails=(data:WireCockpitData)=>data.details;
