@@ -324,7 +324,7 @@ final class D466CalendarWidgetTests: XCTestCase {
                          kind: "reset_credit", confirmedAt: confirmed)
     }
 
-    func testNewsItemsAreBuiltFromTheSharedClock() {
+    @MainActor func testNewsItemsAreBuiltFromTheSharedClock() {
         let published = at("2026-11-26T08:00:00Z"), confirmed = at("2026-11-26T08:29:00Z"), now = at("2026-11-26T09:00:00Z")
         let store = DockNewsClockStore()
         let confirmedKey = DockNewsClock.key(eventID: "banked-1", status: "confirmed")
@@ -344,7 +344,7 @@ final class D466CalendarWidgetTests: XCTestCase {
         XCTAssertNil(items[0].until, "retired: no longer news"); XCTAssertNotNil(items[1].until)
     }
 
-    func testNewsItemsAreCappedAtSixtyFour() {
+    @MainActor func testNewsItemsAreCappedAtSixtyFour() {
         let published = at("2026-11-26T08:00:00Z")
         let events = (0..<80).map { event("e\($0)", "announced", published: published.addingTimeInterval(Double($0))) }
         let items = CockpitNewsBridge.items(events: events, clock: DockNewsClockStore(), now: published.addingTimeInterval(100))
