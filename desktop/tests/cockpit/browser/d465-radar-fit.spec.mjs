@@ -42,10 +42,16 @@ test(`D465 radar fit at ${width} pt, zoom ${zoom}, ${locale}: the radar takes >=
  const data=sample();data.projection.rows=data.projection.rows.slice(0,2);
  expect(await receive(send('display',{data}))).toBe(true);
  // The column's width is set directly, the way a later layout without the calendar column would change it.
- await page.addStyleTag({content:`html{zoom:${zoom}} .eng-cols .pl-col[data-plugin="resources"]{width:${width}px!important;min-width:0!important;max-width:${width}px!important;justify-self:start}`});
+ // (Inline style through the CSSOM: the page's CSP refuses injected stylesheets.)
+ await expect(column(page)).toHaveCount(1);
+ await page.evaluate(([width,zoom])=>{document.documentElement.style.zoom=String(zoom);
+  const col=document.querySelector('.eng-cols .pl-col[data-plugin="resources"]');
+  for(const [k,v] of [['width',width+'px'],['min-width','0px'],['max-width',width+'px'],['justify-self','start']])col.style.setProperty(k,v,'important');},[width,zoom]);
  const samples=[0,1,2,3,4].map(i=>reading(T0+i*5000,{cpuUser:30+i*2,memApp:(26+i*0.2)*GB,diskFree:(72-i*0.1)*GB}));
  expect(await receive(send('pluginData',{id:'resources',data:{samples}}))).toBe(true);
  await expect(column(page).locator('.pl-radar')).toHaveCount(1);
+ await expect.poll(async()=>(await radarShare(page)).column,{message:'the column takes its width'}).toBeGreaterThan(0);
+ await page.waitForTimeout(200);// the draw area is observed: let it repaint at the new size
  const s=await radarShare(page);
  expect(s.share,`radar ink is ${(s.share*100).toFixed(1)}% of a ${s.column.toFixed(1)} px column`).toBeGreaterThanOrEqual(0.85);
  const m=await clipped(page);
