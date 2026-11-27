@@ -1495,7 +1495,7 @@ struct StatusNoticePresentation {
         var autoReading: StatusAutoReading?
         if setUp { title = "\u{00B7}\u{00B7}\u{00B7}" }
         else if composition.latestSettings?.snapshot.preferences.menuDisplay == .automatic {
-            // D377 option C: the icon alone, a compact number below the alert line, a red dot when used up.
+            // D377 option C + D476: the icon alone, a compact number when red or amber (none when crowded), a red dot when used up.
             let now = composition.currentDate()
             let mode = statusAuto.resolve(composition.menuAutoInput, squeezed: statusItemHidden, displayEpoch: displayEpoch, now: now)
             armStatusAutoRecheck(now: now)

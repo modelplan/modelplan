@@ -2,9 +2,11 @@
 import AppKit
 import Foundation
 
-/// D377 option C (owner 2026-11-21): the automatic menu-bar display. The item is the icon alone by default; a compact
-/// number appears only while the tracked quota is below the alert line; a used-up quota shows the icon with a red dot;
-/// a squeezed item (its window off screen or covered) falls back to the icon alone.
+/// D377 option C (owner 2026-11-21), amended by D476 (owner 2026-11-27): the automatic menu-bar display. The item is the
+/// icon alone by default; a compact number appears while the tracked quota is red (below the alert line) or amber (its
+/// estimate runs out before the reset); a used-up quota shows the icon with a red dot; a crowded menu bar where the item
+/// risks being hidden (squeezed: its window off screen or covered, the D378 detection) shows no number at all, red
+/// included, so the icon stays as narrow as it can.
 ///
 /// Reference: Pulse and CodexBar status items (icon-only by default, a number only by choice; CodexBar's compact
 /// spacing). Behaviour is our own code; macOS has no "hidden behind the notch" query, so "squeezed" is the existing
@@ -26,6 +28,9 @@ struct StatusAutoReading: Equatable {
     var remaining: Double
     var shown: String
     var alertLine: Double
+    /// D476 (supersedes D377 on amber): the tracked quota is amber, its estimate runs out before the reset (the same
+    /// run-out the ring uses, `DockQuotaWindowInput.runOutAt`). A reserve item never sets it (master spec §4.1).
+    var amber = false
 }
 
 enum StatusAutoInput: Equatable {
@@ -79,7 +84,9 @@ struct StatusAutoDisplay {
         reading = current
         guard let current else { numberShown = false; squeezedSince = nil; return .iconOnly }
         if current.remaining <= 0 { numberShown = false; squeezedSince = nil; return .usedUp }
-        if current.remaining <= current.alertLine { numberShown = true }
+        // D476: a number for red (at or under the alert line) and for amber; it goes again five points above the line
+        // once the estimate no longer runs out before the reset.
+        if current.remaining <= current.alertLine || current.amber { numberShown = true }
         else if current.remaining > current.alertLine + Self.hysteresis { numberShown = false }
         guard numberShown else { squeezedSince = nil; fellBack = false; return .iconOnly }
         let wide = StatusAutoMode.number(current.shown)
