@@ -17,6 +17,8 @@ async function open(page,data){
  expect(await receive(send('display',{data}))).toBe(true);
  return {send,receive};
 }
+// The faders draw the engine's publication (empty bays without one, CKP-FAD), so the fixture publishes two models.
+const model=(id,developerId)=>({id,name:'Synthetic '+id,developerId,recommended:'medium',efforts:[{effort:'low',label:'Low',star:false,ability:30,cost:1,time:null},{effort:'medium',label:'Med',star:true,ability:40,cost:2,time:null}]});
 // Every row of the fixture is a widget member; `fewer` keeps the first n rows.
 function fixture(rows=3){
  const {data}=visualFixture();
@@ -24,6 +26,9 @@ function fixture(rows=3){
  const keep=new Set(data.projection.rows.flatMap(r=>r.accounts.map(a=>a.subscriptionRef)).filter(Boolean));
  data.subscriptions=data.subscriptions.filter(s=>keep.has(s.subscriptionRef));
  for(const r of data.projection.rows)r.surfaces=['dock','menu','settings'];
+ const models=[model('used','openai'),model('lineup-1','anthropic')];
+ data.details.publication={contractVersion:1,publicationId:'0123456789abcdef01234567',publishedAt:'2026-10-24T12:00:00Z',source:'client',truncated:false,models};
+ data.details.publishedModels=models;
  return data;
 }
 const keys=page=>page.locator('.eng-keys .ek[data-sub]');
@@ -83,7 +88,9 @@ test('CKP-SHELL-37 with no widget member the record strip and the faders are sti
  await open(page,data);
  await expect(keys(page)).toHaveCount(0);
  await expect(page.locator('.ck-eng .ec-empty')).toHaveCount(1);
- for(const sel of ['.ck-tape','.dk-fad .fd-chs','.hud','.ck-head [data-settings]'])await expect(page.locator(sel),sel).toBeVisible();
+ for(const sel of ['.ck-tape','.dk-fad .fd-chs','.ck-head [data-settings]'])await expect(page.locator(sel),sel).toBeVisible();
+ // The HUD has no engine to describe, so it stays hidden (setEmpty, since 0fd1e9dec; same as c-hud.spec.mjs empty state).
+ await expect(page.locator('.hud')).toBeHidden();
  // The faders keep their channels (empty bays), never collapse.
  expect(await page.locator('.dk-fad .fd-ch').count()).toBeGreaterThan(0);
 });
@@ -97,5 +104,5 @@ test('CKP-SHELL-37 G3-63 G3-64 every member hidden in Settings leaves the strip 
  await expect(page.locator('.dk-fad .fd-ch:not(.empty)'),'a hidden member brings no model fader').toHaveCount(0);
  expect(await receive(send('appearance',{...appearance,hiddenMembers:[emitted[1]]}))).toBe(true);
  await expect(keys(page)).toHaveCount(1);
- expect(await page.locator('.dk-fad .fd-ch:not(.empty)').count()).toBeGreaterThan(0);
+ await expect(page.locator('.dk-fad .fd-ch:not(.empty)').first()).toBeVisible();
 });
