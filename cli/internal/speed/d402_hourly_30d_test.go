@@ -2,6 +2,7 @@
 package speed
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -162,5 +163,113 @@ func TestD402OverTheByteCapOnlyWholeOldestDaysGo(t *testing.T) {
 	}
 	if len(perDay) >= 30 {
 		t.Fatal("nothing was pruned")
+	}
+}
+
+// macrev2-1213-2. Invariant: the writer never produces a perf.json the loader refuses, and a file that is already over the limit
+// is shrunk by the next write instead of staying unreadable. Whole oldest hourly days go first; cursors and recent history stay.
+func denseHourly(from, now time.Time) []Hourly {
+	var rows []Hourly
+	for at := from; at.Before(now); at = at.Add(time.Hour) {
+		for si, s := range []string{"codex", "claude-code", "zcode", "opencode"} {
+			for m := 0; m < 6; m++ {
+				rows = append(rows, Hourly{GrantEpoch: &GrantEpoch{StoreEpoch: "e1"}, Hour: at.Format(time.RFC3339), Source: s, Model: "model-" + string(rune('a'+m)),
+					ObservedOutputTokens: int64(si*100 + m + 1), ObservedRequests: 2})
+			}
+		}
+	}
+	return rows
+}
+
+func bigCursors(n int) map[string]Cursor {
+	files := map[string]Cursor{}
+	for i := 0; i < n; i++ {
+		files[fileKey(string(rune('a'+i%26))+strings.Repeat("x", i%7)+time.Duration(i).String())] = Cursor{Offset: int64(i), Seen: "2026-11-24", Source: "codex"}
+	}
+	return files
+}
+
+func TestD402DenseHourlyPlusALargeCursorTableStaysLoadable(t *testing.T) {
+	utc(t)
+	now := time.Date(2026, 11, 24, 12, 30, 0, 0, time.UTC)
+	cache := t.TempDir()
+	seed := PerfLedger{SchemaVersion: 1, Since: now.AddDate(0, 0, -60), Files: bigCursors(21000)}
+	if err := os.MkdirAll(filepath.Dir(PerfPath(cache)), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(PerfPath(cache), seed.prune(now), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := loadPerf(cache); !ok {
+		t.Fatal("the seed ledger must be loadable")
+	}
+	if err := observePerf(cache, now, Ingest{}, func(l *PerfLedger) bool {
+		l.Hourly = append(l.Hourly, denseHourly(time.Date(2026, 10, 26, 0, 0, 0, 0, time.UTC), now)...)
+		return true
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(PerfPath(cache))
+	if err != nil || fi.Size() >= maxFile-fileMargin+1 {
+		t.Fatalf("written file %v bytes (err %v), want under %d", fi.Size(), err, writeLimit)
+	}
+	l, ok := loadPerf(cache)
+	if !ok {
+		t.Fatal("the next load rejects the file the writer just made")
+	}
+	if len(l.Files) != 21000 {
+		t.Fatalf("%d of 21000 cursors survived", len(l.Files))
+	}
+	days := map[string]int{}
+	for _, h := range l.Hourly {
+		days[h.Hour[:10]]++
+	}
+	if days["2026-11-24"] == 0 || days["2026-11-23"] == 0 {
+		t.Fatalf("yesterday and today must stay: %v", days)
+	}
+	if len(days) >= 30 {
+		t.Fatalf("nothing was trimmed: %d days", len(days))
+	}
+	// Trimmed by whole oldest days: what is left is one unbroken run ending today, each older day complete.
+	first := ""
+	for d := range days {
+		if first == "" || d < first {
+			first = d
+		}
+	}
+	for d := time.Date(2026, 11, 24, 0, 0, 0, 0, time.UTC); d.Format("2006-01-02") >= first; d = d.AddDate(0, 0, -1) {
+		if days[d.Format("2006-01-02")] == 0 {
+			t.Fatalf("day %s missing inside the kept run starting %s", d.Format("2006-01-02"), first)
+		}
+	}
+	if per := days[first]; first < "2026-11-22" && per != 24*4 {
+		t.Fatalf("oldest kept day %s is partial: %d rows", first, per)
+	}
+}
+
+func TestD402AnOverLimitPerfFileIsShrunkByTheNextWrite(t *testing.T) {
+	utc(t)
+	now := time.Date(2026, 11, 24, 12, 30, 0, 0, time.UTC)
+	cache := t.TempDir()
+	big := PerfLedger{SchemaVersion: 1, Since: now.AddDate(0, 0, -60), Files: bigCursors(6000), Hourly: denseHourly(time.Date(2026, 10, 26, 0, 0, 0, 0, time.UTC), now)}
+	raw, _ := json.Marshal(big)
+	if len(raw) <= maxFile {
+		t.Fatalf("fixture is only %d bytes", len(raw))
+	}
+	if err := os.MkdirAll(filepath.Dir(PerfPath(cache)), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(PerfPath(cache), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := loadPerf(cache); ok {
+		t.Fatal("readers must still refuse an over-limit file")
+	}
+	if err := observePerf(cache, now, Ingest{}, func(*PerfLedger) bool { return false }); err != nil {
+		t.Fatal(err)
+	}
+	l, ok := loadPerf(cache)
+	if !ok || len(l.Files) != 6000 || len(l.Hourly) == 0 {
+		t.Fatalf("not recovered: ok=%v cursors=%d hourly=%d", ok, len(l.Files), len(l.Hourly))
 	}
 }

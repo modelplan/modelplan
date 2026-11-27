@@ -147,7 +147,11 @@ func LoadPerf(cache string) (PerfLedger, bool) {
 	}
 	return l, ok
 }
-func loadPerf(cache string) (l PerfLedger, ok bool) {
+func loadPerf(cache string) (l PerfLedger, ok bool) { return loadPerfUpTo(cache, maxFile) }
+
+// loadPerfUpTo reads perf.json up to limit bytes. Readers use maxFile; the writer uses recoverMax, so a file that grew past the
+// reader limit is read whole and shrunk by the next write instead of staying unreadable for good.
+func loadPerfUpTo(cache string, limit int) (l PerfLedger, ok bool) {
 	b, err := os.ReadFile(PerfPath(cache))
 	if errors.Is(err, os.ErrNotExist) {
 		return PerfLedger{SchemaVersion: 1}, true
@@ -156,7 +160,7 @@ func loadPerf(cache string) (l PerfLedger, ok bool) {
 		idlework.Open()
 		idlework.Read(len(b))
 	}
-	if err != nil || len(b) > maxFile {
+	if err != nil || len(b) > limit {
 		return PerfLedger{}, false
 	}
 	idlework.Decode()
@@ -178,9 +182,13 @@ func observePerf(cache string, now time.Time, in Ingest, f func(*PerfLedger) boo
 		return nil
 	}
 	defer unlock()
-	l, ok := loadPerf(cache)
+	l, ok := loadPerfUpTo(cache, recoverMax)
 	if !ok {
 		return nil // not ours to overwrite
+	}
+	oversize := false
+	if fi, err := os.Stat(PerfPath(cache)); err == nil && fi.Size() > maxFile {
+		oversize = true // written by an older build or grown past the limit: the next write shrinks it
 	}
 	created := l.Since.IsZero()
 	if created {
@@ -203,7 +211,7 @@ func observePerf(cache string, now time.Time, in Ingest, f func(*PerfLedger) boo
 			l.Live[i].ProjectLabel, changed = "", true
 		}
 	}
-	if !f(&l) && !created && !changed {
+	if !f(&l) && !created && !changed && !oversize {
 		return nil
 	}
 	roll := rollup(l.Rows, "") // before pruning, so days perf.json lets go are kept in daily-long.json
@@ -460,17 +468,67 @@ func (l *PerfLedger) prune(now time.Time) []byte {
 			delete(l.Stores, k)
 		}
 	}
+	// The encoded file is always under writeLimit (maxFile minus a margin), so the loader never refuses what this writes.
+	// Order: whole oldest hourly days, then the oldest rows and sessions, then the hourly rows that are left, then counted
+	// requests, then the oldest file and store cursors. Only when nothing is left to give does it write what it has.
 	for {
 		b, _ := json.Marshal(l)
-		if len(b) < maxFile || (len(l.Rows) == 0 && len(l.Sessions) == 0) {
+		if len(b) < writeLimit {
 			return append(b, '\n')
 		}
-		l.Rows = l.Rows[len(l.Rows)/10:]
-		l.Sessions = l.Sessions[len(l.Sessions)/10:]
-		if len(l.Rows) < 10 && len(l.Sessions) < 10 {
-			l.Rows, l.Sessions = nil, nil
+		if h, ok := dropOldestHourlyDay(l.Hourly, now); ok {
+			l.Hourly = h
+			continue
 		}
+		if len(l.Rows) > 0 || len(l.Sessions) > 0 {
+			l.Rows = l.Rows[len(l.Rows)/10:]
+			l.Sessions = l.Sessions[len(l.Sessions)/10:]
+			if len(l.Rows) < 10 && len(l.Sessions) < 10 {
+				l.Rows, l.Sessions = nil, nil
+			}
+			continue
+		}
+		if len(l.Hourly) > 1 {
+			i := 1
+			for i < len(l.Hourly) && l.Hourly[i].Hour == l.Hourly[0].Hour {
+				i++
+			}
+			l.Hourly = l.Hourly[i:]
+			continue
+		}
+		if len(l.Counted) > 0 {
+			l.Counted = l.Counted[len(l.Counted)/10+1:]
+			continue
+		}
+		if len(l.Files) > 0 || len(l.Stores) > 0 {
+			l.Files = dropOldestCursors(l.Files, func(c Cursor) string { return c.Seen })
+			l.Stores = dropOldestCursors(l.Stores, func(c DBCursor) string { return c.Day })
+			continue
+		}
+		return append(b, '\n')
 	}
+}
+
+// dropOldestCursors removes the tenth (at least one) with the oldest day, by key order among equals.
+func dropOldestCursors[C any](m map[string]C, dayOf func(C) string) map[string]C {
+	if len(m) == 0 {
+		return m
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		a, b := dayOf(m[keys[i]]), dayOf(m[keys[j]])
+		if a != b {
+			return a < b
+		}
+		return keys[i] < keys[j]
+	})
+	for _, k := range keys[:len(keys)/10+1] {
+		delete(m, k)
+	}
+	return m
 }
 
 // projectRule is the current project attribution rule (see PerfSession.ProjectRule).

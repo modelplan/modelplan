@@ -54,6 +54,8 @@ const HourlyKeepDays = 30
 //     epoch, about 190 bytes each, so about 510 KiB for four sources active in every hour of every day.
 //   - Yesterday, today and the rolling 48 hours keep one row per model, up to hourlyRecentBytes; beyond that they lose their model
 //     names too (a pathological number of models inside two days).
+//   - The whole is capped at hourlyMaxBytes (the file writer, perf.go prune, trims whole oldest hourly days again when the whole
+//     file would not fit under writeLimit, before it touches anything else).
 //   - The whole is capped at hourlyMaxBytes. Over it, the oldest whole local day goes, never part of a day and never yesterday,
 //     today or the cost window.
 const (
@@ -86,16 +88,12 @@ func hourlyKept(rows []Hourly, now time.Time) []Hourly {
 	if n := sort.Search(len(kept), func(i int) bool { return protected(kept[i]) }); size(kept[n:]) > hourlyRecentBytes {
 		kept = compactHourly(kept, "9999", now.Add(1000*costHours)) // every row, model names included
 	}
-	for len(kept) > 0 && size(kept) > hourlyMaxBytes && !protected(kept[0]) {
-		oldest, i, whole := hourDay(kept[0]), 0, true
-		for i < len(kept) && hourDay(kept[i]) == oldest {
-			whole = whole && !protected(kept[i])
-			i++
-		}
-		if !whole { // the day reaches into the cost window: it stays, whole
+	for len(kept) > 0 && size(kept) > hourlyMaxBytes {
+		next, ok := dropOldestHourlyDay(kept, now)
+		if !ok {
 			break
 		}
-		kept = kept[i:]
+		kept = next
 	}
 	// Still over (an absurd number of consent epochs or sources inside two days): whole oldest hours go, never part of an hour.
 	for len(kept) > 1 && size(kept) > hourlyMaxBytes {
@@ -106,6 +104,22 @@ func hourlyKept(rows []Hourly, now time.Time) []Hourly {
 		kept = kept[i:]
 	}
 	return kept
+}
+
+// dropOldestHourlyDay removes the oldest local day, whole, from rows sorted oldest first. It refuses (false) when that day
+// reaches into the cost window or is yesterday or today.
+func dropOldestHourlyDay(rows []Hourly, now time.Time) ([]Hourly, bool) {
+	if len(rows) == 0 {
+		return rows, false
+	}
+	recent, oldest, i := windowFrom(now, 2), hourDay(rows[0]), 0
+	for i < len(rows) && hourDay(rows[i]) == oldest {
+		if oldest >= recent || parsedAfter(rows[i], now.Add(-costHours)) {
+			return rows, false
+		}
+		i++
+	}
+	return rows[i:], true
 }
 
 func hourDay(r Hourly) string {
