@@ -142,3 +142,16 @@ for(const via of ['page','alerts'])test(`macrevb-1290-1 news off the shown page 
  const last=await page.evaluate(()=>window.__posts.filter(m=>m.type==='nextDeadline').at(-1)?.deadlineUnixMs);
  expect(last).toBe(String(at+30*MIN));
 });
+// macrevb-1290-1 (late negotiation): a look drawn before the host's first news message reaches the host once, with the
+// original look time, when that first answer still reports the news live.
+test('macrevb-1290-1 a look before negotiation is replayed once with its original time',async({page})=>{
+ const {send,receive}=await open(page,banked());
+ await expect(key(page).locator('.ek-news.solid')).toHaveCount(1);
+ expect(await looks(page)).toEqual([]);
+ await page.clock.setFixedTime(new Date(NOW+10*MIN));
+ expect(await receive(send('news',{items:[{id:'codex-banked-1127',status:'confirmed',untilUnixMs:String(NOW+30*MIN)}]}))).toBe(true);
+ const posted=await page.evaluate(()=>window.__posts.filter(m=>m.type==='action'&&m.action==='newsLook').map(m=>m.events));
+ expect(posted).toEqual([[{id:'codex-banked-1127',status:'confirmed',atUnixMs:String(NOW)}]]);
+ expect(await receive(send('tick',{nowUnixMs:String(NOW+11*MIN),reason:'deadline'}))).toBe(true);
+ expect((await looks(page)).length).toBe(1);
+});

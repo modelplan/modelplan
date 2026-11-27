@@ -55,13 +55,13 @@ export interface NewsClock {
  /** D466 shared clock: the host's answer per event and status (`until` null = not news). Replaces earlier answers. */
  host(items:readonly {readonly id:string;readonly status:NewsEvent['status'];readonly until:number|null}[]):void;
  /** Called with the events first looked at in this page (the host records them in the shared clock). */
- onLook(report:((events:{id:string;status:NewsEvent['status']}[])=>void)|null):void;
+ onLook(report:((events:{id:string;status:NewsEvent['status']}[],at:number)=>void)|null):void;
  /** Forget everything (a cleared view or a new store). */
  reset():void;
 }
 
 export function createNewsClock():NewsClock {
- const entries=new Map<string,Entry>(),answers=new Map<string,number|null>();let shown=false,reporter:((events:{id:string;status:NewsEvent['status']}[])=>void)|null=null;
+ const entries=new Map<string,Entry>(),answers=new Map<string,number|null>();let shown=false,reporter:((events:{id:string;status:NewsEvent['status']}[],at:number)=>void)|null=null;
  const hostUntil=(e:NewsEvent):number|null|undefined=>answers.has(newsKey(e))?answers.get(newsKey(e)):undefined;
  const capped=(e:NewsEvent,now:number)=>{const start=newsStart(e),cap=newsCap(e);return start!==null&&cap!==null&&now<cap?cap:null;};
  const endOf=(x:Entry,cap:number,now:number,present:boolean)=>Math.min(cap,x.firstLooked===null?Infinity:x.firstLooked+NEWS_LOOK_MS,present?now+Math.max(0,NEWS_PRESENT_MS-x.present):Infinity);
@@ -85,7 +85,7 @@ export function createNewsClock():NewsClock {
    // Bounded memory: drop entries whose cap has passed; keep the rest even when an event is briefly missing from a reply.
    for(const [key,x] of entries)if(!live.has(key)&&x.end<=now)entries.delete(key);
    while(entries.size>MAX_ENTRIES){const first=entries.keys().next().value;if(first===undefined)break;entries.delete(first);}
-   if(looks.length&&reporter){try{reporter(looks);}catch{/* reporting never breaks a render */}}
+   if(looks.length&&reporter){try{reporter(looks,now);}catch{/* reporting never breaks a render */}}
    return looks.length>0;
   },
   present(value,now){

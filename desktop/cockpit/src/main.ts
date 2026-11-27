@@ -15,7 +15,7 @@ if(pageId&&origin&&root&&window.top===window) {
   const post=(message:string)=>window.webkit?.messageHandlers?.cockpit?.postMessage(message);
   bridge=new CockpitBridge(pageId,origin,post,view,()=>crypto.randomUUID());
   // D466: first looks go to the host's shared news clock (#1289), when the host keeps one.
-  newsClock.onLook(events=>{bridge.newsLook(events);});
+  newsClock.onLook((events,at)=>{bridge.newsLook(events,at);});
   const source:BridgeSource=Object.freeze({origin,isMainFrame:true});
   const listeners=new AbortController();
   root.addEventListener('cockpit-deadline',()=>bridge.deadlineChanged(),{signal:listeners.signal});
