@@ -54,6 +54,8 @@ struct StatusAutoDisplay {
     static let minimumSwitchInterval: TimeInterval = 60
 
     private var numberShown = false
+    /// The red latch alone (amber never sets it).
+    private var redShown = false
     private var held: StatusAutoReading?
     private var unavailableSince: Date?
     private var squeezedSince: Date?
@@ -82,12 +84,14 @@ struct StatusAutoDisplay {
             current = held
         }
         reading = current
-        guard let current else { numberShown = false; squeezedSince = nil; return .iconOnly }
-        if current.remaining <= 0 { numberShown = false; squeezedSince = nil; return .usedUp }
-        // D476: a number for red (at or under the alert line) and for amber; it goes again five points above the line
-        // once the estimate no longer runs out before the reset.
-        if current.remaining <= current.alertLine || current.amber { numberShown = true }
-        else if current.remaining > current.alertLine + Self.hysteresis { numberShown = false }
+        guard let current else { numberShown = false; redShown = false; squeezedSince = nil; return .iconOnly }
+        if current.remaining <= 0 { numberShown = false; redShown = false; squeezedSince = nil; return .usedUp }
+        // D377 red keeps its recovery hysteresis: shown at or under the alert line, gone five points above it.
+        // D476 amber is not latched (macrev2-1289-9): it shows only while the estimate runs out before the reset, so an
+        // amber reading that turns normal drops the number at once.
+        if current.remaining <= current.alertLine { redShown = true }
+        else if current.remaining > current.alertLine + Self.hysteresis { redShown = false }
+        numberShown = redShown || current.amber
         guard numberShown else { squeezedSince = nil; fellBack = false; return .iconOnly }
         let wide = StatusAutoMode.number(current.shown)
         if fellBack {

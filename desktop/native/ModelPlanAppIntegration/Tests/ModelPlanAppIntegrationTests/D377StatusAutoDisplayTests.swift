@@ -30,6 +30,38 @@ import ModelPlanWire
         XCTAssertEqual(fresh.resolve(reading(60), squeezed: false, displayEpoch: 0, now: base), .iconOnly, "normal never shows a number")
     }
 
+    /// macrev2-1289-9: in automatic window selection the tracked reading is the most urgent window of all windows of all
+    /// accounts. One account with a normal 40 % window and a 60 % window forecast to run out before its reset: the amber
+    /// 60 % wins and the number shows (the ring's own pick, the lowest number, would have hidden it).
+    func testD476TheMostUrgentWindowOfOneAccountWinsInAutomaticSelection() throws {
+        var five = DockQuotaWindowInput(id: "five", period: .fiveHour, label: "5h", remainingPercent: 40,
+                                        resetsAt: base.addingTimeInterval(7200), durationSeconds: 18000)
+        five.runOutAt = nil
+        var week = DockQuotaWindowInput(id: "week", period: .week, label: "Weekly", remainingPercent: 60,
+                                        resetsAt: base.addingTimeInterval(3 * 86400), durationSeconds: 604800)
+        week.runOutAt = base.addingTimeInterval(86400)
+        var account = DockInstrumentInput(id: "aaaaaaaaaaaaaaaa", name: "Codex", windows: [five, week]); account.dataState = .fresh
+        let input = EngineMenuBarTitle.autoInput(inputs: [account], preferences: SettingsPreferences(), now: base)
+        guard case .reading(let tracked) = input else { return XCTFail("a tracked reading") }
+        XCTAssertEqual(tracked.shown, "60%"); XCTAssertTrue(tracked.amber)
+        var auto = StatusAutoDisplay()
+        XCTAssertEqual(auto.resolve(input, squeezed: false, displayEpoch: 0, now: base), .number("60%"), "the amber window shows its number")
+    }
+
+    /// macrev2-1289-9: amber is not latched. An amber 28 % (red line 25) whose estimate now lasts to the reset is normal at
+    /// once: icon only, although 28 is inside red's five-point recovery band. Red keeps that band (the test above).
+    func testD476AmberTurningNormalDropsTheNumberAtOnce() {
+        var auto = StatusAutoDisplay()
+        var amber = StatusAutoReading(name: "Codex", remaining: 28, shown: "28%", alertLine: 25); amber.amber = true
+        XCTAssertEqual(auto.resolve(.reading(amber), squeezed: false, displayEpoch: 0, now: base), .number("28%"))
+        amber.amber = false
+        XCTAssertEqual(auto.resolve(.reading(amber), squeezed: false, displayEpoch: 0, now: base.addingTimeInterval(1)), .iconOnly,
+                       "never red, so no red hysteresis keeps it")
+        XCTAssertEqual(auto.resolve(reading(25), squeezed: false, displayEpoch: 0, now: base.addingTimeInterval(2)), .number("25%"))
+        XCTAssertEqual(auto.resolve(reading(28), squeezed: false, displayEpoch: 0, now: base.addingTimeInterval(3)), .number("28%"),
+                       "after red, the D377 band still holds the number")
+    }
+
     func testD476ACrowdedMenuBarShowsNoNumberEvenWhenRed() {
         for remaining in [12.0, 60] {
             var auto = StatusAutoDisplay()
