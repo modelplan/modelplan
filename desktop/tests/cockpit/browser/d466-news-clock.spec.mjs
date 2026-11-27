@@ -12,13 +12,15 @@ import {visualFixture} from '../visual-fixture.mjs';
 
 test.beforeEach(async({page})=>excludePortholeFlicker(page));
 const NOW=new Date(2026,10,27,9,24).getTime(),MIN=60_000,H=36e5,iso=t=>new Date(t).toISOString();
-async function open(page,data,locale='zh-CN'){
+async function open(page,data,locale='zh-CN',{hidden,plugins,news}={}){
  await page.addInitScript(()=>{window.__posts=[];window.webkit={messageHandlers:{cockpit:{postMessage(raw){window.__posts.push(JSON.parse(raw));}}}};});
  await page.clock.setFixedTime(new Date(NOW));
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
- expect(await receive(send('load',{appearance:{...appearance,locale},shell,redBelow:25}))).toBe(true);
+ expect(await receive(send('load',{appearance:{...appearance,locale},shell,redBelow:25,...(hidden?{hiddenMembers:hidden}:{})}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+ if(plugins)expect(await receive(send('plugins',{plugins}))).toBe(true);
+ if(news)expect(await receive(send('news',{items:news}))).toBe(true);
  expect(await receive(send('display',{data}))).toBe(true);
  return {send,receive};
 }
@@ -76,4 +78,38 @@ test('D466 unseen news is capped at 24 h after its start even with the cockpit h
  await open(page,data);
  await expect(key(page).locator('.ek-news')).toHaveCount(0);await expect(col(page).locator('.qrv-plus')).toHaveCount(0);
  expect(confirmedAt).toBeLessThan(NOW);
+});
+
+// macrevb-1290-1: news whose only subscription is hidden is drawn nowhere, so no look is recorded and none is posted to
+// the host's shared clock; shown again, the dot appears and its clock starts then.
+test('macrevb-1290-1 hidden subscription: no look and no newsLook; shown again, the clock starts then',async({page})=>{
+ const data=banked();const ref=data.projection.rows[0].accounts[0].subscriptionRef;
+ const {send,receive}=await open(page,data,'zh-CN',{hidden:[ref],news:[]});// a host with the shared clock, no answers yet
+ const looks=()=>page.evaluate(()=>window.__posts.filter(m=>m.type==='action'&&m.action==='newsLook'));
+ await expect(page.locator('.eng-keys .ek[data-sub]')).toHaveCount(3);
+ await expect(page.locator('.ek-news')).toHaveCount(0);
+ expect(await looks()).toEqual([]);
+ expect(await receive(send('tick',{nowUnixMs:String(NOW+40*MIN),reason:'deadline'}))).toBe(true);
+ expect(await looks()).toEqual([]);
+ // Shown again at 10:04: the news is drawn and its look starts now, so it lasts until 10:34.
+ const shown=NOW+40*MIN;await page.clock.setFixedTime(new Date(shown));
+ expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);
+ await expect(key(page).locator('.ek-news.solid')).toHaveCount(1);
+ expect((await looks()).map(m=>m.events)).toEqual([[{id:'codex-banked-1127',status:'confirmed'}]]);
+ const last=await page.evaluate(()=>window.__posts.filter(m=>m.type==='nextDeadline').at(-1)?.deadlineUnixMs);
+ expect(last).toBe(String(shown+30*MIN));
+});
+// macrevb-1290-2: one clock lookup per event on every surface. At the look deadline the calendar's all-day line, the key
+// dot, the reserve +1 and the alert row all go together; the reserve count stays.
+test('macrevb-1290-2 the calendar line, key dot, +1 and alert row retire at the same tick',async({page})=>{
+ const {send,receive}=await open(page,banked(),'zh-CN',{plugins:{version:1,entries:[{id:'calendar',enabled:true,pinned:false}],settings:{}}});
+ const line=page.locator('.pl-col[data-plugin="calendar"] .cal-adr');
+ await expect(line).toHaveCount(1);await expect(line).toContainText('+1');
+ await expect(key(page).locator('.ek-news')).toHaveCount(1);await expect(col(page).locator('.qrv-plus')).toHaveCount(1);
+ await expect(page.locator('.pg-overview .mfd-alerts li.al-blue')).toHaveCount(1);
+ expect(await receive(send('tick',{nowUnixMs:String(NOW+30*MIN),reason:'deadline'}))).toBe(true);
+ await expect(line).toHaveCount(0);
+ await expect(key(page).locator('.ek-news')).toHaveCount(0);await expect(col(page).locator('.qrv-plus')).toHaveCount(0);
+ await expect(page.locator('.pg-overview .mfd-alerts li.al-blue')).toHaveCount(0);
+ await expect(col(page).locator('.qrow-r .qrv-c')).toHaveText('重置 1 次');
 });

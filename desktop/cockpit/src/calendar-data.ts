@@ -8,6 +8,7 @@ import {cockpitMembers} from './members.js';
 import {memberColours} from './session-binding.js';
 import {currentWindow} from './prototype-data-adapter.js';
 import {exact,record} from './schema.js';
+import {newsClock} from './news-clock.js';
 
 export interface CalendarSub {readonly abbr:string;readonly colour:string;readonly name:{readonly en:string;readonly zh:string}}
 /** A published peak window; `to` is null when the publication shows no end inside its horizon. */
@@ -129,9 +130,14 @@ export function calendarFromCockpit(data:WireCockpitData,now:number):CalendarDat
  });
  // Announced (or confirmed) public resets for the user's rows, still current.
  for(const e of data.details?.resetEvents??[]){
-  const sub=subOfRow(e.rowId),published=ms(e.publishedAt),expires=ms(e.expiresAt);
+  // A plan-scoped announcement belongs to that plan's subscription only (as the alert list and the key dot join it).
+  const found=members.findIndex(m=>m.row.id===e.rowId&&(!e.planIds?.length||e.planIds.includes(m.account.plan.id))),sub=found<0?null:found;
+  const published=ms(e.publishedAt),expires=ms(e.expiresAt);
   if(sub===null||published===null||expires===null||expires<=now)continue;
   const at=effectiveAt(e.schedule);
+  // D466 (macrevb-1290-2): the same news clock as the key dot, the reserve "+1" and the alert list. An announcement is
+  // drawn while it is news; a timed one also until its time passes. An untimed banked reset leaves with the others.
+  if(!newsClock.isNews(e,now)&&!(at!==null&&at>now))continue;
   // A banked reset (+1) is placed where the website puts it: the stated time, else the day it was published.
   if(e.kind==='reset_credit'){spans.push({sub,kind:e.status==='confirmed'?'creditConfirmed':'credit',from:at??published,to:at,count:1});continue;}
   spans.push({sub,kind:e.status==='confirmed'?'confirmed':'announced',from:Math.min(published,now),to:at!==null&&at>=Math.min(published,now)?at:null,count:null});
