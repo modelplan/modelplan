@@ -109,14 +109,14 @@ private actor D65Engine: EngineClient {
         return (app, view)
     }
 
-    /// The nozzle as painted: the empty station against the 1 % station, same vendor, same weekly ring.
+    /// The nozzle as painted: the empty station against the 1 % station, same vendor, same weekly (outer) ring.
     func testD65EmptyWindowDrawsRedTrackRedFaceAndDimmedMark() async throws {
         let (app, view) = try await launch()
         let skin = try XCTUnwrap(view.presentedSkinForChecks), image = try XCTUnwrap(view.presentedImageForChecks)
         let ids = Dictionary(uniqueKeysWithValues: view.presentedReadingsForChecks.map { ($0.value.name, $0.key) })
         let empty = try XCTUnwrap(skin.stations.first { $0.subscriptionID == ids["Codex empty"] })
         let one = try XCTUnwrap(skin.stations.first { $0.subscriptionID == ids["Codex one"] })
-        XCTAssertEqual(view.presentedReadingsForChecks[try XCTUnwrap(ids["Codex empty"])]?.outer?.fraction, 0)
+        XCTAssertEqual(view.presentedReadingsForChecks[try XCTUnwrap(ids["Codex empty"])]?.inner?.fraction, 0, "D399: the 5-hour window is the inner ring")
         let pixels = CGFloat(image.width) / skin.bounds.width
         let c = try XCTUnwrap(CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: image.width * 4,
             space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue))
@@ -133,8 +133,8 @@ private actor D65Engine: EngineClient {
                 let v = rgb(CGPoint(x: dx, y: dy)); for k in 0..<3 { sum[k] += v[k] }; n += 1 } }
             return sum.map { $0 / max(1, n) }
         }
-        // Track: the outer ring at 6 o'clock (no arc there at 0 % or 1 %).
-        let track = { (s: DockStationRecipe) in rgb(CGPoint(x: s.centre.x, y: s.centre.y + s.outer.radius)) }
+        // Track: the inner (5-hour, D399) ring at 6 o'clock (no arc there at 0 % or 1 %; the weekly outer ring is 76 %).
+        let track = { (s: DockStationRecipe) in rgb(CGPoint(x: s.centre.x, y: s.centre.y + s.inner.radius)) }
         let redTrack = track(empty), plainTrack = track(one)
         XCTAssertGreaterThan(redTrack[0] - redTrack[1], 60, "the empty ring's track is dark red: \(redTrack)")
         XCTAssertLessThan(abs(plainTrack[0] - plainTrack[1]), 25, "a 1 % ring keeps its neutral track: \(plainTrack)")
