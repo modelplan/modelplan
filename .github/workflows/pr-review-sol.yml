@@ -52,7 +52,7 @@ on:
         required: true
         type: string
       force:
-        description: Review even if another counting lane already reviewed this head (a lane that already has a verdict at the head never posts twice)
+        description: Review even if another counting lane already reviewed this head (a lane whose latest verdict at the head is a block may post a replacement; a merge is never posted over)
         type: boolean
         default: false
 permissions: {}

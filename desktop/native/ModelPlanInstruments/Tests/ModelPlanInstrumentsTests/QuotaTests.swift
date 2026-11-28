@@ -25,7 +25,7 @@ final class QuotaTests: XCTestCase {
 
     func testF02ThresholdsAndTenSegments() {
         for (value, level, lit) in [(0.0, QuotaLevel.critical, 0), (0.1, .critical, 1), (15, .critical, 2),
-                                     (16, .critical, 2), (25, .critical, 3), (25.01, .amber, 3), (40, .amber, 4), (41, .amber, 4), (50, .amber, 5), (50.01, .healthy, 5), (100, .healthy, 10)] {
+                                     (16, .critical, 2), (25, .critical, 3), (25.01, .healthy, 3), (40, .healthy, 4), (41, .healthy, 4), (50, .healthy, 5), (50.01, .healthy, 5), (100, .healthy, 10)] {
             let cell = QuotaCell(Fixtures.quota("q", .fiveHours, value), now: now)
             XCTAssertEqual(cell.level, level); XCTAssertEqual(cell.litSegments, lit)
         }
@@ -34,16 +34,30 @@ final class QuotaTests: XCTestCase {
         }
     }
 
+    /// D474 decision 2 (C9): amber means the estimate runs out before the reset; an estimate after the reset stays healthy.
+    func testD474AmberOnlyWhenTheEstimateRunsOutBeforeTheReset() {
+        let reset = now.addingTimeInterval(4 * 3600)
+        let early = QuotaCell(InstrumentQuota(id: "q", period: .fiveHours, remaining: 60, resetsAt: reset, durationMinutes: 300,
+                                              runsOutAt: now.addingTimeInterval(3600)), now: now)
+        XCTAssertEqual(early.level, .amber)
+        let late = QuotaCell(InstrumentQuota(id: "q", period: .fiveHours, remaining: 60, resetsAt: reset, durationMinutes: 300,
+                                             runsOutAt: now.addingTimeInterval(5 * 3600)), now: now)
+        XCTAssertEqual(late.level, .healthy)
+        XCTAssertEqual(QuotaCell(InstrumentQuota(id: "q", period: .fiveHours, remaining: 45, resetsAt: reset), now: now).level, .healthy)
+        XCTAssertEqual(QuotaCell(InstrumentQuota(id: "q", period: .fiveHours, remaining: 0, resetsAt: reset), now: now).level, .critical)
+    }
+
     func testEveryConfiguredCriticalThresholdIsInclusive() {
         for threshold in [10.0, 16, 20, 25] {
             XCTAssertEqual(QuotaLevel.of(threshold, redBelow: threshold), .critical)
             XCTAssertEqual(QuotaLevel.of(threshold - 0.01, redBelow: threshold), .critical)
-            XCTAssertEqual(QuotaLevel.of(threshold + 0.01, redBelow: threshold), .amber)
+            XCTAssertEqual(QuotaLevel.of(threshold + 0.01, redBelow: threshold), .healthy)
+            XCTAssertEqual(QuotaLevel.of(threshold + 0.01, redBelow: threshold, runsOutBeforeReset: true), .amber)
             XCTAssertEqual(QuotaLevel.of(nil, redBelow: threshold), .unknown)
             let rows = QuotaRows(windows: [Fixtures.quota("q", .fiveHours, threshold)], now: now, redBelow: threshold)
             XCTAssertEqual(rows.fiveHours?.level, .critical)
             let above = QuotaRows(windows: [Fixtures.quota("q", .fiveHours, threshold + 0.01)], now: now, redBelow: threshold)
-            XCTAssertEqual(above.fiveHours?.level, .amber)
+            XCTAssertEqual(above.fiveHours?.level, .healthy, "D474 decision 2: above the red line is amber only when it runs out first")
         }
     }
     func testF03OtherKeepsPeriodScopeAndStableTightestOverflow() {

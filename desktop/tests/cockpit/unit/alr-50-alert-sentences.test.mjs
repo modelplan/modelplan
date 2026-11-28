@@ -12,8 +12,18 @@ const fixture=JSON.parse(readFileSync(new URL('../../shared/alert-sentences.json
 
 for(const c of fixture.cases)test(`ALR-50 shared sentence: ${c.name}`,()=>{
  const s=alertSentence(c.input);
+ assert.equal(s.form,c.form);
  assert.deepEqual({text:s.text.en,short:s.short.en},c.en);
  assert.deepEqual({text:s.text.zh,short:s.short.zh},c.zh);
+});
+
+test('D474 §3.2: every form keeps the reset time and says 预估, never 约',()=>{
+ for(const c of fixture.cases.filter(c=>c.input.kind==='quota'&&c.input.resetMinutes>0)){
+  const t=/(\d+d\d+h|\d+h\d\d|\d+m)$/.exec(c.en.text)[1];
+  for(const s of [c.en.text,c.en.short,c.zh.text,c.zh.short])assert.ok(s.includes(t),`${c.name}: ${s}`);
+ }
+ assert.ok(fixture.cases.every(c=>!c.zh.text.includes('约')&&!c.zh.short.includes('约')));
+ assert.ok(fixture.cases.some(c=>c.form==='usedUp')&&fixture.cases.some(c=>c.form==='quota'));
 });
 
 test('ALR-50 cause phrases come from the shared table',()=>{
