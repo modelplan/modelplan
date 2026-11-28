@@ -348,7 +348,8 @@ test('D419 the full lever column follows the measured prototype ratios (cards ab
  expect(g.H).toBeCloseTo(257,0);
  expect(Math.abs(at(g.upper)-.497),`upper tier (lamps + cards) ${at(g.upper).toFixed(3)} of the column`).toBeLessThanOrEqual(.02);
  expect(Math.abs((g.card.bottom-g.card.top)/g.H-.392),`card ${((g.card.bottom-g.card.top)/g.H).toFixed(3)} of the column`).toBeLessThanOrEqual(.02);
- expect(Math.abs(at(g.card.top)-.066)).toBeLessThanOrEqual(.012);
+ // D485 (owner 11-28) supersedes the prototype's .066: the cards start at the big screen's surface top, row-h + key-gap = 22 px = .0856 H.
+ expect(Math.abs(at(g.card.top)-22/257)).toBeLessThanOrEqual(.004);
  expect(Math.abs(at(g.tierTop)-.499)).toBeLessThanOrEqual(.01);expect(Math.abs(at(g.tierBottom)-.928)).toBeLessThanOrEqual(.01);
  expect(g.slot.top-g.tierTop,'slot top inside the tier by the prototype margin').toBeGreaterThanOrEqual(.027*g.H-.6);
  expect(g.tierBottom-g.slot.bottom,'slot bottom inside the tier by the prototype margin').toBeGreaterThanOrEqual(.034*g.H-.6);
@@ -363,7 +364,8 @@ test('D419 the full lever column follows the measured prototype ratios (cards ab
 test('D419 the upper panel ends in a lip at the measured ratio, with a shadow on the lever tier (full)',async({page})=>{
  await openThrottles(page,{tier:'tall',height:890});
  const fad=await rect(page.locator('.dk-fad')),H=fad.h;
- const gap=Math.round(fad.l+15),y0=Math.floor(fad.t+.44*H),y1=Math.ceil(fad.t+.72*H);
+ // D485: the window starts at .47 H, below the card text (the cards now end just above the divider), so it still finds the lip.
+ const gap=Math.round(fad.l+15),y0=Math.floor(fad.t+.47*H),y1=Math.ceil(fad.t+.72*H);
  const png=decodePng(await page.screenshot({clip:{x:gap,y:y0,width:1,height:y1-y0}}));
  const lum=y=>{const o=y*png.channels;return png.data[o]+png.data[o+1]+png.data[o+2];};
  const rows=[...Array(y1-y0).keys()],hi=rows.reduce((a,y)=>lum(y)>lum(a)?y:a,0);
@@ -393,6 +395,24 @@ for(const [tier,height,len] of [['tall',890,.7353]])
    // the knob follows the travel: its height scales with it (u = travel / 97)
    if(!paged){const k=await rect(channels(page).nth(0).locator('.fd-cap'));expect(k.h).toBeGreaterThan(8);}
   });
+
+// D485 (owner 2026-11-28): the card bay is the big screen's top half. Lamp row = tab row (top, height); card tops = the big screen's
+// surface top; the divider under the cards (the lever tier's top edge) is at the big screen's mid-height; console bottom = big screen bottom.
+test('D485 lamp row = tab row, cards start at the big screen top, the card-bay divider is at the big screen mid-height',async({page})=>{
+ await openThrottles(page);
+ const tab=await rect(page.locator('.mfd-pk')),lamps=await rect(channels(page).nth(0).locator('.fd-leds')),screen=await rect(page.locator('.mfd-screen'));
+ const mfd=await rect(page.locator('.dk-mfd')),fad=await rect(page.locator('.dk-fad'));
+ const divider=await page.locator('.dk-fad').evaluate(e=>e.getBoundingClientRect().top+parseFloat(getComputedStyle(e,'::after').top));
+ expect(Math.abs(lamps.t-tab.t),'lamp row top = tab row top').toBeLessThanOrEqual(.5);
+ expect(Math.abs(lamps.h-tab.h),'lamp row height = tab row height').toBeLessThanOrEqual(.5);
+ const mid=screen.t+screen.h/2;
+ expect(Math.abs(divider-mid),`divider ${divider} at screen mid-height ${mid}`).toBeLessThanOrEqual(.5);
+ for(const c of await channels(page).evaluateAll(l=>l.map(c=>{const r=c.querySelector('.fd-strip').getBoundingClientRect();return {t:r.top,b:r.bottom};}))){
+  expect(Math.abs(c.t-screen.t),'card top = big screen surface top').toBeLessThanOrEqual(.5);
+  expect(divider-c.b,'cards end above the divider').toBeGreaterThan(1);expect(divider-c.b,'cards end just above the divider').toBeLessThan(8);
+ }
+ expect(Math.abs(fad.b-mfd.b),'console bottom = big screen panel bottom').toBeLessThanOrEqual(.5);
+});
 
 // D434 (owner 11-25): the junction between the lever column and the big screen, measured on the prototype (whole-proposed.png):
 // a 3.5 px dark gutter (6 prototype px) between the left panel's edge and the big screen's own graphite frame, the frame 3 px above
