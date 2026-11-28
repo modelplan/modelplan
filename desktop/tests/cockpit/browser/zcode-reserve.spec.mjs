@@ -34,12 +34,15 @@ async function open(page,locale){
 }
 const reserve=(page,col)=>page.locator(`.u11-engine-table .ec[data-col^="${col}#"] .qrow-r`);
 
-for(const [locale,text] of [['en',/^3 resets · expires in 20h/],['zh-CN',/^重置 3 次 · 20h 后到期/]])
+// The row renderer splits the line: the count is `.qrv-c`, the expiry clause `.qrv-x.warn` (amber only under 48 h).
+// Narrow widths shorten the wording ("3次", "reset exp. 20h") and may drop the count, so read the data attributes.
+for(const [locale,count,expiry] of [['en',/^3 resets$/,/20h/],['zh-CN',/^(重置 3 次|3次)$/,/20h/]])
  test(`ZCode reserve row shows its own live count and the under-48 h warning (${locale})`,async({page})=>{
   await open(page,locale);
   const row=reserve(page,'zcode');
-  await expect(row.locator('.qrv-c')).toHaveAttribute('data-full',text);
-  await expect(row.locator('.qrv-c')).toHaveClass(/warn/);
+  await expect(row.locator('.qrv-c')).toHaveAttribute('data-full',count);
+  await expect(row.locator('.qrv-x.warn')).toHaveCount(1);
+  await expect(row.locator('.qrv-x.warn')).toHaveAttribute('data-full',expiry);
  });
 
 test('a non-ZCode account with no reference shows no reserve from foreign facts',async({page})=>{
