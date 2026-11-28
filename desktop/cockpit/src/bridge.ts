@@ -201,7 +201,6 @@ export class CockpitBridge {
     if(!m) return false;
     if(m.pageId!==this.pageId) return this.no('recv.page');
     if(BigInt(m.sequence)<=this.sequence) return this.no('recv.sequence');
-    if(m.type!=='load'&&m.type!=='clear'&&m.type!=='display'&&m.type!=='tick'){try{this.view.expire?.(this.clock());}catch{return this.no('expire.view');}}
     if(m.type==='load') {
       if(this.loaded) return this.no('load.again');
       // First load is also an explicit privacy barrier.
@@ -232,6 +231,10 @@ export class CockpitBridge {
       this.emit('cleared',m.requestId); return true;
     }
     if(!same(m,this.context)) return this.no('recv.context');
+    // An expired history hold ends in the response to any accepted message that is not itself a new display or tick. It runs
+    // only past the context fence and never before the terminal unload, so a render failure here can neither change the
+    // context check nor keep the page from unloading (macrevc-1216-3).
+    if(m.type!=='display'&&m.type!=='tick'&&m.type!=='unload'){try{this.view.expire?.(this.clock());}catch{return this.no('expire.view');}}
     switch(m.type) {
       case 'appearance':
         // Recovery contract: a view exception is refused, never an unload; the page keeps what it shows.

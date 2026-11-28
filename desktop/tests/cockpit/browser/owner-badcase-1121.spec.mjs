@@ -198,6 +198,20 @@ test(`B1 ${name} at the cutoff, before any tick, clears the held history; one mi
  expect(await receive(make(send))).toBe(true);
  await expect(empty(page)).toHaveCount(1);await expect(totals(page)).toHaveCount(0);
 });
+// macrevc-1216-2 (round 3): a local redraw (the MFD page keys) also never paints held history past the cutoff.
+test('B1 returning to the Overview through the page keys at the cutoff, before any host message, shows the empty state; one millisecond earlier it keeps the totals',async({page})=>{
+ const {send,receive}=await open(page,{data:recorded()});
+ await page.clock.setFixedTime(new Date(NOW+60*1000));
+ expect(await receive(send('display',{data:unread()}))).toBe(true);
+ await expect(totals(page)).toHaveCount(1);
+ const away=async()=>{await page.locator('[data-mfd="page:tune"]').click();await page.locator('[data-mfd="page:overview"]').click();};
+ await page.clock.setFixedTime(new Date(NOW+HOLD-1));
+ await away();
+ await expect(totals(page)).toHaveCount(1);await expect(empty(page)).toHaveCount(0);
+ await page.clock.setFixedTime(new Date(NOW+HOLD));
+ await away();
+ await expect(empty(page)).toHaveCount(1);await expect(totals(page)).toHaveCount(0);
+});
 test('B1 a fresh profile with nothing recorded still says "No usage record yet"',async({page})=>{
  await open(page,{data:unread()});
  await expect(empty(page)).toHaveCount(1);
