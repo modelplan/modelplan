@@ -10,6 +10,7 @@
 // description's "info:" part); device evidence moved to the build gate. There is no stale-base check (owner 2026-11-07): a PR need not contain the latest main, because the queue's own CI on
 // the group commit (QUEUE_WORKFLOWS) tests "PR + latest main".
 
+import { parseVisualChange, visualAccepted, visualState } from "./visual.mjs";
 import referenceMap from "./reference-map.json" with { type: "json" };
 import reviewRouting from "./review-routing.json" with { type: "json" };
 import { bareNames, mappedClasses, parseAbsent, parseRecord, setHash } from "./gui-map.mjs";
@@ -756,7 +757,7 @@ export function dataSyncProblem({ pr, files, items, sync, glmTiers = DEFAULT_GLM
 // glmTiers: parseGlmTiers(vars.REVIEW_GLM_TIERS), the tiers on which (ghglm) decides.
 // guiMaps: the parsed GUI test maps (gui-map.mjs; evaluate.mjs passes main's, plus the head's when the PR changes it). A
 // PR whose changed paths map to a class needs a successful exact-head PR GUI run (D481, prGuiState); null or [] = no map.
-export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, proveMainMerges, conf, members = [], tiers = new Map(), sync = null, glmFallbackUntil = null, now = Date.now(), glmTiers = DEFAULT_GLM_TIERS, guiMaps = null }) {
+export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, proveMainMerges, conf, members = [], tiers = new Map(), sync = null, glmFallbackUntil = null, now = Date.now(), glmTiers = DEFAULT_GLM_TIERS, guiMaps = null, visual = null }) {
   const head = pr.head.sha;
   const gpt = gptLabelled(pr);
   if (gpt) glmTiers = [];
@@ -848,6 +849,13 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   const ci = ciState(runs.filter((r) => !isPrGuiRun(r)), statuses, { scope: prRunScope(pr), hosted: extra.hostedExempt, ...(dataSync ? { required: [ANCHOR_WORKFLOW, DATA_SYNC.repoChecks] } : {}) });
   if (ci.info) notes.push(ci.info);
   if (ci.state === FAILURE) return res(FAILURE, say(ci.why), extra);
+  // D489: the full-cockpit visual diff of the head's U11 cockpit run, judged against the live Visual-change line and a trusted
+  // VISUAL-ACCEPT at this head (visual.mjs). extra.visual feeds the merge-group check.
+  const declared = parseVisualChange(pr.body);
+  extra.visual = { declared: declared.areas, present: declared.present, accepted: visualAccepted(items, head) };
+  const vis = visualState(visual, extra.visual);
+  if (vis?.state === FAILURE) return res(FAILURE, say(vis.why), extra);
+  if (vis && extra.visual.accepted && vis.outside.length) notes.push("VISUAL-ACCEPT");
   const guiClasses = dataSync ? [] : requiredGuiClasses(paths, guiMaps, { truncated: files.length >= FILE_LIST_LIMIT });
   if (guiClasses.length) extra.guiClasses = guiClasses;
   const gui = guiClasses.length ? prGuiState(runs, pr, guiClasses, requiredGuiClasses([], guiMaps, { truncated: true })) : null;
@@ -1039,7 +1047,7 @@ export function prGuiState(runs, pr, classes, full = classes) {
   return { state: SUCCESS, why: `PR GUI run green (classes: ${list})` };
 }
 
-export function evaluateGroup({ steps, queueRuns, queueStatuses = [], queueCheckRuns = [], desktopJobs = null, guiCover = null, groupSha = null, desktopRunId = null, repo = REPO, now = Date.now() }) {
+export function evaluateGroup({ steps, queueRuns, queueStatuses = [], queueCheckRuns = [], desktopJobs = null, guiCover = null, groupSha = null, desktopRunId = null, repo = REPO, now = Date.now(), visual = null }) {
   if (!steps.length) return { state: FAILURE, why: "no PR found in the merge group" };
   for (const s of steps) {
     const n = `#${s.pr}`;
@@ -1056,6 +1064,11 @@ export function evaluateGroup({ steps, queueRuns, queueStatuses = [], queueCheck
     if (starts.length && now - Math.min(...starts) > GROUP_WAIT_MS) return { state: FAILURE, why: `group timed out after ${GROUP_WAIT_MS / 60000} min: ${ci.why}` };
   }
   if (ci.state !== SUCCESS) return { state: ci.state, why: `group ${ci.why}` };
+  // D489: the group commit's visual diff against the queue base may change only the areas its PRs declare (union), unless
+  // one of them carries a trusted VISUAL-ACCEPT at its head.
+  const vs = steps.map((s) => s.prResult.visual ?? { declared: [], present: false, accepted: false });
+  const vis = visualState(visual, { declared: [...new Set(vs.flatMap((v) => v.declared))], present: vs.some((v) => v.present), accepted: vs.some((v) => v.accepted) });
+  if (vis?.state === FAILURE) return { state: FAILURE, why: `group ${vis.why}` };
   return { state: SUCCESS, why: `group of ${steps.length}: gates pass` };
 }
 

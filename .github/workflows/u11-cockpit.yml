@@ -127,3 +127,80 @@ jobs:
             desktop/tests/cockpit/.tmp/walk/
           include-hidden-files: true
           retention-days: 14
+
+  # D489: full-cockpit visual check without committed baselines. Renders the four full-* scenes for the base and the
+  # subject on this one runner with the same Playwright/WebKit and pixel-diffs them (desktop/tests/cockpit/visual-diff.mjs).
+  # pull_request: the subject is the PR merge ref and the base its first parent, the main tip the ref was built on, so
+  # the diff shows this PR's change only. merge_group: the group commit against merge_group.base_sha.
+  # The job fails only when a render or the diff breaks; modelplan-gates decides from its annotations
+  # (scripts/merge-gates/visual.mjs) against the live `Visual-change:` line and VISUAL-ACCEPT comments.
+  visual:
+    needs: queue-scope
+    if: ${{ !cancelled() && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Check out the base next to the subject
+        id: base
+        env:
+          EVENT: ${{ github.event_name }}
+          GROUP_BASE: ${{ github.event.merge_group.base_sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -eu
+          if [ "$EVENT" = merge_group ]; then
+            base=$GROUP_BASE
+            git fetch -q --no-tags --depth=1 origin "$base"
+          else
+            base=$(git rev-parse 'HEAD^1')
+          fi
+          git worktree add -q --detach .tmp/visual-base "$base"
+          { echo "base=$base"; echo "subject=$(git rev-parse HEAD)"; echo "head=${PR_HEAD:-$(git rev-parse HEAD)}"; } >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: desktop/cockpit/package-lock.json
+      - run: npm ci --prefix desktop/cockpit --ignore-scripts
+      - name: Install the pinned headless WebKit and system font fallback
+        working-directory: desktop/cockpit
+        run: |
+          npx playwright install --with-deps webkit
+          sudo apt-get install -y --no-install-recommends fonts-noto-cjk
+      - name: Render the subject
+        working-directory: desktop/cockpit
+        run: |
+          node build.mjs --official
+          COCKPIT_VISUAL_OUT="$GITHUB_WORKSPACE/.tmp/visual/subject" npx playwright test --config ../tests/cockpit/playwright.config.mjs visual-scenes.spec.mjs
+      - name: Render the base with the same Playwright and WebKit
+        run: |
+          set -eu
+          ln -s "$GITHUB_WORKSPACE/desktop/cockpit/node_modules" .tmp/visual-base/desktop/cockpit/node_modules
+          spec=.tmp/visual-base/desktop/tests/cockpit/browser/visual-scenes.spec.mjs
+          # A base made before D489 has no scene spec; it renders with the subject's copy.
+          [ -f "$spec" ] || cp desktop/tests/cockpit/browser/visual-scenes.spec.mjs "$spec"
+          cd .tmp/visual-base/desktop/cockpit
+          node build.mjs --official
+          COCKPIT_VISUAL_AREAS="$GITHUB_WORKSPACE/desktop/tests/cockpit/visual-areas.json" COCKPIT_VISUAL_OUT="$GITHUB_WORKSPACE/.tmp/visual/base" \
+            npx playwright test --config ../tests/cockpit/playwright.config.mjs visual-scenes.spec.mjs
+      - name: Diff base and subject
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE: ${{ steps.base.outputs.base }}
+          SUBJECT: ${{ steps.base.outputs.subject }}
+          HEAD_SHA: ${{ steps.base.outputs.head }}
+        run: |
+          printf '%s' "$PR_BODY" > .tmp/visual/pr-body.txt
+          node desktop/tests/cockpit/visual-diff.mjs --base .tmp/visual/base --head .tmp/visual/subject --out .tmp/visual/diff \
+            --base-sha "$BASE" --subject-sha "$SUBJECT" --head-sha "$HEAD_SHA" --body-file .tmp/visual/pr-body.txt
+      - name: Preserve the renders and diff images
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cockpit-visual-diff-${{ github.sha }}
+          path: .tmp/visual/diff/
+          if-no-files-found: ignore
+          retention-days: 14

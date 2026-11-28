@@ -1,0 +1,68 @@
+{
+  "SPDX-License-Identifier": "MIT",
+  "about": "D489 Visual-change areas of the full cockpit scene (636x951 CSS px, the visual-scenes.spec.mjs viewport). An area is its rects plus, at diff time, the live box of each selector measured in both the base and the head render. Rects are [x, y, width, height], measured from the DOM of the built page (visual-scenes.spec.mjs writes <scene>.areas.json; node desktop/tests/cockpit/visual-diff.mjs --print-areas <dir> prints the union over the four scenes) and widened to the frame and the seams between sections. See docs/cockpit-visual-diff.md.",
+  "size": [636, 951],
+  "margin": 2,
+  "areas": {
+    "canopy": {
+      "aliases": ["window", "porthole"],
+      "about": "porthole window, the stills inside it and the curved canopy frame",
+      "selectors": [".ck-portrow"],
+      "rects": [[0, 0, 636, 248]]
+    },
+    "strip": {
+      "aliases": ["header"],
+      "about": "header strip: brand, alert lamp, shutter slider, range keys, settings/detach/close keys",
+      "selectors": [".ck-head"],
+      "rects": [[24, 248, 588, 36]]
+    },
+    "band": {
+      "aliases": ["engine", "engine-table"],
+      "about": "tool keys row and the engine table (quota bars per subscription)",
+      "selectors": [".ck-eng"],
+      "rects": [[24, 286, 588, 230]]
+    },
+    "session-lamps": {
+      "aliases": ["lamps"],
+      "about": "Sessions heading and the lamp LEDs above the session cards",
+      "selectors": [".fd-leds", ".sc-led"],
+      "rects": [[26, 521, 216, 21]]
+    },
+    "session-cards": {
+      "aliases": ["cards"],
+      "about": "the per-model session cards above the faders",
+      "selectors": [".fd-strip"],
+      "rects": [[26, 541, 216, 104]]
+    },
+    "grip": {
+      "aliases": ["levers", "faders"],
+      "about": "fader travel, grips, effort scale labels and the fader bank",
+      "selectors": [".fd-travel", ".sc-travel", ".fd-bank"],
+      "rects": [[24, 643, 220, 155]]
+    },
+    "mfd": {
+      "aliases": ["big-screen"],
+      "about": "multi-function display: page keys, screen and the soft keys under it",
+      "selectors": [".dk-mfd"],
+      "rects": [[249, 521, 365, 261]]
+    },
+    "tape": {
+      "aliases": ["sessions-tape"],
+      "about": "the recent-sessions tape at the bottom",
+      "selectors": [".ck-tape"],
+      "rects": [[24, 787, 588, 98]]
+    },
+    "base": {
+      "aliases": ["bells", "flames"],
+      "about": "engine bells and flames under the hull",
+      "selectors": [".ck-base"],
+      "rects": [[8, 903, 620, 48]]
+    },
+    "hull": {
+      "aliases": ["shell", "frame"],
+      "about": "hull frame, side walls, boosters, panel surface and the seams between sections",
+      "selectors": [".ck-booster"],
+      "rects": [[0, 0, 26, 951], [610, 0, 26, 951], [0, 880, 636, 71], [24, 242, 588, 10], [24, 280, 588, 10], [24, 512, 588, 12], [24, 776, 588, 14], [240, 521, 12, 262]]
+    }
+  }
+}
