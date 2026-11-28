@@ -60,7 +60,9 @@ const lines = (body) => body.split("\n").map((l) => l.replace(/\r$/, ""));
 // 0 docs, assets, CI config only; 1 ordinary code and test-only PRs; 2 seams, credentials, privacy,
 // signing, release. A trusted comment that starts with "REVIEW-TIER: N" overrides; the latest one wins.
 const TEST_RE = /(^|\/)Tests\/|^desktop\/tests\/|(^|\/)tests?\/|_test\.go$|\.(test|spec)\.m?[jt]s$/;
-const TIER2_RE = /^schema\/app-cli\/|^cli\/internal\/appserver\/wire\/|^cli\/internal\/swiftwire\/|^clients\/swift\/|keychain|consent|credential|secret|privacy|signing|codesign|notari[sz]|sparkle|\.github\/workflows\/[^/]*(release|packag|candidate|sign|notar|distribution)[^/]*$|desktop\/native\/tools\/[^/]*(identity|sign|seal|bundle)[^/]*$|^scripts\/release|^cli\/internal\/(quota|readers|connections)\/|^desktop\/native\/ModelPlan(EngineStore|EngineClient|CockpitWeb)\/|^desktop\/cockpit\/src\/bridge/i;
+// D491 (owner 2026-11-28): ModelPlanCockpitWeb, ModelPlanEngineStore and desktop/cockpit/src/bridge are ordinary code (tier 1); the wire
+// schema/contracts, ModelPlanEngineClient, credentials/privacy, quota/readers/connections and signing/release stay tier 2.
+const TIER2_RE = /^schema\/app-cli\/|^cli\/internal\/appserver\/wire\/|^cli\/internal\/swiftwire\/|^clients\/swift\/|keychain|consent|credential|secret|privacy|signing|codesign|notari[sz]|sparkle|\.github\/workflows\/[^/]*(release|packag|candidate|sign|notar|distribution)[^/]*$|desktop\/native\/tools\/[^/]*(identity|sign|seal|bundle)[^/]*$|^scripts\/release|^cli\/internal\/(quota|readers|connections)\/|^desktop\/native\/ModelPlanEngineClient\//i;
 const TIER0_RE = /^docs\/|\.md$|^NOTICE|^LICEN|\.(png|jpe?g|svg|webp|woff2?|ttf|otf)$|^desktop\/official-visuals\/|^desktop\/third-party\/|^scripts\/check-[a-z-]+\.mjs$|^scripts\/tests\/(check-|[a-z-]+-pack\.test\.mjs$)|^\.github\/|^source-policy\.json$/;
 // Stricter: the gate's own rules and workflows are tier 2, so a PR cannot loosen the gate that judges it
 // with less review than a seam change gets. The tier table counts too: it decides which scenarios need evidence.
