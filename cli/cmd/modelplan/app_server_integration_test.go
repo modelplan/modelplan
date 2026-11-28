@@ -26,9 +26,9 @@ func TestAppServerUsesSharedConsentConstructor(t *testing.T) {
 	_, _ = inW.Write([]byte(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"1.0","sessionId":"integration-test","appVersion":"test","capabilities":["rows","consent","history","refresh","publication"]}}` + "\n"))
 	frames := make(chan []byte, 1)
 	go func() {
-		s := bufio.NewScanner(outR)
-		if s.Scan() {
-			frames <- append([]byte{}, s.Bytes()...)
+		// Only a newline-terminated (committed) frame counts.
+		if line, err := readCommittedFrame(bufio.NewReader(outR), wire.MaxFrameBytes); err == nil {
+			frames <- line
 		}
 	}()
 	select {

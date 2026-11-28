@@ -31,6 +31,10 @@ public enum ReaderKeyRegion: String, CaseIterable, Sendable {
     public var title: SettingsText {
         self == .global ? .init("Global (z.ai)", "国际站") : .init("China (bigmodel.cn)", "国内站")
     }
+    /// Owner 11-22: where to get a key, by region (the official consoles: Z.ai international, BigModel / 智谱 mainland).
+    public var keyConsoleURL: URL {
+        URL(string: self == .global ? "https://z.ai/manage-apikey/apikey-list" : "https://bigmodel.cn/usercenter/proj-mgmt/apikeys")!
+    }
 }
 
 /// The engine's fixed outcome words (`readerkey/set|test|remove`).

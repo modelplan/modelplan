@@ -87,7 +87,7 @@ function withHistory(){
   models:ranking,tools:ranking,daily:[[0,200],[1,1000],[3,4000],[5,9000],[8,20000],[39,1500]].map(([back,n])=>({at:localDay(back),source:'codex',origin:'live',observedOutputTokens:n})),hourly:[{at:new Date(2026,10,4,9).toISOString(),source:'codex',origin:'live',observedOutputTokens:500}],projects:{recent7d:[],recent30d:[]},cycles:[]};
  return data;
 }
-for(const [tier,height] of [['tall',890],['compact',640]]){
+for(const [tier,height] of [['tall',890]]){
  test(`CKP-MFD-25 a click inside a page reaches its module and the charts take the measured screen at ${tier}`,async({page})=>{
   await page.clock.setFixedTime(new Date(NOW));
   await open(page,{data:withHistory(),tier,height});
@@ -151,8 +151,12 @@ for(const theme of ['night','day'])test(`THM-2.4-04 the LCD windows stay dark in
 // THM-10-02: text on metal reaches 4.5:1 and the LCD status bars 3:1, in both themes (inactive and decorative text
 // is exempt, so only the page keys, engine keys and bar segments are measured).
 for(const theme of ['night','day'])test(`THM-10-02 metal text reaches 4.5:1 and LCD status bars 3:1 in ${theme}`,async({page})=>{
- const data=visualFixture().data;data.details=null;
+ const data=visualFixture().data;data.details={...data.details,sessions:[],resetEvents:[]};
  [75,40,20,75].forEach((value,i)=>{for(const w of data.projection.rows[i].accounts[0].windows)w.remainingPercent=value;});
+ // D474 decision 2 (C9): a bar is amber only when its estimate runs out before the reset, so the 40 % reading gets one.
+ {const now=Date.now(),iso=m=>new Date(now+m*60000).toISOString(),row=data.projection.rows[1],a=row.accounts[0];
+  Object.assign(a.windows[0],{current:true,validUntil:iso(600),resetsAt:iso(300)});
+  data.details.forecasts=[{source:row.id,subscriptionRef:a.subscriptionRef,windowId:a.windows[0].id,runsOutAt:iso(40),pace:'tight',basis:'recent-rate',observedAt:iso(-2)}];}
  for(const [i,group] of data.subscriptions.entries())group.accounts[0].account.windows=structuredClone(data.projection.rows[i].accounts[0].windows);
  await open(page,{data,theme});
  for(const [text,surface] of [['.pk','.pk'],['.ek-name','.ek']]){

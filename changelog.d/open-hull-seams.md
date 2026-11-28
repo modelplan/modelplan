@@ -1,0 +1,1 @@
+Open cockpit hull: no see-through hairline at the canopy-to-body joint or above the aft plate at fractional page zoom (owner build 6 +j). The body now reaches 1 px under the canopy and the aft plate, and the silhouette spec scans the whole open and closed outline and its side profile.

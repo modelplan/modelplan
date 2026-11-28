@@ -58,7 +58,7 @@ struct StatusAutoDisplay {
     private var lastSqueezeSwitch: Date?
     /// The last reading decided on (for the accessibility label and tests).
     private(set) var reading: StatusAutoReading?
-    /// When the next evaluation is due although nothing else renders (a squeeze that has not lasted long enough).
+    /// The earliest reading expiry or squeeze transition that needs another evaluation.
     private(set) var pendingDeadline: Date?
 
     /// The mode to show now. Pure in its inputs and the injected time.
@@ -72,7 +72,9 @@ struct StatusAutoDisplay {
             if held != nil {
                 let since = min(unavailableSince ?? now, now)
                 unavailableSince = since
-                if now.timeIntervalSince(since) >= StatusTitleKeeper.holdLimit { held = nil; unavailableSince = nil }
+                let expiry = since.addingTimeInterval(StatusTitleKeeper.holdLimit)
+                if now >= expiry { held = nil; unavailableSince = nil }
+                else { recheck(at: expiry) }
             }
             current = held
         }
@@ -84,21 +86,32 @@ struct StatusAutoDisplay {
         guard numberShown else { squeezedSince = nil; fellBack = false; return .iconOnly }
         let wide = StatusAutoMode.number(current.shown)
         if fellBack {
-            if displayEpoch != fellBackEpoch || now.timeIntervalSince(fellBackAt) >= Self.retryWide { fellBack = false }
-            else { return .iconOnly }
+            let retryDelay = displayEpoch != fellBackEpoch ? Self.minimumSwitchInterval : Self.retryWide
+            let retry = fellBackAt.addingTimeInterval(retryDelay)
+            if now < retry {
+                recheck(at: retry)
+                return .iconOnly
+            }
+            fellBack = false
+            lastSqueezeSwitch = now
         }
         guard squeezed else { squeezedSince = nil; return wide }
         let since = squeezedSince ?? now
         squeezedSince = since
         let ready = since.addingTimeInterval(Self.squeezeDebounce)
-        let allowed = lastSqueezeSwitch.map { $0.addingTimeInterval(Self.minimumSwitchInterval) } ?? .distantPast
-        let due = max(ready, allowed)
+        let nextSwitch = lastSqueezeSwitch.map { $0.addingTimeInterval(Self.minimumSwitchInterval) } ?? .distantPast
+        let due = max(ready, nextSwitch)
         if now >= due {
             fellBack = true; fellBackAt = now; fellBackEpoch = displayEpoch; lastSqueezeSwitch = now; squeezedSince = nil
+            recheck(at: now.addingTimeInterval(Self.retryWide))
             return .iconOnly
         }
-        pendingDeadline = due
+        recheck(at: due)
         return wide
+    }
+
+    private mutating func recheck(at deadline: Date) {
+        pendingDeadline = min(pendingDeadline ?? deadline, deadline)
     }
 
     /// The accessibility label: complete in every state, "ModelPlan · Codex 0%". Without a reading it is "ModelPlan".
@@ -108,16 +121,20 @@ struct StatusAutoDisplay {
     }
 }
 
-/// The red dot of a used-up quota, at the icon's top-right corner. It has no width of its own.
+/// The red dot of a used-up quota, at the icon's bottom-right corner (G3-166: at the top-right it sat on the rocket's
+/// nose). It lies inside the button's bounds and has no width of its own.
 @MainActor final class StatusUsedUpDotView: NSView {
     static let side: CGFloat = 7
     override var isFlipped: Bool { false }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    /// Where the dot sits in a button's bounds: the bottom-right corner, whichever way the button's y axis runs.
+    static func frame(in bounds: NSRect, flipped: Bool) -> NSRect {
+        let y = flipped ? max(bounds.minY, bounds.maxY - side) : bounds.minY
+        return NSRect(x: max(bounds.minX, bounds.maxX - side), y: y, width: side, height: side)
+    }
     func attach(to button: NSButton) {
-        let bounds = button.bounds
-        let top = button.isFlipped ? bounds.minY : max(bounds.minY, bounds.maxY - Self.side)
-        frame = NSRect(x: max(bounds.minX, bounds.maxX - Self.side), y: top, width: Self.side, height: Self.side)
-        autoresizingMask = [.minXMargin, button.isFlipped ? .maxYMargin : .minYMargin]
+        frame = Self.frame(in: button.bounds, flipped: button.isFlipped)
+        autoresizingMask = [.minXMargin, button.isFlipped ? .minYMargin : .maxYMargin]
         if superview !== button { button.addSubview(self) }
     }
     override func draw(_ dirtyRect: NSRect) {

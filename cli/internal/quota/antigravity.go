@@ -5,13 +5,16 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"github.com/modelplan/modelplan/cli/internal/toolcli"
 	"io"
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -30,6 +33,8 @@ type AntigravityServer struct {
 	Port int
 	CSRF string
 	TLS  bool
+	// Hub: Antigravity 2.34 hub mode; Port and CSRF come from its descriptor file, not argv.
+	Hub bool
 }
 type antigravityServerKey struct{}
 
@@ -40,12 +45,14 @@ func WithAntigravityServer(ctx context.Context, s AntigravityServer) context.Con
 var antigravityCommand = func(ctx context.Context, bin string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd, err := toolcli.Command(ctx, bin, args...)
+	if err != nil {
+		return nil, errors.New("local process metadata unavailable")
+	}
 	cmd.Stderr = io.Discard
-	cmd.WaitDelay = time.Second
 	var b bytes.Buffer
 	cmd.Stdout = &limited{w: &b, n: 1 << 20}
-	if cmd.Run() != nil {
+	if toolcli.Run(cmd) != nil {
 		return nil, errors.New("local process metadata unavailable")
 	}
 	return b.Bytes(), nil
@@ -74,25 +81,87 @@ func antigravityServers(raw []byte) []AntigravityServer {
 		}
 		pid, pidErr := strconv.Atoi(f[0])
 		uid, uidErr := strconv.Atoi(f[1])
-		name := strings.ToLower(filepath.Base(f[2]))
-		if pidErr != nil || uidErr != nil || pid <= 0 || uid != os.Getuid() || !(name == "language_server" || strings.HasPrefix(name, "language_server_")) {
+		// The binary name is what identifies the server, wherever Antigravity.app lives: comm may be the
+		// bare name or a full path, and a newer build may report another comm with the binary in argv.
+		if pidErr != nil || uidErr != nil || pid <= 0 || uid != os.Getuid() || !(antigravityBinary(f[2]) || antigravityBinary(f[3])) {
+			antigravityDebug(line, "not a language_server binary of this user")
 			continue
 		}
 		app := antigravityFlag(f, "--app_data_dir")
 		if app != "antigravity" && app != "antigravity-ide" {
+			antigravityDebug(line, "app_data_dir is not antigravity")
+			continue
+		}
+		if antigravityFlag(f, "--csrf_token") == "" && strings.Contains(line, "--read_host_bridge_token_from_stdin") {
+			out = append(out, AntigravityServer{PID: pid, Hub: true})
 			continue
 		}
 		port, err := strconv.Atoi(antigravityFlag(f, "--extension_server_port"))
 		if err != nil || port < 1 || port > 65535 {
+			antigravityDebug(line, "no usable extension_server_port")
 			continue
 		}
 		token := antigravityFlag(f, "--csrf_token")
 		if !antigravityCSRF(token) {
+			antigravityDebug(line, "no usable csrf_token")
 			continue
 		}
 		out = append(out, AntigravityServer{PID: pid, Port: port, CSRF: token})
 	}
 	return out
+}
+func antigravityLsof() string {
+	if runtime.GOOS == "darwin" {
+		return "/usr/sbin/lsof"
+	}
+	return "/usr/bin/lsof"
+}
+func antigravityBinary(path string) bool {
+	name := strings.ToLower(filepath.Base(path))
+	return name == "language_server" || strings.HasPrefix(name, "language_server_")
+}
+
+// antigravityDebugFlags are the only argument names a diagnostic may print. Values are never printed.
+var antigravityDebugFlags = map[string]bool{
+	"--app_data_dir": true, "--extension_server_port": true, "--csrf_token": true, "--standalone": true,
+	"--subclient_type": true, "--https_server_port": true, "--read_host_bridge_token_from_stdin": true,
+	"--enable_sidecars": true, "--host_bridge_url": true,
+}
+
+// antigravityDebug logs, with MODELPLAN_DEBUG set, a process line that mentions the language server or
+// Antigravity but was not matched, so a newer build's signature can be seen. Only a numeric pid, a fixed
+// binary label, allowlisted flag names and a count of other arguments are written; no argument value
+// (the CSRF token, paths, other flag names) ever is.
+func antigravityDebug(line, why string) {
+	low := strings.ToLower(line)
+	if os.Getenv("MODELPLAN_DEBUG") == "" || !(strings.Contains(low, "language_server") || strings.Contains(low, "antigravity")) {
+		return
+	}
+	f := strings.Fields(line)
+	if len(f) < 4 {
+		return
+	}
+	pid, err := strconv.Atoi(f[0])
+	if err != nil {
+		return
+	}
+	binary := "other"
+	if antigravityBinary(f[2]) || antigravityBinary(f[3]) {
+		binary = "language_server"
+	}
+	var flags []string
+	other := 0
+	for _, a := range f[2:] {
+		if !strings.HasPrefix(a, "--") {
+			continue
+		}
+		if name := strings.SplitN(a, "=", 2)[0]; antigravityDebugFlags[name] {
+			flags = append(flags, name)
+		} else {
+			other++
+		}
+	}
+	fmt.Fprintf(os.Stderr, "modelplan: antigravity: unmatched process pid=%d binary=%s flags=%v otherFlags=%d: %s\n", pid, binary, flags, other, why)
 }
 func antigravityCSRF(s string) bool {
 	if s == "" || len(s) > 256 {
@@ -128,6 +197,16 @@ func fetchAntigravity(ctx context.Context, c *http.Client, _, _ string, now time
 		}
 		s = servers[0]
 	}
+	if s.Hub && s.Port == 0 {
+		// Missing or invalid descriptor: the app is running but its token cannot be read.
+		port, token, found := readAntigravityHubDescriptor(s.PID)
+		if !found {
+			e.Error = antigravityNext("not_supported_yet")
+			e.ErrorCode = "unsupported_login"
+			return e
+		}
+		s.Port, s.CSRF = port, token
+	}
 	if s.PID <= 0 || s.Port < 1 || s.Port > 65535 || !antigravityCSRF(s.CSRF) {
 		e.Error = antigravityNext("not_supported_yet")
 		e.ErrorCode = "unsupported_login"
@@ -142,13 +221,7 @@ func fetchAntigravity(ctx context.Context, c *http.Client, _, _ string, now time
 	if s.TLS {
 		scheme = "https"
 	}
-	url := scheme + "://127.0.0.1:" + strconv.Itoa(s.Port) + "/exa.language_server_pb.LanguageServerService/GetUserStatus"
-	ctx, cancel := context.WithTimeout(ctx, nativeTimeout)
-	defer cancel()
-	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(`{"metadata":{"ideName":"antigravity","extensionName":"antigravity","ideVersion":"unknown","locale":"en"}}`))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Connect-Protocol-Version", "1")
-	req.Header.Set("X-Codeium-Csrf-Token", s.CSRF)
+	base := scheme + "://127.0.0.1:" + strconv.Itoa(s.Port) + "/exa.language_server_pb.LanguageServerService/"
 	if c == nil {
 		c = nativeClient
 	}
@@ -183,35 +256,197 @@ func fetchAntigravity(ctx context.Context, c *http.Client, _, _ string, now time
 			conn.Close()
 			return nil, err
 		}
+		if la, ok := conn.LocalAddr().(*net.TCPAddr); s.Hub && (!ok || !antigravitySocketOwned(dialCtx, s, la.Port)) {
+			conn.Close() // send no bytes, hence no token, to a socket the pid does not own
+			return nil, errors.New("Antigravity socket owner unverified")
+		}
 		return conn, nil
 	}
 	client.Transport = local
 	defer local.CloseIdleConnections()
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	resp, err := client.Do(req)
-	if err != nil {
-		e.Error = antigravityNext("network_error")
-		e.ErrorCode = transportErrorCode(err)
-		return e
+	rpc := func(method, body string) ([]byte, *codexbarEntry) {
+		fail := codexbarEntry{Status: "error", ObservedAt: now.UTC()}
+		rctx, cancel := context.WithTimeout(ctx, nativeTimeout)
+		defer cancel()
+		req, _ := http.NewRequestWithContext(rctx, http.MethodPost, base+method, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Connect-Protocol-Version", "1")
+		req.Header.Set("X-Codeium-Csrf-Token", s.CSRF)
+		resp, err := client.Do(req)
+		if err != nil {
+			fail.Error = antigravityNext("network_error")
+			fail.ErrorCode = transportErrorCode(err)
+			return nil, &fail
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode == 401 || resp.StatusCode == 403 {
+			fail.Error = antigravityNext("expired_login")
+			fail.ErrorCode = httpErrorCode(resp.StatusCode)
+			return nil, &fail
+		}
+		if resp.StatusCode != 200 {
+			fail.Error = antigravityNext("upstream_changed")
+			fail.ErrorCode = httpErrorCode(resp.StatusCode)
+			return nil, &fail
+		}
+		b, err := io.ReadAll(io.LimitReader(resp.Body, nativeMaxBody+1))
+		if err != nil || len(b) > nativeMaxBody {
+			fail.Error = antigravityNext("upstream_changed")
+			fail.ErrorCode = "schema_changed"
+			return nil, &fail
+		}
+		return b, nil
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode == 401 || resp.StatusCode == 403 {
-		e.Error = antigravityNext("expired_login")
-		e.ErrorCode = httpErrorCode(resp.StatusCode)
-		return e
+	if s.Hub {
+		// Token Monitor@417f84d2 probe.js:783-797: RetrieveUserQuotaSummary first, GetUserStatus as the fallback.
+		if b, fail := rpc("RetrieveUserQuotaSummary", `{"forceRefresh":true}`); fail == nil {
+			if got := parseAntigravitySummary(b, now); got.Status == "ok" {
+				return got
+			}
+		} else if fail.ErrorCode == "unauthorized" || fail.Error == antigravityNext("expired_login") {
+			return *fail
+		}
 	}
-	if resp.StatusCode != 200 {
-		e.Error = antigravityNext("upstream_changed")
-		e.ErrorCode = httpErrorCode(resp.StatusCode)
-		return e
-	}
-	b, err := io.ReadAll(io.LimitReader(resp.Body, nativeMaxBody+1))
-	if err != nil || len(b) > nativeMaxBody {
-		e.Error = antigravityNext("upstream_changed")
-		e.ErrorCode = "schema_changed"
-		return e
+	b, fail := rpc("GetUserStatus", `{"metadata":{"ideName":"antigravity","extensionName":"antigravity","ideVersion":"unknown","locale":"en"}}`)
+	if fail != nil {
+		return *fail
 	}
 	return parseAntigravity(b, now)
+}
+
+// parseAntigravitySummary reads RetrieveUserQuotaSummary: groups of 5-hour and weekly buckets.
+// Reference: Token Monitor@417f84d2 probe.js:530-610 (quotaSummaryWindows and its helpers).
+func parseAntigravitySummary(b []byte, now time.Time) codexbarEntry {
+	e := codexbarEntry{ErrorCode: "schema_changed", Status: "error", ObservedAt: now.UTC(), Error: antigravityNext("not_supported_yet")}
+	type bucket struct {
+		BucketID    string   `json:"bucketId"`
+		DisplayName string   `json:"displayName"`
+		Window      string   `json:"window"`
+		Disabled    bool     `json:"disabled"`
+		Fraction    *float64 `json:"remainingFraction"`
+		Remaining   *struct {
+			Fraction *float64 `json:"remainingFraction"`
+			Case     string   `json:"case"`
+			Value    *float64 `json:"value"`
+		} `json:"remaining"`
+		Reset json.RawMessage `json:"resetTime"`
+	}
+	type group struct {
+		DisplayName string   `json:"displayName"`
+		Buckets     []bucket `json:"buckets"`
+	}
+	type summary struct {
+		Groups []group `json:"groups"`
+	}
+	var raw struct {
+		summary
+		Response *summary `json:"response"`
+		Summary  *summary `json:"summary"`
+	}
+	if json.Unmarshal(b, &raw) != nil {
+		e.ErrorCode = "parse_error"
+		return e
+	}
+	groups := raw.Groups
+	if raw.Response != nil {
+		groups = raw.Response.Groups
+	} else if raw.Summary != nil {
+		groups = raw.Summary.Groups
+	}
+	if len(groups) > 16 {
+		return e
+	}
+	rank := func(name string) int {
+		switch name {
+		case "Gemini":
+			return 0
+		case "Gemini 4 Argon":
+			return 1
+		case "Claude/GPT":
+			return 2
+		}
+		return 3
+	}
+	sort.SliceStable(groups, func(i, j int) bool {
+		return rank(antigravityGroupName(groups[i].DisplayName)) < rank(antigravityGroupName(groups[j].DisplayName))
+	})
+	for _, g := range groups {
+		name := antigravityGroupName(g.DisplayName)
+		var session, weekly []Window
+		for _, bk := range g.Buckets {
+			kind := antigravityBucketKind(bk.Window, bk.BucketID, bk.DisplayName)
+			if kind == "" || bk.Disabled {
+				continue
+			}
+			fr := bk.Fraction
+			if fr == nil && bk.Remaining != nil {
+				fr = bk.Remaining.Fraction
+				if fr == nil && bk.Remaining.Case == "remainingFraction" {
+					fr = bk.Remaining.Value
+				}
+			}
+			fr = finite(fr, 0, 1)
+			if fr == nil {
+				continue
+			}
+			var reset *time.Time
+			var text string
+			if json.Unmarshal(bk.Reset, &text) == nil {
+				reset = stamp(text)
+			}
+			if reset != nil && !reset.After(now) {
+				continue
+			}
+			used := 100 * (1 - *fr)
+			w := Window{Kind: kind, Limit: name, UsedPercent: &used, ResetsAt: reset, ResetMode: "fixed", ObservedAt: now.UTC()}
+			if kind == "five_hour" {
+				w.WindowMinutes = 300
+				session = append(session, w)
+			} else {
+				w.WindowMinutes = 7 * 24 * 60
+				weekly = append(weekly, w)
+			}
+		}
+		e.Windows = append(e.Windows, append(session, weekly...)...)
+	}
+	if len(e.Windows) > 0 {
+		e.Status, e.ErrorCode, e.Error = "ok", "", ""
+	}
+	return e
+}
+
+// antigravityGroupName maps a vendor group display name to a reviewed label. An unrecognised name is
+// vendor text and is never stored or shown: it becomes a fixed label.
+func antigravityGroupName(display string) string {
+	lower := strings.ToLower(strings.Join(strings.Fields(display), " "))
+	switch {
+	case lower == "gemini" || lower == "gemini models":
+		return "Gemini"
+	case lower == "gemini 4 argon":
+		return "Gemini 4 Argon"
+	case antigravityClaudeGPT.MatchString(lower):
+		return "Claude/GPT"
+	}
+	return "Other models"
+}
+
+var antigravityClaudeGPT = regexp.MustCompile(`^claude\s*(and|&|/)\s*gpt( models)?$`)
+
+func antigravityBucketKind(values ...string) string {
+	for _, v := range values {
+		n := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(v)), "_", "-")
+		n = strings.TrimSuffix(strings.TrimSuffix(n, " remaining"), " limit")
+		n = strings.TrimSuffix(n, " remaining")
+		switch {
+		case n == "weekly" || strings.HasSuffix(n, "-weekly") || strings.HasSuffix(n, " weekly"):
+			return "weekly"
+		case n == "session" || n == "5h" || n == "5-hour" || n == "five hour" || n == "five-hour" ||
+			strings.HasSuffix(n, "-5h") || strings.HasSuffix(n, "-5-hour") || strings.HasSuffix(n, "-five-hour") || strings.HasSuffix(n, "-session"):
+			return "five_hour"
+		}
+	}
+	return ""
 }
 func parseAntigravity(b []byte, now time.Time) codexbarEntry {
 	e := codexbarEntry{ErrorCode: "schema_changed", Status: "error", ObservedAt: now.UTC(), Error: antigravityNext("not_supported_yet")}
@@ -280,13 +515,17 @@ func verifyAntigravityServer(ctx context.Context, s AntigravityServer) error {
 		return errors.New("Antigravity process unavailable")
 	}
 	candidates := antigravityServers(raw)
-	if len(candidates) != 1 || candidates[0].PID != s.PID || candidates[0].Port != s.Port || candidates[0].CSRF != s.CSRF {
+	if len(candidates) != 1 || candidates[0].PID != s.PID {
 		return errors.New("Antigravity process changed")
 	}
-	bin := "/usr/bin/lsof"
-	if runtime.GOOS == "darwin" {
-		bin = "/usr/sbin/lsof"
+	if s.Hub {
+		if port, token, ok := readAntigravityHubDescriptor(s.PID); !candidates[0].Hub || !ok || port != s.Port || token != s.CSRF {
+			return errors.New("Antigravity process changed")
+		}
+	} else if candidates[0].Hub || candidates[0].Port != s.Port || candidates[0].CSRF != s.CSRF {
+		return errors.New("Antigravity process changed")
 	}
+	bin := antigravityLsof()
 	raw, err = antigravityCommand(ctx, bin, "-nP", "-iTCP:"+strconv.Itoa(s.Port), "-sTCP:LISTEN", "-Fpcun")
 	if err != nil {
 		return errors.New("Antigravity listener unavailable")

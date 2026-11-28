@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/modelplan/modelplan/cli/internal/consent"
 )
 
 // Manual key (owner decision D90, 2026-11-09). A key the user pastes for a key-only provider is
@@ -267,6 +269,8 @@ func invalidateManualKeyReadings(dir, provider string) error {
 	}
 	if provider == "zai" {
 		if s := loadNative(dir); s != nil {
+			state, _ := consent.Current()
+			s.ZaiMembership = zaiMembership(dir, s, state)
 			for i, e := range s.Providers {
 				if e.Provider == "zai" {
 					s.Providers[i] = glmReferenceOnly(e)

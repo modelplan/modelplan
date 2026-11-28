@@ -19,7 +19,7 @@ import {historyView,resetHistory,usageStats} from './prototype-history.js';
 import {publishedFleet,listFleet} from './prototype-hud.js';
 import {cardUsage,currentEffort,CURRENT_WINDOW_MS,type CardUse} from './model-card.js';
 import {approxCost} from '../study/rocket-r1/mfd-pages/fmt.js';
-import {scaleView,levelK,bankView,faderModel,lcdView,indicatorView,marksView,stripAria} from '../study/rocket-r1/fader-view.js';
+import {scaleView,levelK,bankView,faderModel,lcdView,indicatorView,marksView,stripAria,slotSvg,TIER_Q} from '../study/rocket-r1/fader-view.js';
 import {setLanguage,t,formatCredits} from '../study/rocket-r1/i18n.js';
 import {overview} from '../study/rocket-r1/mfd-pages/overview.js';
 import {plans,subjectOf} from '../study/rocket-r1/mfd-pages/plans.js';
@@ -31,8 +31,16 @@ import {shortLabel} from '../study/rocket-r1/short-label.js';
 import {compareSpeedTiers} from './speed-tiers.js';
 import {comparison,compareKeys,compareView,type CompareArgs} from '../study/rocket-r1/mfd-pages/views.js';
 import '../study/rocket-r1/strings/mfd.js';
+// Carry prototype style metadata without parsing inline styles under the cockpit CSP.
+const inertStyles=(html:string)=>html.replace(/ style="/g,' data-study-style="');
 type Locale='en'|'zh-CN';
 const node=<K extends keyof HTMLElementTagNameMap>(tag:K,cls?:string,text?:string):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e;};
+/** D387 / D413: the one open screen as the Overview | screen switch and the bottom keys show it (plugin-host PluginScreenInfo). */
+type DeckScreen={readonly id:string;readonly name:string;readonly short:string|null;readonly icon:string;
+ readonly toggle:{readonly value:string;readonly options:readonly {readonly value:string;readonly text:string}[];pick(value:string):void}|null};
+// D413: the switch's back chevron and the small Overview mark the English switch shows instead of the word (three bars, as the overview's chart).
+const SEG_CHEVRON='<svg class="ch" viewBox="0 0 4 7" width="4" height="7" aria-hidden="true"><path d="M3.4 .6 .8 3.5l2.6 2.9" fill="none" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const SEG_OVERVIEW='<svg class="ic" viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><path d="M2 8.5V5.5M5 8.5V2M8 8.5V4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
 const cockpitPageRegistry=Object.freeze([Object.freeze({module:overview,key:'host.pageOverview'}),Object.freeze({module:plans,key:'host.pageSubscription'}),Object.freeze({module:tune,key:'host.pageEffort'}),Object.freeze({module:where,key:'host.pageBreakdown'})]);
 export const cockpitPageIds=Object.freeze(cockpitPageRegistry.map(p=>p.module.id));
 export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boolean,fixture:PrototypeDetailsFixture=unavailablePrototypeDetailsFixture(),redBelow:()=>number=()=>effectiveRedBelow(undefined),reportPins:(ids:string[])=>void=()=>{},onSettings:()=>boolean=()=>false,onRange?:(range:CockpitRange)=>boolean,onRefresh:(key:string)=>boolean=()=>false,appRange?:()=>CockpitRange,isRefreshing:()=>boolean=()=>false,onOpenCompare:()=>boolean=()=>false){
@@ -42,6 +50,10 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
  let locale:Locale='en',selected=0,scope='all',data:WireCockpitData|null=null,renderedNow=0,completedEmpty=false;
  // Prototype mfd.js:39-58,75 (openMfdView/closeMfdView): the full alert list is a view over the current page, opened by the
  // ALERT lamp or the overview's "+N" line, closed by "‹ Back to <page>", Esc, a page key or a second lamp press.
+ // D387: a plugin screen (Calendar, Resources) is one view of this panel, drawn by the plugin host over the page. While it
+ // is open the page and its bottom keys are not shown, the Overview tab is the "Overview | <screen>" switch, and any other
+ // view of the panel ends it first (endScreen), so a view never shows another view's content.
+ let screenView:DeckScreen|null=null,closeScreenHook:(()=>void)|null=null;const endScreen=()=>{if(screenView)closeScreenHook?.();screenView=null;};
  let pageFill:{w:number;h:number}|null=null,alertsView:{from:'caution'|'mfd';mark?:string|null;flash?:boolean}|null=null,returnPage:number|null=null,tuneModel:string|null=null;
  // The study's comparison view (mfd.js openComparison, views.js round D1): a fader trial shows "Compare · <model>" over
  // the current page, whose key goes dark; ‹ back, Esc, a page key or the same source again returns. One trial at a time.
@@ -148,7 +160,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   for(const id of Object.keys(previews))if(id!==c.id)delete previews[id];
   compare={modelId:c.id,current:c.current??null,...(trial?{trial}:{}),...(fast!==undefined?{fast}:{}),currentFast:!!c.currentFast};
   if(trial&&trial!==c.base)previews[c.id]=trial;else delete previews[c.id];
-  selectedModel=c.id;alertsView=null;paint();
+  endScreen();selectedModel=c.id;alertsView=null;paint();
  }
  // CKP-FAD-54: closing the effort page deselects the model (the frame goes with it); the page underneath comes back.
  function closeCompare(){if(!compare)return false;delete previews[compare.modelId];compare=null;selectedModel=null;paint();return true;}
@@ -164,20 +176,37 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
  function dragCard(c:Channel&{label?:string},level:string){
   const ch=channels.querySelector<HTMLElement>(`.fd-ch[data-model="${c.id}"]`),strip=ch?.querySelector<HTMLElement>('.fd-strip');if(!ch||!strip)return;
   if(level===c.base)delete previews[c.id];else previews[c.id]=level;
-  const model=faderModel(faderInput(),{bank:bankIndex,bankSize:BANK_SIZE,compact:root.dataset.layout==='640',selModel:selectedModel,previews,view:compare?{modelId:compare.modelId,trial:compare.modelId===c.id?level:compare.trial,fast:compare.fast??null,from:'fader',key:compare.modelId}:null,phase:'open',reduced:true}),next=model.all.find((x:{id:string})=>x.id===c.id);
-  if(!next)return;strip.innerHTML=lcdView(next);strip.dataset.card=next.card.state;strip.setAttribute('aria-label',stripAria(next));ch.classList.toggle('trying',!!next.trial);
+  const model=faderModel(faderInput(),{bank:bankIndex,bankSize:BANK_SIZE,selModel:selectedModel,previews,view:compare?{modelId:compare.modelId,trial:compare.modelId===c.id?level:compare.trial,fast:compare.fast??null,from:'fader',key:compare.modelId}:null,phase:'open',reduced:true}),next=model.all.find((x:{id:string})=>x.id===c.id);
+  if(!next)return;strip.innerHTML=inertStyles(lcdView(next));strip.dataset.card=next.card.state;strip.setAttribute('aria-label',stripAria(next));ch.classList.toggle('trying',!!next.trial);
   const shareBar=strip.querySelector<HTMLElement>('.cd-bar');if(shareBar&&next.card.bar!=null){shareBar.style.setProperty('--s',(next.card.bar*100).toFixed(1)+'%');if(next.segments[0])shareBar.style.setProperty('--v',next.segments[0]);}
   for(const [j,el] of [...strip.querySelectorAll<HTMLElement>('.st-vend b')].entries())el.style.setProperty('--v',next.segments[j]);
  }
  function pressLevel(c:Channel,level:string){if(compare?.modelId===c.id&&level===(previews[c.id]??c.base)){if(!onOpenCompare())closeCompare();}else tryEffort(c,level);}
  function pressStrip(c:Channel){if(compare?.modelId===c.id){if(!onOpenCompare())closeCompare();}else openCompare(c,previews[c.id]??c.current??undefined);}
- function paintScale(){setLanguage(locale);scale.innerHTML=scaleView();for(const b of scale.querySelectorAll<HTMLButtonElement>('.sc-l')){b.disabled=true;b.classList.add('na');b.style.setProperty('--k',String(levelK(b.dataset.level??'')));}}
+ function paintScale(){setLanguage(locale);scale.innerHTML=inertStyles(scaleView());for(const b of scale.querySelectorAll<HTMLButtonElement>('.sc-l')){b.disabled=true;b.classList.add('na');b.style.setProperty('--k',String(levelK(b.dataset.level??'')));}}
+ // D405: the code-drawn slots follow the tilted face (fader-view slotSvg); they are redrawn when the travel's height changes.
+ function paintSlots(){
+  const panel=root.querySelector<HTMLElement>('.dk-fad');if(!panel)return;
+  const css=getComputedStyle(panel),slotW=parseFloat(css.getPropertyValue('--slot-w'))||4,pitch=(parseFloat(css.getPropertyValue('--fd-ch'))||64)+(parseFloat(css.getPropertyValue('--fd-gap'))||12);
+  for(const [i,ch] of [...channels.querySelectorAll<HTMLElement>('.fd-ch')].entries()){
+   const travel=ch.querySelector<HTMLElement>('.fd-travel'),slot=ch.querySelector<HTMLElement>('.fd-slot');if(!travel||!slot)continue;
+   // An empty bay draws no slot: with no model there is nothing to set, and the page keeps no drawing without data.
+   if(ch.classList.contains('empty')){if(slot.dataset.drawn){slot.replaceChildren();delete slot.dataset.drawn;}continue;}
+   const height=travel.offsetHeight,width=travel.offsetWidth;if(!height||!width)continue;
+   const pad=parseFloat(getComputedStyle(travel).getPropertyValue('--fd-pad'))||8,key=[width,height,pad,slotW,pitch].join();
+   // macrevb-1229-2: the slot's slope (x per y), from the same face geometry, for the skewed trial rod.
+   ch.style.setProperty('--slot-slope',String((i-1)*pitch*(1-TIER_Q)/Math.max(1,height-2*pad)));
+   if(slot.dataset.drawn===key)continue;slot.dataset.drawn=key;slot.innerHTML=slotSvg({width,height,pad,slotW,off:i-1,pitch});
+  }
+ }
+ root.querySelector<HTMLElement>('.dk-fad')?.style.setProperty('--tq',String(TIER_Q));
+ if(typeof ResizeObserver!=='undefined'){const watch=new ResizeObserver(()=>paintSlots());for(const t of channels.querySelectorAll<HTMLElement>('.fd-travel'))watch.observe(t);}
  // macrevb-1204-1: a native tick repaints the cards only when a model's current effort or Fast changed (a live session aged
  // out of the 15-minute window), so the card and the comparison never keep a configuration the data no longer supports.
  let faderSig='';
  const faderSignature=(d:{faders:readonly {id:string;current:string|null;currentFast:boolean}[]})=>d.faders.map(f=>`${f.id}:${f.current??''}:${f.currentFast}`).join('|');
  function paintFaders(){
-  const data=faderInput();faderSig=faderSignature(data);const input=record(details.publication),requested=selectedModel??safeText(input?.selectedModel),target=data.faders.find(f=>f.id===requested||f.sourceId===requested)?.id??null,ui={bank:bankIndex,bankSize:BANK_SIZE,compact:root.dataset.layout==='640',selModel:target,previews,view:compare?{modelId:compare.modelId,trial:compare.trial,fast:compare.fast??null,from:'fader',key:compare.modelId}:null,phase:'open',reduced:true},model=faderModel(data,ui);bankIndex=model.bank;
+  const data=faderInput();faderSig=faderSignature(data);const input=record(details.publication),requested=selectedModel??safeText(input?.selectedModel),target=data.faders.find(f=>f.id===requested||f.sourceId===requested)?.id??null,ui={bank:bankIndex,bankSize:BANK_SIZE,selModel:target,previews,view:compare?{modelId:compare.modelId,trial:compare.trial,fast:compare.fast??null,from:'fader',key:compare.modelId}:null,phase:'open',reduced:true},model=faderModel(data,ui);bankIndex=model.bank;
   const targetChannel=model.all.find((c:{id:string})=>c.id===model.target);
   // The one selected model, by published id, for the surfaces that light with it (session line, rocket ring: WP-04, WP-12).
   const selSource=compare?data.faders.find(f=>f.id===compare!.modelId)?.sourceId:null;if(selSource)root.dataset.selModel=selSource;else delete root.dataset.selModel;
@@ -185,13 +214,13 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   for(const [i,ch] of [...channels.querySelectorAll<HTMLElement>('.fd-ch')].entries()){
    const c=model.channels[i],strip=ch.querySelector<HTMLButtonElement>('.fd-strip')!,leds=ch.querySelector<HTMLElement>('.fd-leds')!,travel=ch.querySelector<HTMLElement>('.fd-travel')!,marks=ch.querySelector<HTMLElement>('.fd-marks')!,cap=ch.querySelector<HTMLElement>('.fd-cap')!;
    ch.className='fd-ch'+(c?'':' empty');ch.dataset.model=c?.id??'';if(c){ch.classList.toggle('sel',!!c.sel);ch.classList.toggle('trying',!!c.trial);ch.classList.toggle('src',c.src==='fader');}strip.disabled=!c;strip.tabIndex=c?0:-1;travel.tabIndex=c&&!c.unlisted?0:-1;
-   leds.innerHTML=c?indicatorView(c):'';if(c?.leds.length){const indicator=leds.querySelector<HTMLElement>('.fd-indicator'),times=c.leds.map((x:{lastObservedAt:string|null})=>x.lastObservedAt?Date.parse(x.lastObservedAt):NaN).filter(Number.isFinite),latest=times.length?new Date(Math.max(...times)).toLocaleString(locale):'';indicator?.setAttribute('aria-label',c.name+' · '+ht(locale,'host.lastReading')+(latest?' '+latest:''));}strip.innerHTML=c?lcdView(c):'';if(c)strip.dataset.card=c.card.state;else delete strip.dataset.card;marks.innerHTML=c?marksView(c):'';cap.hidden=!c||c.unlisted;cap.classList.toggle('unused',!!c&&c.card.state==='unused');if(!c)placeGhost(ch,0,null,false);
-   if(!c){strip.removeAttribute('aria-label');strip.removeAttribute('data-strip');travel.removeAttribute('data-travel');strip.onclick=null;strip.onpointerdown=null;strip.onpointerup=null;strip.onpointercancel=null;strip.onlostpointercapture=null;travel.onkeydown=null;travel.onpointerdown=null;travel.onpointermove=null;travel.onpointerup=null;travel.onpointercancel=null;travel.removeAttribute('aria-valuenow');travel.removeAttribute('aria-valuetext');continue;}strip.dataset.strip=c.id;travel.dataset.travel=c.id;const shown=c.tEff||c.base;if(c.unlisted){/* no efforts, no lever: not a slider, not focusable, hidden from assistive tech (macrevb-1052-5) */travel.hidden=true;travel.setAttribute('aria-hidden','true');travel.removeAttribute('role');travel.removeAttribute('aria-label');travel.removeAttribute('aria-valuenow');travel.removeAttribute('aria-valuetext');travel.removeAttribute('aria-valuemin');travel.removeAttribute('aria-valuemax');}else{travel.hidden=false;travel.removeAttribute('aria-hidden');travel.setAttribute('role','slider');travel.setAttribute('aria-valuemin','0');travel.setAttribute('aria-valuemax','4');travel.setAttribute('aria-label',c.name);travel.setAttribute('aria-valuenow',String(ladder.indexOf(shown)));travel.setAttribute('aria-valuetext',shown);}const dragging=drag?.model===c.id;placeGhost(ch,c.capK,dragging?drag!.k:c.ghostK,dragging);travel.dataset.lever=c.base;travel.dataset.trial=c.tEff??'';setLever(cap,c.capK);travel.onkeydown=e=>{if(!e.isTrusted||!['ArrowUp','ArrowDown'].includes(e.key))return;e.preventDefault();const at=ladder.indexOf(shown),step=e.key==='ArrowUp'?1:-1;for(let n=at+step;n>=0&&n<ladder.length;n+=step)if(c.levels.includes(ladder[n])){selectedModel=c.id;tryEffort(c,ladder[n]);break;}};const nearest=(k:number)=>{const levels=c.levels as string[];let best=levels[0],delta=Infinity;for(const level of levels){const d=Math.abs((4-ladder.indexOf(level as typeof ladder[number]))/4-k);if(d<delta){delta=d;best=level;}}return best;};
+   leds.innerHTML=c?indicatorView(c):'';if(c?.leds.length){const indicator=leds.querySelector<HTMLElement>('.fd-indicator'),times=c.leds.map((x:{lastObservedAt:string|null})=>x.lastObservedAt?Date.parse(x.lastObservedAt):NaN).filter(Number.isFinite),latest=times.length?new Date(Math.max(...times)).toLocaleString(locale):'';indicator?.setAttribute('aria-label',c.name+' · '+ht(locale,'host.lastReading')+(latest?' '+latest:''));}strip.innerHTML=c?inertStyles(lcdView(c)):'';if(c)strip.dataset.card=c.card.state;else delete strip.dataset.card;marks.innerHTML=c?inertStyles(marksView(c)):'';cap.hidden=!c||c.unlisted;cap.classList.toggle('unused',!!c&&c.card.state==='unused');if(!c)placeGhost(ch,0,null,false);
+   if(!c){strip.removeAttribute('aria-label');strip.removeAttribute('data-strip');travel.removeAttribute('data-travel');strip.onclick=null;strip.onpointerdown=null;strip.onpointerup=null;strip.onpointercancel=null;strip.onlostpointercapture=null;travel.onkeydown=null;travel.onpointerdown=null;travel.onpointermove=null;travel.onpointerup=null;travel.onpointercancel=null;travel.removeAttribute('aria-valuenow');travel.removeAttribute('aria-valuetext');continue;}strip.dataset.strip=c.id;travel.dataset.travel=c.id;const shown=c.tEff||c.base;if(c.unlisted){/* no efforts, no lever: not a slider, not focusable, hidden from assistive tech (macrevb-1052-5) */travel.hidden=true;travel.setAttribute('aria-hidden','true');travel.removeAttribute('role');travel.removeAttribute('aria-label');travel.removeAttribute('aria-valuenow');travel.removeAttribute('aria-valuetext');travel.removeAttribute('aria-valuemin');travel.removeAttribute('aria-valuemax');}else{travel.hidden=false;travel.removeAttribute('aria-hidden');travel.setAttribute('role','slider');travel.setAttribute('aria-valuemin','0');travel.setAttribute('aria-valuemax','4');travel.setAttribute('aria-label',c.name);travel.setAttribute('aria-valuenow',String(ladder.indexOf(shown)));travel.setAttribute('aria-valuetext',shown);}const dragging=drag?.model===c.id;placeGhost(ch,c.capK,dragging?drag!.k:c.ghostK,dragging);travel.dataset.lever=c.base;travel.dataset.trial=c.tEff??'';setLever(cap,c.capK);travel.onkeydown=e=>{if(!e.isTrusted||!['ArrowUp','ArrowDown'].includes(e.key))return;e.preventDefault();const at=ladder.indexOf(shown),step=e.key==='ArrowUp'?1:-1;for(let n=at+step;n>=0&&n<ladder.length;n+=step)if(c.levels.includes(ladder[n])){selectedModel=c.id;tryEffort(c,ladder[n]);break;}};const nearest=(k:number)=>{const levels=c.levels as string[];let best=levels[0],delta=Infinity;for(const level of levels){const d=Math.abs(levelK(level)-k);if(d<delta){delta=d;best=level;}}return best;};
    travel.onpointerdown=e=>{if(!e.isTrusted||e.button!==0||drag||!c.levels.length)return;e.preventDefault();drag={pointer:e.pointerId,model:c.id,k:travelK(travel,e.clientY),prior:previews[c.id]};try{travel.setPointerCapture(e.pointerId);}catch{}travel.focus({preventScroll:true});placeGhost(ch,c.capK,drag.k,true);dragCard(c,nearest(drag.k));};
    // CKP-FAD-14: hovering the travel shows the blue dashed what-if box at the nearest offered level (not a trial: nothing is chosen).
    const peek=ch.querySelector<HTMLElement>('.fd-peek')!,hidePeek=()=>peek.classList.remove('on');
    travel.onpointerleave=hidePeek;
-   travel.onpointermove=e=>{if(drag){if(drag.pointer!==e.pointerId||drag.model!==c.id)return;hidePeek();drag.k=travelK(travel,e.clientY);placeGhost(ch,c.capK,drag.k,true);dragCard(c,nearest(drag.k));return;}if(e.pointerType==='touch'||!c.levels.length){hidePeek();return;}const at=nearest(travelK(travel,e.clientY));peek.style.setProperty('--k',String((4-ladder.indexOf(at as typeof ladder[number]))/4));peek.classList.toggle('on',at!==c.base);};
+   travel.onpointermove=e=>{if(drag){if(drag.pointer!==e.pointerId||drag.model!==c.id)return;hidePeek();drag.k=travelK(travel,e.clientY);placeGhost(ch,c.capK,drag.k,true);dragCard(c,nearest(drag.k));return;}if(e.pointerType==='touch'||!c.levels.length){hidePeek();return;}const at=nearest(travelK(travel,e.clientY));peek.style.setProperty('--k',String(levelK(at)));peek.classList.toggle('on',at!==c.base);};
    travel.onpointerup=e=>{if(!drag||drag.pointer!==e.pointerId)return;const k=drag.model===c.id?travelK(travel,e.clientY):drag.k;drag=null;selectedModel=c.id;tryEffort(c,nearest(k));};
    travel.onpointercancel=e=>{if(!drag||drag.pointer!==e.pointerId)return;if(drag.prior===undefined)delete previews[drag.model];else previews[drag.model]=drag.prior;drag=null;paintFaders();};strip.onpointerdown=e=>{const sourceId=data.faders.find(f=>f.id===c.id)?.sourceId;if(!e.isTrusted||!e.isPrimary||e.button!==0||!sourceId||press||c.unlisted)return;suppressClick=false;press=beginFaderPress(press,{pointer:e.pointerId,started:e.timeStamp,sourceId,pinned:!!c.pinned});strip.setPointerCapture(e.pointerId);};const release=(e:PointerEvent)=>{if(!e.isTrusted)return;const result=endFaderPress(press,e.pointerId,e.timeStamp,'up');press=result.active;const held=result.commit;if(!held)return;if(held.pinned){pins=pins.filter(id=>id!==held.sourceId);unpinned.add(held.sourceId);}else{pins=[held.sourceId,...pins.filter(id=>id!==held.sourceId)];unpinned.delete(held.sourceId);}reportPins(pins.slice(0,64));suppressClick=true;bankIndex=0;paintFaders();};strip.onpointerup=release;strip.onpointercancel=e=>{if(!e.isTrusted)return;press=endFaderPress(press,e.pointerId,e.timeStamp,'cancel').active;};strip.onlostpointercapture=e=>{if(press?.pointer===e.pointerId)press=null;};strip.onclick=e=>{if(!e.isTrusted)return;if(suppressClick&&e.detail!==0){suppressClick=false;return;}suppressClick=false;if(c.unlisted)return;selectedModel=c.id;pressStrip(c);};strip.setAttribute('aria-label',stripAria(c));cap.style.setProperty('--k',String(c.capK));
    for(const [j,el] of [...marks.querySelectorAll<HTMLElement>('.fd-tick')].entries())el.style.setProperty('--k',String(c.ticks[j]));const rec=marks.querySelector<HTMLElement>('.fd-rec');rec?.style.setProperty('--k',String(c.recK));for(const [j,el] of [...marks.querySelectorAll<HTMLElement>('.fd-dot')].entries())el.style.setProperty('--k',String(c.dots[j].k));
@@ -199,16 +228,48 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
    const shareBar=strip.querySelector<HTMLElement>('.cd-bar');if(shareBar&&c.card.bar!=null){shareBar.style.setProperty('--s',(c.card.bar*100).toFixed(1)+'%');if(c.segments[0])shareBar.style.setProperty('--v',c.segments[0]);}
    const lamp=leds.querySelector<HTMLElement>('.fd-indicator');if(lamp&&c.lampColour)lamp.style.setProperty('--lamp',c.lampColour);for(const [j,el] of [...strip.querySelectorAll<HTMLElement>('.st-vend b')].entries())el.style.setProperty('--v',c.segments[j]);
   }
-  bank.innerHTML=bankView(model);if(!model.all.length)bank.append(node('p','mp-empty sm',ht(locale,'host.dataUnavailable')));for(const b of bank.querySelectorAll<HTMLButtonElement>('[data-bank]'))b.onclick=e=>{if(!e.isTrusted)return;bankIndex+=b.dataset.bank==='1'?1:-1;paintFaders();};
+  paintSlots();
+  bank.innerHTML=bankView(model);root.querySelector('.dk-fad')?.classList.toggle('paged',model.banks>1||!model.all.length);if(!model.all.length)bank.append(node('p','mp-empty sm',ht(locale,'host.dataUnavailable')));for(const b of bank.querySelectorAll<HTMLButtonElement>('[data-bank]'))b.onclick=e=>{if(!e.isTrusted)return;bankIndex+=b.dataset.bank==='1'?1:-1;paintFaders();};
  }
 
  const bar=node('div','mfd-pk'),screen=node('div','mfd-screen'),page=node('div','mfd-page pg-overview'),footer=node('div','mfd-ok');bar.setAttribute('role','toolbar');screen.dataset.mat='well';page.dataset.fill='page';screen.append(page);
- // A change of the screen's size (compact / tall) redraws the overview, whose alert budget follows it.
+ // A change of the screen's size redraws the overview, whose alert budget follows it.
  if(typeof ResizeObserver!=='undefined')new ResizeObserver(()=>{if(selected===0&&pageFill&&page.clientHeight>0&&page.clientHeight!==pageFill.h)paint(true);}).observe(page);
  // G3-171: one source for the range. The app's (the header's) range is read at every paint; the copy below is only the
  // fallback of a deck mounted without an app (tests).
  const rangeNow=():CockpitRange=>appRange?.()??uiRangeLocal;const pages=cockpitPageRegistry,modules=pages.map(p=>p.module);let uiWhere='proj',uiRangeLocal:CockpitRange=INITIAL_RANGE,painted:CockpitRange|null=null,uiChart='bars',uiStack=true,uiModels:'list'|'chart'='list',listPick:string|null=null,uiSubTab='now',uiCycle:string|null=null,gridFill:{w:number;h:number}|null=null;
  const buttons=pages.map((item,i)=>{const b=node('button','pk'),caption=node('span'),led=node('i','pk-led');b.type='button';b.dataset.mfd='page:'+modules[i].id;b.dataset.mat='part';b.append(caption,led);b.onclick=e=>{if(!e.isTrusted)return;alertsView=null;if(compare){delete previews[compare.modelId];compare=null;}returnPage=null;tuneModel=null;selected=i;paint();};bar.append(b);return {b,caption};});
+ // D387 / D413: while a plugin screen is open (Calendar, Resources; D400: a HUD click opens the Models page, which is
+ // not a screen) the Overview slot itself becomes the switch "‹ Overview │ icon + short name": the same 86 px grid cell, never wider, in the pressed key body. The left half returns
+ // (as Escape does); the right half is the current screen, lit, and does nothing. One Tab stop: the arrows move between
+ // the halves, Enter and Space press. No animation (D397).
+ const seg=node('div','pk-seg'),segBack=node('button','h back'),segCur=node('button','h cur'),sepEl=node('i','sep');
+ seg.hidden=true;seg.setAttribute('role','tablist');seg.dataset.mat='part';sepEl.setAttribute('aria-hidden','true');
+ segBack.type='button';segBack.dataset.mfd='seg:overview';segBack.setAttribute('role','tab');
+ segCur.type='button';segCur.dataset.mfd='seg:screen';segCur.setAttribute('role','tab');
+ seg.append(segBack,sepEl,segCur);bar.append(seg);
+ const toOverview=()=>{if(screenView!==null){closeScreenHook?.();screenView=null;}alertsView=null;if(compare){delete previews[compare.modelId];compare=null;}returnPage=null;tuneModel=null;selected=0;paint();buttons[0]?.b.focus({preventScroll:true});};
+ segBack.onclick=e=>{if(e.isTrusted)toOverview();};
+ // Roving tab stop: the half that has focus is the switch's one Tab stop.
+ for(const [a,b] of [[segBack,segCur],[segCur,segBack]] as const)a.onfocus=()=>{a.tabIndex=0;b.tabIndex=-1;};
+ // The screen half is the current view: pressing it changes nothing.
+ segCur.onclick=e=>{if(e.isTrusted)e.preventDefault();};
+ seg.onkeydown=e=>{if(!e.isTrusted||(e.key!=='ArrowLeft'&&e.key!=='ArrowRight'))return;e.preventDefault();const to=e.key==='ArrowLeft'?segBack:segCur,other=to===segBack?segCur:segBack;to.tabIndex=0;other.tabIndex=-1;to.focus();};
+ const svg=(markup:string)=>{const tpl=document.createElement('template');tpl.innerHTML=markup;return tpl.content.firstElementChild!;};
+ function paintSwitch(){
+  const open=screenView,first=buttons[0]!.b,was=first.hidden?seg.contains(document.activeElement):first===document.activeElement;
+  first.hidden=open!==null;seg.hidden=open===null;if(open===null)return;
+  const overview=t(modules[0].title),en=locale==='en';
+  // English has no room for "Overview": the left half shows the overview mark; the word stays in the tooltip and name.
+  segBack.replaceChildren(svg(SEG_CHEVRON),en?svg(SEG_OVERVIEW):node('span','',overview));
+  segBack.title=`${overview} (Esc)`;segBack.setAttribute('aria-label',`${ht(locale,pages[0].key)} (Esc)`);segBack.setAttribute('aria-selected','false');
+  const icon=svg(open.icon);icon.setAttribute('class','ic');icon.setAttribute('width','10');icon.setAttribute('height','10');icon.setAttribute('aria-hidden','true');
+  // No short name (or one too long): the icon alone, never an ellipsis.
+  segCur.replaceChildren(icon,...(open.short?[node('span','',open.short)]:[]),node('i','led'));
+  segCur.dataset.short=open.short?'true':'false';segCur.title=open.name;segCur.setAttribute('aria-label',open.name);segCur.setAttribute('aria-selected','true');
+  if(segBack.tabIndex!==0&&segCur.tabIndex!==0)segBack.tabIndex=0;if(segBack.tabIndex===0)segCur.tabIndex=-1;
+  seg.dataset.screen=open.id;seg.setAttribute('aria-label',t('mfd.keysAria'));if(was&&!seg.contains(document.activeElement))(segBack.tabIndex===0?segBack:segCur).focus({preventScroll:true});
+ }
  mfd.replaceChildren(bar,screen,footer);
  // The study's floating LCD tooltip (mfd.css .mfd-tip) for chart cells and buckets: hover shows a [data-tip]'s lines,
  // the first as its heading. Text only; it never takes pointer events.
@@ -218,7 +279,15 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   const lines=(source.getAttribute('data-tip')??'').split('\n').filter(Boolean);if(!lines.length){hideTip();return;}
   tip.replaceChildren(...lines.map((line,i)=>node('span',i?'':'h',line)));tip.hidden=false;
   const box=screen.getBoundingClientRect(),r=source.getBoundingClientRect(),w=tip.offsetWidth,h=tip.offsetHeight;
-  const left=r.right-box.left+6+w<=box.width?r.right-box.left+6:Math.max(0,r.left-box.left-6-w),top=Math.min(Math.max(0,r.top-box.top),Math.max(0,box.height-h));
+  let left=r.right-box.left+6+w<=box.width?r.right-box.left+6:Math.max(0,r.left-box.left-6-w),top=Math.min(Math.max(0,r.top-box.top),Math.max(0,box.height-h));
+  // A row-wide source (the totals row's "On this Mac") has no room beside it, and beside it would cover its own headline:
+  // the tip goes just below it (above it when nothing fits below), at the pointer's side.
+  // Another row-wide source (an alert line above the totals row) must not land on that headline either: the candidates are
+  // below the row, above it, then over the row itself; the first one that is clear of the headline and inside the screen wins.
+  if(r.width>box.width*.6){left=Math.min(Math.max(0,e.clientX-box.left),Math.max(0,box.width-w));
+   const head=source.matches('.ov-top')?null:page.querySelector('.ov-top')?.getBoundingClientRect(),clear=(y:number)=>!head||y+box.top+h<=head.top||y+box.top>=head.bottom;
+   const spots=[r.bottom-box.top+4,r.top-box.top-4-h,r.top-box.top];
+   top=spots.find(y=>y>=0&&y+h<=box.height&&clear(y))??spots.find(clear)??spots[0];top=Math.max(0,top);}
   tip.style.left=left+'px';tip.style.top=top+'px';};
  screen.onpointerleave=hideTip;
  // Public projection only: v1.1 charts, rankings and full session lists are
@@ -258,8 +327,8 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   const accounts=members.map(({key,row,account})=>({id:ids.get(key)!,name:titleOf(row,account),short:locale==='en'?row.name.en:row.name.zh,plan:planOf(account),vendor:row.vendorKey&&Object.hasOwn(vendorPalette,row.vendorKey)?row.vendorKey:'unknown',colour:colours.get(key)!,logo:row.vendorKey&&Object.hasOwn(subscriptionMarks,row.vendorKey)?subscriptionMarks[row.vendorKey]!:'',source:'native',state:account.valueState==='current'?'ok':account.valueState==='retained'?'stale':'loading',ageMin:ageOf(account),support:'quota-only',pool:null,windows:account.valueState==='none'?[]:account.windows.filter(w=>!scopedWindow(w)).map(w=>({kind:w.role==='session'?'5h':w.role==='weekly'?'week':w.role==='monthly'?'month':w.role==='daily'?'day':'other',label:locale==='en'?w.label.en:w.label.zh,remaining:displayWindow(account,w,now)?w.remainingPercent:null,resetIn:displayWindow(account,w,now)&&w.resetsAt&&Number.isFinite(Date.parse(w.resetsAt))&&Date.parse(w.resetsAt)>=now?(Date.parse(w.resetsAt)-now)/60000:null,resetAt:displayWindow(account,w,now)&&w.resetsAt&&Number.isFinite(Date.parse(w.resetsAt))?Date.parse(w.resetsAt):null,...runOutFields(runOutMinutes(data,row.id,account,w,now)),elapsed:null})),extras:account.valueState==='none'?[]:account.windows.filter(scopedWindow).map(w=>({kind:'other',label:locale==='en'?w.label.en:w.label.zh,remaining:displayWindow(account,w,now)?w.remainingPercent:null,resetIn:displayWindow(account,w,now)&&w.resetsAt&&Number.isFinite(Date.parse(w.resetsAt))&&Date.parse(w.resetsAt)>=now?(Date.parse(w.resetsAt)-now)/60000:null,resetAt:displayWindow(account,w,now)&&w.resetsAt&&Number.isFinite(Date.parse(w.resetsAt))?Date.parse(w.resetsAt):null,...runOutFields(runOutMinutes(data,row.id,account,w,now)),elapsed:null})),cards:[],credits:scope==='all'&&prototypeEngineSupplement(account,data??undefined).reserveCredits?.balance!=null&&['credits','points'].includes(prototypeEngineSupplement(account,data??undefined).reserveCredits?.unit??'')?{balance:prototypeEngineSupplement(account,data??undefined).reserveCredits!.balance,drawing:null}:null,todayTokens:prototypeEngineSupplement(account,data??undefined).todayTokens,forecast:forecastOf(account.windows.filter(w=>!scopedWindow(w)).map(w=>runOutFields(runOutMinutes(data,row.id,account,w,now)))),peak:null,resets:resetHistory(data,account.subscriptionRef,row.id,now),usageStats:usageStats(data,account.subscriptionRef)}));
   // Owner D38: urgency order, subscription and time left; resets and stale readings are list-only (blue).
   // The overview follows the selected scope; the full list (the global lamp's destination) never does.
-  const allAlerts=data?cautionItems(data,now,redBelow()).map(x=>({member:x.member,level:x.level,stable:x.stable,text:locale==='en'?x.text.en:x.text.zh,detail:x.detail?locale==='en'?x.detail.en:x.detail.zh:null,settings:x.settings===true,kind:x.kind})):[];
-  const alerts=allAlerts.filter(x=>scope==='all'||x.member===scope).map(({level,text,kind})=>({level,text,kind}));
+  const allAlerts=data?cautionItems(data,now,redBelow()).map(x=>({member:x.member,level:x.level,stable:x.stable,text:locale==='en'?x.text.en:x.text.zh,detail:x.detail?locale==='en'?x.detail.en:x.detail.zh:null,tip:x.tip?locale==='en'?x.tip.en:x.tip.zh:null,settings:x.settings===true,kind:x.kind,dot:x.dot??null,news:x.news??null,topic:x.topic,who:x.who?locale==='en'?x.who.en:x.who.zh:null})):[];
+  const alerts=allAlerts.filter(x=>scope==='all'||x.member===scope).map(({level,text,kind,dot,news})=>({level,text,kind,dot,news}));
   // Public model data for the frontier (owner D39/D-B): the shared selection for this scope, ten at most.
   const published=publishedFleet(data,scope,now);
   // macrevc-1058-4: the Models list also shows an eligible model the history ranks as used even when it falls outside the ten-model field.
@@ -282,14 +351,28 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   if(now!==undefined)renderedNow=now;
   painted=rangeNow();
   hideTip();if(!keepFaders){paintScale();paintFaders();}bar.setAttribute('aria-label',t('mfd.keysAria'));
-  buttons.forEach(({b,caption},i)=>{caption.textContent=t(modules[i].title);b.setAttribute('aria-label',ht(locale,pages[i].key));b.classList.toggle('on',i===selected);b.setAttribute('aria-pressed',String(i===selected));});
+  buttons.forEach(({b,caption},i)=>{caption.textContent=t(modules[i].title);b.setAttribute('aria-label',ht(locale,pages[i].key));const lit=screenView===null&&i===selected;b.classList.toggle('on',lit);b.setAttribute('aria-pressed',String(lit));});
+  paintSwitch();
   // The page's own measured size (the screen is absolute, so it does not depend on the content): the overview's alert budget reads it (V1-FINAL §13).
  if(page.clientHeight>0)pageFill={w:page.clientWidth,h:page.clientHeight};
   const d=publicData(),selectedId=scope==='all'?null:d.ids.get(scope)??null,subId=selectedId??subjectOf(d,{scope:null})?.id??null,ui={page:modules[selected].id,view:null,days:rangeNow()==='today'?24:rangeNow()==='7d'?7:30,range:rangeNow(),stack:uiStack,chart:uiChart,where:uiWhere,models:uiModels,time:rangeNow()==='today'?'today':'7d',subTab:uiSubTab,subDays:rangeNow()==='30d'?30:7,cycle:uiCycle,older:false,scope:selectedId,selModel:listPick??tuneModel,trials:{},now:d.now,lang:locale,fill:{...(selected===0&&uiChart==='grid'&&gridFill?{ov:gridFill}:{}),...(pageFill?{page:pageFill}:{})},redAt:redBelow()};
   root.querySelector('[data-caution]')?.classList.toggle('mfd-src',alertsView?.from==='caution');
   bar.classList.remove('dark');footer.className='mfd-ok';footer.onclick=null;
+  // D387: a plugin screen is the whole view; the page underneath and its option keys are not shown.
+  page.hidden=screenView!==null;
   // G3-171: before the first reply there is nothing to show yet; say so (busy) on every view the page carries, so a restored alerts list does not keep a stale busy flag.
   if(data||completedEmpty)page.removeAttribute('aria-busy');else page.setAttribute('aria-busy','true');
+  if(screenView!==null){
+   // D413: the screen's own choice (Resources: 10 min | 1 h) on the centre key; the side keys are blank flat keycaps, so
+   // the row does not jump when the screen closes.
+   const dead=()=>{const e=node('span','ok soft off dead');e.dataset.mat='part';e.setAttribute('aria-hidden','true');return e;},toggle=screenView.toggle;
+   let centre:HTMLElement=dead();
+   if(toggle){const b=node('button','ok soft'),label=node('span','ok-l');b.type='button';b.dataset.mfd='opt:screen';b.dataset.opt='screen';b.dataset.mat='part';
+    toggle.options.forEach((x,j)=>{if(j){const sep=node('i','ok-sep');sep.setAttribute('aria-hidden','true');label.append(sep);}const c=node('b',x.value===toggle.value?'on':'',x.text);c.dataset.choice=x.value;label.append(c);});
+    b.setAttribute('aria-label',toggle.options.map(x=>x.text).join(' | ')+': '+(toggle.options.find(x=>x.value===toggle.value)?.text??''));b.append(label);
+    b.onclick=e=>{if(!e.isTrusted)return;const v=(e.target as HTMLElement).closest<HTMLElement>('[data-choice]')?.dataset.choice??toggle.options.find(x=>x.value!==toggle.value)?.value;if(v&&v!==toggle.value)toggle.pick(v);};
+    centre=b;}
+   page.replaceChildren();footer.replaceChildren(dead(),centre,dead());return;}
   if(compare&&!alertsView&&paintCompare(d,ui))return;
   if(alertsView){
    // CKP-MFD-55/56 (WP-11): the list view (mfd-pages/alerts.js). A row selects its subscription and returns to the
@@ -297,6 +380,8 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
    const back=t(pages[selected].module.title),mark=alertsView.from==='caution'?alertsView.mark??null:null,flashRow=alertsView.flash===true;alertsView.flash=false;
    page.className='mfd-page pg-alerts is-view';
    page.innerHTML=alertsPage(d.allAlerts,{back:{label:t('mfd.back',{p:back}),aria:t('mfd.backAria',{p:back})},mark,flash:flashRow,ack:alertsView.from==='caution'});
+   // D474 §6.2: a name that does not fit fades over its last 12 pt (only when it overflows); the time is never cut.
+   for(const who of page.querySelectorAll<HTMLElement>('.al-who'))who.classList.toggle('over',who.scrollWidth>who.clientWidth);
    footer.replaceChildren(...Array.from({length:3},()=>{const e=node('span','ok soft off');e.dataset.mat='part';e.setAttribute('aria-hidden','true');return e;}));
    page.onclick=e=>{
     if(!e.isTrusted)return;const target=e.target as HTMLElement;
@@ -309,11 +394,15 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   }
   page.className='mfd-page pg-'+modules[selected].id;
   // G3-171: before the first reply there is nothing to show yet; say so (loading) instead of the empty-subscriptions text.
-  page.innerHTML=!data&&!completedEmpty?`<p class="mp-empty mp-loading" role="status">${t('eng.loading')}</p>`:d.empty?`<p class="mp-empty">${t('eng.empty')}</p>`:modules[selected].render(d,ui);
+  page.innerHTML=!data&&!completedEmpty?`<p class="mp-empty mp-loading" role="status">${t('eng.loading')}</p>`:d.empty?`<p class="mp-empty">${t('eng.empty')}</p>`:inertStyles(modules[selected].render(d,ui));
+  // The study's measured chart area (mfd.js): the heatmap takes the largest cells its area allows, so it is drawn at the
+  // measured size, again once if that size changed.
+  if(!d.empty&&selected===0&&uiChart==='grid'){const area=page.querySelector<HTMLElement>('[data-fill="ov"]'),size=area?{w:Math.floor(area.clientWidth),h:Math.floor(area.clientHeight)}:null;if(size&&size.w>0&&size.h>0&&(gridFill?.w!==size.w||gridFill?.h!==size.h)){gridFill=size;page.innerHTML=inertStyles(modules[selected].render(d,{...ui,fill:{ov:size}}));}}
   // The page CSP (style-src 'self') drops the study markup's inline style attributes. The heatmap's placement and its
   // vendor colour (--hv) live there, so they are applied again through CSSOM, which the policy allows.
   // The vendor mark (plans.js glyph): a monochrome mask in the vendor ink; an unknown vendor has no mark.
-  for(const e of page.querySelectorAll<HTMLElement>('i.mg[style]')){const css=e.getAttribute('style')??'',ink=/--v:(#[0-9a-f]{6})/i.exec(css)?.[1],url=/url\('assets\/brands\/([a-z-]+\.svg)'\)/.exec(css)?.[1];e.removeAttribute('style');if(!url){e.remove();continue;}if(ink)e.style.setProperty('--v',ink);e.style.setProperty('-webkit-mask-image',`url('assets/brands/${url}')`);e.style.setProperty('mask-image',`url('assets/brands/${url}')`);}
+  for(const e of page.querySelectorAll<HTMLElement>('i.mg[data-study-style]')){const css=e.getAttribute('data-study-style')??'',ink=/--v:(#[0-9a-f]{6})/i.exec(css)?.[1],url=/url\('assets\/brands\/([a-z-]+\.svg)'\)/.exec(css)?.[1];e.removeAttribute('data-study-style');if(!url){e.remove();continue;}if(ink)e.style.setProperty('--v',ink);e.style.setProperty('-webkit-mask-image',`url('assets/brands/${url}')`);e.style.setProperty('mask-image',`url('assets/brands/${url}')`);}
+  for(const e of page.querySelectorAll<SVGElement|HTMLElement>('svg.ov-heat[data-study-style],.hm-since[data-study-style]')){const css=e.getAttribute('data-study-style')??'';e.removeAttribute('data-study-style');for(const decl of css.split(';')){const at=decl.indexOf(':');if(at<0)continue;const name=decl.slice(0,at).trim(),value=decl.slice(at+1).trim();if(/^(left|top|--hv)$/.test(name)&&/^(-?\d+(\.\d+)?px|#[0-9a-f]{3,8})$/i.test(value))e.style.setProperty(name,value);}}
   // Opened from the HUD: the same return rule as the alerts view.
   if(returnPage!==null){const back=node('button','mfd-back',t('mfd.back',{p:t(pages[returnPage]!.module.title)}));back.type='button';back.dataset.mfd='back';page.prepend(back);}
   // D376 (CKP-ENG-27/55): the update time and refresh are the overview's bottom line, in every overview state. 全部 shows the
@@ -356,12 +445,14 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   if(selected===2)for(const e of page.querySelectorAll<HTMLElement>('.mp-empty:not(.period)'))e.textContent=ht(locale,'host.dataUnavailable');
   // Projects are not reported yet; the 时间 list is empty for a period only when last-seen sessions are admitted.
   if(selected===3&&!(uiWhere==='time'?data?.details?.sessionCoverage==='local-last-seen':data?.history?.coverage==='local-history'))for(const e of page.querySelectorAll<HTMLElement>('.mp-empty'))e.textContent=ht(locale,'host.dataUnavailable');
+  // The subscription list's chip colour comes from the inert study markup; restore only a validated hex colour.
+  for(const e of page.querySelectorAll<HTMLElement>('i.chip[data-study-style]')){const colour=/^--v:\s*(#[0-9a-f]{6})\s*;?$/i.exec(e.getAttribute('data-study-style')??'')?.[1];e.removeAttribute('data-study-style');if(colour)e.style.setProperty('--v',colour);}
   // WP-13: the Models and Breakdown rows' share bars and colour chips; the page CSP drops inline style attributes, so they are set through CSSOM.
   for(const e of page.querySelectorAll<HTMLElement>('[data-p]'))e.style.setProperty('--p',e.dataset.p+'%');for(const e of page.querySelectorAll<HTMLElement>('i.chip[data-v]'))e.style.setProperty('--v',e.dataset.v!);
   if(selected===3)for(const b of page.querySelectorAll<HTMLElement>('.ws[data-mfd^="session:"]')){const x=d.sessionRanking.find((s:{ref:string})=>'session:'+s.ref===b.dataset.mfd) as {sub:string|null}|undefined,a=x?.sub?d.accounts.find(a=>a.id===x.sub):null;b.querySelector<HTMLElement>('.chip')?.style.setProperty('--v',a?.colour??'#c6ccd4');}
   if(selected===1&&subId){const index=Number(subId.slice('member'.length)),entry=d.members[index];if(!entry?.account.observedAt){const source=page.querySelector<HTMLElement>('.sp-sub .src');if(source)source.textContent=ht(locale,'host.readingTimeUnknown');}}
   // The cycle chart's vendor colour (--cv) sits in an inline style the page CSP drops; apply it through CSSOM.
-  for(const e of page.querySelectorAll<SVGElement>('svg.cy-chart[style]')){const m=/--cv:\s*(#[0-9a-f]{3,8})/i.exec(e.getAttribute('style')??'');e.removeAttribute('style');if(m)e.style.setProperty('--cv',m[1]!);}
+  for(const e of page.querySelectorAll<SVGElement>('svg.cy-chart[data-study-style]')){const m=/--cv:\s*(#[0-9a-f]{3,8})/i.exec(e.getAttribute('data-study-style')??'');e.removeAttribute('data-study-style');if(m)e.style.setProperty('--cv',m[1]!);}
   // Reset-card facts are personal observations, joined only by a verified reference.
   if(selected===1&&subId&&uiSubTab==='now'){const index=Number(subId.slice('member'.length)),entry=d.members[index],ref=entry?.account.subscriptionRef,verified=ref!=null&&data?.subscriptions.some(s=>s.subscriptionRef===ref),matches=verified?data?.details?.subscriptions.filter(s=>s.subscriptionRef===ref)??[]:[],cards=matches.length===1?matches[0].resetCards:null;if(cards&&cards.state!=='unknown'){const items=(cards.items??[]).flatMap(item=>item.expiresAt&&Number.isFinite(Date.parse(item.expiresAt))?[Date.parse(item.expiresAt)]:[]).sort((a,b)=>a-b),line=node('div','rc'),expiries=node('span','rc-exp');line.append(node('span','lbl',t('mfd.cards')),node('b','',cards.count===null?'--':t('mfd.cardsN',{n:cards.count})));for(const [i,time] of items.slice(0,4).entries()){if(i)expiries.append(node('s','','·'));expiries.append(node('i','',until(time,{now:d.now,lang:locale})));}if(items.length>4)expiries.append(node('i','more','+'+(items.length-4)));line.append(expiries);if(items.length)line.title=items.map(time=>relativeMoment(time,{now:d.now,lang:locale},true)).join('\n');page.append(line);}}
   // The prototype's credits chart assumes 30-day history. Show only an
@@ -380,10 +471,10 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   compare=refreshComparison(compare!,f);
   const fast=compareSpeedTiers(f,f.tier),{model,args:input}=comparisonInput(f,compare,fast.pool),view={models:[model],speedTiers:fast.speedTiers,sessionRanking:[],accounts:[],now:d.now};
   const args:CompareArgs=input;
-  const back=t(pages[selected]!.module.title),draw=()=>{page.innerHTML=comparison(view,{...ui,scope:null,trialNote:true,compact:root.dataset.layout==='640',starMode:root.dataset.starMode||undefined,laneMode:root.dataset.laneMode||undefined,fill:cmpFill?{cmp:cmpFill}:{}},args);};
+  const back=t(pages[selected]!.module.title),draw=()=>{page.innerHTML=inertStyles(comparison(view,{...ui,scope:null,trialNote:true,starMode:root.dataset.starMode||undefined,laneMode:root.dataset.laneMode||undefined,fill:cmpFill?{cmp:cmpFill}:{}},args));};
   bar.classList.add('dark');for(const {b} of buttons){b.classList.remove('on');b.setAttribute('aria-pressed','false');}
   // CSP (style-src 'self') drops the key block's inline geometry (the ladder and the numbers under it inherit it); apply it through CSSOM after every draw.
-  const ladder=()=>{for(const e of page.querySelectorAll<HTMLElement>('.cmp-keys[style]')){const css=e.getAttribute('style')??'';e.removeAttribute('style');for(const m of css.matchAll(/(--c[lr]):(\d+(?:\.\d+)?px)/g))e.style.setProperty(m[1]!,m[2]!);}};
+  const ladder=()=>{for(const e of page.querySelectorAll<HTMLElement>('.cmp-keys[data-study-style]')){const css=e.getAttribute('data-study-style')??'';e.removeAttribute('data-study-style');for(const m of css.matchAll(/(--c[lr]):(\d+(?:\.\d+)?px)/g))e.style.setProperty(m[1]!,m[2]!);}};
   page.className='mfd-page pg-compare is-view own-title';draw();
   // The chart is drawn at its measured size (mfd.js renderMfd), again once if that size changed.
   const measure=()=>{const area=page.querySelector<HTMLElement>('[data-fill="cmp"]');return area?{w:Math.floor(area.clientWidth),h:Math.floor(area.clientHeight)}:null;};
@@ -413,7 +504,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
    const level=(key.dataset.mfd??'').slice(4),c={id:compare.modelId,current:compare.current,base:compare.current??f.rec,currentFast:compare.currentFast};tryEffort(c,level);};
   return true;
  }
- function closeTune(){if(returnPage===null)return false;selected=returnPage;returnPage=null;tuneModel=null;paint();return true;}
+ function closeTune(){if(returnPage===null)return false;selected=0;returnPage=null;tuneModel=null;paint();return true;}
  function closeAlerts(){if(!alertsView)return false;const focus=mfd.contains(document.activeElement);alertsView=null;paint();if(focus)buttons[selected]?.b.focus({preventScroll:true});return true;}
  const escape=(e:KeyboardEvent)=>{if(e.isTrusted&&e.key==='Escape'&&!e.altKey&&(alertsView?closeAlerts():compare?cancelTrial()||closeCompare():closeTune()))e.preventDefault();};window.addEventListener('keydown',escape);
  // CKP-FAD-15: [ and ] page the fader banks, as the ◀ ▶ keys do.
@@ -438,7 +529,9 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
  paint();return {
   /** Recovery contract: the deck's own render state, restored with the view after a refused render (glm-990-1). */
   checkpoint(){const held=new Map(heldCurrent),saved={details,publicationKey,scope,data,renderedNow,completedEmpty,compare,bankIndex,selectedModel,selected,alertsView,returnPage,tuneModel,previews:{...previews},press};return ()=>{({details,publicationKey,scope,data,renderedNow,completedEmpty,compare,bankIndex,selectedModel,selected,alertsView,returnPage,tuneModel,press}=saved);previews={...saved.previews};heldCurrent.clear();for(const [k,v] of held)heldCurrent.set(k,v);};},
-  restorePins(ids:readonly string[]){pins=[...new Set(ids)].slice(0,64);unpinned.clear();if(data)this.render(data,renderedNow);},showAllModels(value:boolean){if(showAllModels===value)return;showAllModels=value;if(data)this.render(data,renderedNow);},/** WP-22 (macrevb-1062-3): the enlarged field's selection, by public model id; a model without a fader here, or null, selects none. */selectModel(id:string|null){selectedModel=id===null?null:faderInput().faders.find(f=>f.sourceId===id)?.id??null;showSelectedBank();paint();},showTune(id:string){const tune=modules.findIndex(m=>m.id==='tune');if(tune<0)return;if(compare){delete previews[compare.modelId];compare=null;}alertsView=null;if(returnPage===null)returnPage=selected;selected=tune;tuneModel=id;listPick=null;uiModels='chart';paint();},knowsSession(ref:string){return sessionModel(ref)!==null;},highlightSession(ref:string|null){const id=ref?sessionModel(ref):null;for(const ch of channels.querySelectorAll<HTMLElement>('.fd-ch'))ch.classList.toggle('xhl',!!id&&ch.dataset.model===id);},showWhere(){const at=modules.findIndex(m=>m.id==='where');if(at<0)return;if(compare){delete previews[compare.modelId];compare=null;}selected=at;alertsView=null;paint();},sessionSelected(ref:string){const id=sessionModel(ref);return id!==null&&selectedModel===id;},clearSession(){selectedModel=null;if(compare){delete previews[compare.modelId];compare=null;}paint();},selectSession(ref:string){const id=sessionModel(ref);if(compare){delete previews[compare.modelId];compare=null;}if(id)selectedModel=id;const at=modules.findIndex(m=>m.id==='where');if(at>=0){selected=at;uiWhere='time';}alertsView=null;paint();},alertsOpen:()=>alertsView?.from==='caution',showAlerts(mark?:string|null){if(alertsView?.from==='caution'){closeAlerts();return false;}alertsView={from:'caution',mark:mark??null,flash:mark!=null};paint();return true;},refresh(now?:number){if(now!==undefined)renderedNow=now;paint(!drag&&faderSignature(faderInput())!==faderSig?false:true,now);},locale(value:Locale,now?:number){locale=value;paint(false,now);},render(value:WireCockpitData,now:number){press=null;completedEmpty=false;
+  /** D387: the plugin host's one open screen (null = none); the deck follows it and calls `close` to end it. */
+  bindScreen(close:()=>void){closeScreenHook=close;},screen(next:DeckScreen|null){if(next===null){if(screenView===null)return;screenView=null;selected=0;paint(true);return;}if(screenView?.id===next.id){const focus=footer.contains(document.activeElement);screenView=next;paint(true);if(focus)footer.querySelector<HTMLElement>('[data-opt="screen"]')?.focus({preventScroll:true});return;}if(compare){delete previews[compare.modelId];compare=null;selectedModel=null;}alertsView=null;returnPage=null;tuneModel=null;screenView=next;paint(true);},
+  restorePins(ids:readonly string[]){pins=[...new Set(ids)].slice(0,64);unpinned.clear();if(data)this.render(data,renderedNow);},showAllModels(value:boolean){if(showAllModels===value)return;showAllModels=value;if(data)this.render(data,renderedNow);},/** WP-22 (macrevb-1062-3): the enlarged field's selection, by public model id; a model without a fader here, or null, selects none. */selectModel(id:string|null){selectedModel=id===null?null:faderInput().faders.find(f=>f.sourceId===id)?.id??null;showSelectedBank();paint();},showTune(id:string){/* D400: the same page as the 模型 key, in the user's last list/chart view, with this model selected. */const tune=modules.findIndex(m=>m.id==='tune');if(tune<0)return;endScreen();if(compare){delete previews[compare.modelId];compare=null;}alertsView=null;returnPage=null;selected=tune;tuneModel=id;listPick=null;paint();},knowsSession(ref:string){return sessionModel(ref)!==null;},highlightSession(ref:string|null){const id=ref?sessionModel(ref):null;for(const ch of channels.querySelectorAll<HTMLElement>('.fd-ch'))ch.classList.toggle('xhl',!!id&&ch.dataset.model===id);},showWhere(){const at=modules.findIndex(m=>m.id==='where');if(at<0)return;if(compare){delete previews[compare.modelId];compare=null;}selected=at;alertsView=null;paint();},sessionSelected(ref:string){const id=sessionModel(ref);return id!==null&&selectedModel===id;},clearSession(){selectedModel=null;if(compare){delete previews[compare.modelId];compare=null;}paint();},selectSession(ref:string){const id=sessionModel(ref);if(compare){delete previews[compare.modelId];compare=null;}if(id)selectedModel=id;const at=modules.findIndex(m=>m.id==='where');if(at>=0){selected=at;uiWhere='time';}alertsView=null;paint();},alertsOpen:()=>alertsView?.from==='caution',showAlerts(mark?:string|null){if(alertsView?.from==='caution'){closeAlerts();return false;}alertsView={from:'caution',mark:mark??null,flash:mark!=null};paint();return true;},refresh(now?:number){if(now!==undefined)renderedNow=now;paint(!drag&&faderSignature(faderInput())!==faderSig?false:true,now);},locale(value:Locale,now?:number){locale=value;paint(false,now);},render(value:WireCockpitData,now:number){press=null;completedEmpty=false;
  // D391 (owner 11-22): a subscription unticked in Settings has no card, so its sessions add no models to any view
  // (faders, cards, All) — the D123/D135 live-use inclusion is gone. The unfiltered sessions still feed the record strip.
  const visibleMembers=cockpitMembers(value),allMembers=cockpitMembers(value,true),admitted=(x:{readonly source:string;readonly subscriptionRef:string|null})=>sessionAdmittedBy(visibleMembers,x,allMembers),binding=sessionMembers(value),bound=(value.details?.sessions??[]).filter(admitted).map(x=>({...x,confirmedSubscriptionRef:x.subscriptionRef&&value.subscriptions.some(s=>s.subscriptionRef===x.subscriptionRef)&&binding.get(x.sessionRef)===x.subscriptionRef?x.subscriptionRef:null,subscriptionRef:binding.get(x.sessionRef)??null})),recorded=(value.details?.recentSessions??[]).filter(admitted);renderedNow=now;data=value;const publication=value.details?.publication;const nextKey=publication?JSON.stringify([publication.publicationId,publication.models.map(m=>m.id)]):null,before=publishedOrder();if(!fixturePublication&&nextKey!==publicationKey){previews={};selectedModel=null;bankIndex=0;compare=null;}publicationKey=nextKey;details={...details,publication:fixturePublication?details.publication:publication==null?null:(subscriptions=>!subscriptions.length&&!showAllModels&&hasHiddenMembers(value)?{accounts:[],faders:[]}:publicationFaders(publication,bound,moreFaderModels(value,subscriptions,bound,recorded),subscriptions,{now,ownPlansOnly:!showAllModels,recorded,usage:historyUsage(value.history)}))((members=>{const palette=memberColours(members);return members.map(m=>({key:m.key,developer:toolDevelopers[m.row.id]??null,colour:palette.get(m.key)!}));})(visibleMembers)),liveSessions:value.details?bound:null,resetEvents:value.details?.resetEvents??null};carryOver(before);root.dataset.detailsAvailable=String(value.details!=null);paint();},scope(value:string){setScope(value);paint();},range(value:CockpitRange){uiRangeLocal=value;if(painted===rangeNow()&&painted===value)return;paint();},cancelPress(){press=null;suppressClick=false;},clear(complete=false){completedEmpty=complete;hideTip();listPick=null;publicationKey=null;press=null;drag=null;unpinned.clear();suppressClick=false;data=null;root.dataset.detailsAvailable='false';details=unavailablePrototypeDetailsFixture();bankIndex=0;selectedModel=null;previews={};scope='all';selected=0;alertsView=null;returnPage=null;tuneModel=null;compare=null;paint();},dispose(){publicationKey=null;press=null;drag=null;pins=[];unpinned.clear();suppressClick=false;window.removeEventListener('keydown',escape);window.removeEventListener('keydown',bankKeys);alertsView=null;compare=null;returnPage=null;tuneModel=null;data=null;root.dataset.detailsAvailable='false';details=unavailablePrototypeDetailsFixture();bankIndex=0;selectedModel=null;previews={};scope='all';selected=0;paint();for(const {b} of buttons)b.onclick=null;page.onclick=null;screen.onpointerover=null;screen.onpointerleave=null;hideTip();}};

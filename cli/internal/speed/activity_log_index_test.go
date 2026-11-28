@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
+	"github.com/modelplan/modelplan/cli/internal/idlework"
 )
 
 func TestActivityIdleDirectoryBudget(t *testing.T) {
@@ -32,15 +33,25 @@ func TestActivityIdleDirectoryBudget(t *testing.T) {
 		t.Fatal(err)
 	}
 	for offset := time.Second; offset < ActivityDiscoveryInterval; offset += time.Second {
-		if got := logs(offset); len(got) != 0 || index.scannedAt != clock {
-			t.Fatalf("walked the root again at %s: %v", offset, got)
+		before := idlework.Snapshot()
+		got := logs(offset)
+		if done := idlework.Snapshot().Since(before); len(got) != 0 || done.Walks != 0 || done.Entries != 0 {
+			t.Fatalf("walked the root again at %s: %v (%+v)", offset, got, done)
 		}
 	}
 	if got := logs(ActivityDiscoveryInterval); len(got) != 1 || got[0].Path != path {
 		t.Fatalf("missed the new log at the next discovery: %v", got)
 	}
 	fence.Generation++
-	if got := index.Logs("", "", "", fence, now, clock.Add(ActivityDiscoveryInterval)); len(got) != 0 || len(index.logs) != 0 {
+	if got := index.Logs("", "", "", fence, now, clock.Add(ActivityDiscoveryInterval)); len(got) != 0 {
 		t.Fatalf("revoked root kept files: %v", got)
+	}
+	// The new fence discarded the inventory: the root is walked afresh, not served from memory.
+	before := idlework.Snapshot()
+	if got := index.Logs(home, "", "", fence, now, clock.Add(ActivityDiscoveryInterval+time.Second)); len(got) != 1 {
+		t.Fatalf("re-granted root: %v", got)
+	}
+	if done := idlework.Snapshot().Since(before); done.Walks != 1 {
+		t.Fatalf("the revoked inventory was reused: %+v", done)
 	}
 }

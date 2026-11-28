@@ -1,0 +1,478 @@
+{
+  "schemaVersion": 1,
+  "_comment": "D481 (owner 2026-11-27): source paths -> the native GUI test classes that exercise them. A ready PR that changes a path matching an area needs a successful exact-head PR GUI run of the area's classes (desktop.yml workflow_dispatch with pr and sha) before modelplan-gates passes; a PR matching no area is unaffected, and the merge queue still runs the whole GUI share. Seeded 2026-11-27 from the code: for each source file, the GUI classes whose test files name its top-level declarations (the gui_test_selection.py rule), unioned per area, skipping classes declared under any #if (R11: conditionally compiled classes are never mapped; their journeys are covered where their flag is enabled); each entry-point file (status item, normal entry, menu bar, application factories, Settings hosts) has its own entry-* area; the settings area is curated (\"curated\": true; Settings model files are named by almost every journey). Every source file a non-curated area names covers at least the classes gui_test_selection.py finds for it (gui-test-map.test.mjs). The reserved official visuals are not mapped (scripts/check-source-policy.mjs keeps their path out of desktop/); the queue's full GUI leg covers them. app-integration classes are narrowed through trusted-mac.yml gui_classes; settings classes run with the whole ModelPlanSettings package in every GUI leg that runs. Rules and selector: scripts/merge-gates/gui-map.mjs; validity: scripts/tests/gui-test-map.test.mjs; docs/mac-ci.md (PR GUI leg, D481).",
+  "packages": {
+    "app-integration": "desktop/native/ModelPlanAppIntegration/Tests/ModelPlanAppIntegrationTests",
+    "settings": "desktop/native/ModelPlanSettings/Tests/ModelPlanSettingsTests"
+  },
+  "areas": [
+    {
+      "area": "dock-ring-presentation",
+      "paths": [
+        "desktop/native/ModelPlanDock/Native/{DockInstrumentRenderer,DockInstrumentView,DockArtwork,DockReorderLayers,DockSkinScaling}.swift",
+        "desktop/native/ModelPlanDock/Logic/DockInstrumentModel.swift"
+      ],
+      "classes": {
+        "app-integration": [
+          "CommunityDockSnapshotTests",
+          "D65ZeroQuotaTests",
+          "DockAccessibilityFrameTests",
+          "DockBehaviourTests",
+          "DockCarryKeepsWidgetTests",
+          "DockClickFocusTests",
+          "DockContentProviderTests",
+          "DockPresentationTickTests",
+          "DockPulseDragLogicTests",
+          "DockPulseDragPersistenceTests",
+          "DockRingReadoutFadeTests",
+          "DockWorkingHostInjectionTests",
+          "G1WidgetSettingsJourneys",
+          "G390RingTimeDotTests",
+          "G3_125RingClosureTests",
+          "HostVerifiedWindowAdapterTests",
+          "MENU04MenuBarDisplayTests",
+          "NormalEntryActivityTests",
+          "P1ExactPlacementTests",
+          "PluginRingCloseMenuTests",
+          "ProductionDockFactoryTests",
+          "ResourceDockBridgeTests",
+          "V13MarkProvenanceTests",
+          "WP15WidgetRingCardGUITests",
+          "ZaiMarkSwitchTests"
+        ]
+      }
+    },
+    {
+      "area": "dock-third-party-resources",
+      "paths": [
+        "desktop/third-party/dock-resources/**"
+      ],
+      "classes": {
+        "app-integration": [
+          "G390RingTimeDotTests",
+          "V13MarkProvenanceTests",
+          "ZaiMarkSwitchTests"
+        ]
+      }
+    },
+    {
+      "area": "dock-card",
+      "paths": [
+        "desktop/native/ModelPlanDock/Native/{DockCardView,DockSliverView}.swift",
+        "desktop/native/ModelPlanDock/Logic/{DockCardContent,DockAttention,DockCardInteraction,DockWidgetCard}.swift"
+      ],
+      "classes": {
+        "app-integration": [
+          "CardLeaveLogicTests",
+          "CardLeaveRegressionTests",
+          "CommunityCockpitEntryTests",
+          "D166ResetCreditTests",
+          "D41KeychainJourneyTests",
+          "D65ZeroQuotaTests",
+          "DockBehaviourTests",
+          "DockCardCockpitEntryTests",
+          "DockContentProviderTests",
+          "DockExtraWindowLabelTests",
+          "G3CardMarkAndGapTests",
+          "HostVerifiedWindowAdapterTests",
+          "QuotaWidgetCardPrototypeTests",
+          "ResourceDockBridgeTests",
+          "RingCardHostTimingTests",
+          "RingCardTimingTests",
+          "WP15WidgetRingCardGUITests"
+        ]
+      }
+    },
+    {
+      "area": "dock-placement-and-drag",
+      "paths": [
+        "desktop/native/ModelPlanDock/Native/{DockEdgeController,DockInteractionController,DockBackgroundDrag}.swift",
+        "desktop/native/ModelPlanDock/Logic/{DockEdgeGeometry,DockVisibility,DockNozzleInteraction,PulsePanelDrag,PulseRestingPlacement}.swift",
+        "desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/{PulseDockPositioning,HostCardPlacement,HostCardPointer}.swift"
+      ],
+      "classes": {
+        "app-integration": [
+          "CardLeaveLogicTests",
+          "CardPointerEvidenceTests",
+          "CommunityPlacementSaveTests",
+          "D65ZeroQuotaTests",
+          "DockBehaviourTests",
+          "DockCarryKeepsWidgetTests",
+          "DockHelpAnchorSearchTests",
+          "DockPresentationTickTests",
+          "DockPulseDragLogicTests",
+          "DockPulseDragPersistenceTests",
+          "DockPulsePlacementNormalEntryTests",
+          "DockWorkingHostInjectionTests",
+          "EngineLifecycleNormalEntryTests",
+          "G1CardThemeAndGlowTests",
+          "G1WidgetSettingsJourneys",
+          "G1WidgetSettingsJourneysB",
+          "G3161ResourceRingRefreshTests",
+          "G3CardMarkAndGapTests",
+          "HostCardPlacementTests",
+          "HostDeadlineDriverTests",
+          "P1ExactPlacementTests",
+          "ProductionApplicationFactoryTests",
+          "ProductionDockFactoryTests",
+          "RingCardHostTimingTests",
+          "RingCardTimingTests",
+          "V05CardJourneyTests",
+          "V13MarkProvenanceTests",
+          "WP15WidgetRingCardGUITests",
+          "ZaiMarkSwitchTests"
+        ]
+      }
+    },
+    {
+      "area": "widget-window",
+      "paths": [
+        "desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/{QuotaWidgetSpotlight,ShowQuotaWidgetRequest,HostVerifiedWindowAdapter,HostPairedProjection,ProductionDockFactory,T2ProductionAppearance,WidgetEmptyReason}.swift"
+      ],
+      "classes": {
+        "app-integration": [
+          "DockWorkingHostInjectionTests",
+          "FindQuotaWidgetWindowTests",
+          "HostVerifiedWindowAdapterTests",
+          "ProductionApplicationFactoryTests",
+          "ProductionDockFactoryTests",
+          "ProductionEditionTests",
+          "QuotaWidgetCardPrototypeTests",
+          "ResourceDockBridgeTests",
+          "ShowQuotaWidgetRequestTests",
+          "WP15WidgetRingCardGUITests",
+          "ZaiMarkSwitchTests"
+        ]
+      }
+    },
+    {
+      "area": "menu-bar-status-item",
+      "paths": [
+        "desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/{StatusItemAnchor,StatusAutoDisplay,StatusTitleKeeper,EngineMenuBarTitle,U6StatusItemFrameSampler,StatusMenuRange}.swift"
+      ],
+      "classes": {
+        "app-integration": [
+          "D377StatusAutoDisplayTests",
+          "MENU04MenuBarDisplayTests",
+          "MenuBarRangeSelectorTests",
+          "StatusItemAnchorTests",
+          "StatusItemLaunchTests",
+          "U6StatusItemFrameTests"
+        ]
+      }
+    },
+    {
+      "area": "entry-engine-dock-menu-application",
+      "paths": [
+        "desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/EngineDockMenuApplication.swift"
+      ],
+      "classes": {
+        "app-integration": [
+          "CockpitSavedOrderTests",
+          "CommunityCockpitEntryTests",
+          "D377StatusAutoDisplayTests",
+          "D41KeychainJourneyTests",
+          "D65ZeroQuotaTests",
+          "DockCarryKeepsWidgetTests",
+          "DockPulseDragLogicTests",
+          "DockPulseDragPersistenceTests",
+          "DockPulsePlacementNormalEntryTests",
+          "DockRingCarryOrderTests",
+          "EngineLifecycleNormalEntryTests",
+          "EngineRowsEntryTests",
+          "FirstRunLaunchJourneyTests",
+          "G1CardThemeAndGlowTests",
+          "G1SettingsJourneys",
+          "G1WidgetSettingsJourneys",
+          "G1WidgetSettingsJourneysB",
+          "G3161ResourceRingRefreshTests",
+          "G345FirstRunChooserJourneyTests",
+          "G369LoginNotInApplicationsJourneyTests",
+          "G3FirstRunSubscriptionsLayoutTests",
+          "IgnitionEntryTests",
+          "MenuBarRangeSelectorTests",
+          "NativeShellBatchTests",
+          "NormalEntryActivityTests",
+          "NormalEntryFirstRunWindowJourneyTests",
+          "P1ExactPlacementTests",
+          "ResourcePluginInstallTests",
+          "S04FirstUseHintJourneyTests",
+          "SET905ShortcutRegistrationJourneyTests",
+          "SET926SystemFallbackJourneyTests",
+          "StatusHelpMenuTests",
+          "StatusItemLaunchTests",
+          "U6StatusItemFrameTests",
+          "V01TrayTemplateTests",
+          "WP15WidgetRingCardGUITests",
+          "WP17DockDeliveryCostTests",
+          "WP17LaunchOpenTests"
+        ]
+      }
+    },
+    {
+      "area": "entry-engine-dock-menu-composition",
+      "paths": [
+        "desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/EngineDockMenuComposition.swift"
+      ],
+      "classes": {
+        "app-integration": [
+          "CommunityCockpitEntryTests",
+          "EngineRowsEntryTests",
+          "WP17LaunchOpenTests"
+        ]
+      }
+    },
+    {
+      "area": "entry-engine-rows",
+      "paths": [
+        "desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/EngineRowsEntry.swift"
+      ],
+      "classes": {
+        "app-integration": [
+          "CockpitSavedOrderTests",
+          "CommunityCockpitEntryTests",
+          "D166ResetCreditTests",
+          "D238LaterInstalledToolTests",
+          "D377StatusAutoDisplayTests",
+          "D41KeychainJourneyTests",
+          "D65ZeroQuotaTests",
+          "DockCardDismissalJourneyTests",
+          "DockCarryKeepsWidgetTests",
+          "DockPresentationTickTests",
+          "DockPulseDragLogicTests",
+          "DockPulseDragPersistenceTests",
+          "DockPulsePlacementNormalEntryTests",
+          "DockRequestedHelpLayoutTests",
+          "DockRingCarryOrderTests",
+          "DockRingReadoutNormalEntryTests",
+          "EngineLifecycleNormalEntryTests",
+          "EngineRowsEntryTests",
+          "FirstRunLaunchJourneyTests",
+          "G1CardThemeAndGlowTests",
+          "G1SettingsJourneys",
+          "G1WidgetSettingsJourneys",
+          "G1WidgetSettingsJourneysB",
+          "G3161ResourceRingRefreshTests",
+          "G345FirstRunChooserJourneyTests",
+          "G369LoginNotInApplicationsJourneyTests",
+          "G3CardMarkAndGapTests",
+          "G3FirstRunSubscriptionsLayoutTests",
+          "G3SettingsRowMeasurementTests",
+          "G3_126StatusStabilityTests",
+          "IgnitionEntryTests",
+          "IgnitionHoldEntryTests",
+          "MENU04MenuBarDisplayTests",
+          "MENU13HostRequestJourneyTests",
+          "MemberRefreshProductionTests",
+          "MenuBarRangeSelectorTests",
+          "NightOnlyCockpitTests",
+          "NormalEntryActivityTests",
+          "NormalEntryFirstRunWindowJourneyTests",
+          "P1ExactPlacementTests",
+          "ReaderKeyNormalEntryTests",
+          "ResourcePluginInstallTests",
+          "RingCardHostTimingTests",
+          "RingCardTimingTests",
+          "S04FirstUseHintJourneyTests",
+          "SET905ShortcutRegistrationJourneyTests",
+          "SET906ShortcutDefaultsJourneyTests",
+          "SET909DockDefaultsJourneyTests",
+          "SET916SubscriptionControlsJourneyTests",
+          "SET918NotificationKindsJourneyTests",
+          "SET926CacheHintsJourneyTests",
+          "SET926SystemFallbackJourneyTests",
+          "StatusHelpMenuTests",
+          "StatusItemLaunchTests",
+          "V05CardJourneyTests",
+          "V13MarkProvenanceTests",
+          "WP15WidgetRingCardGUITests",
+          "WP17DockDeliveryCostTests",
+          "WP17LaunchOpenTests",
+          "WidgetControlsSettingsJourneyTests"
+        ]
+      }
+    },
+    {
+      "area": "entry-engine-rows-console",
+      "paths": [
+        "desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/EngineRowsConsole.swift"
+      ],
+      "classes": {
+        "app-integration": [
+          "CommunityCockpitEntryTests",
+          "EngineRowsEntryTests",
+          "IgnitionEntryTests",
+          "IgnitionHoldEntryTests",
+          "S04FirstUseHintJourneyTests",
+          "StatusItemLaunchTests",
+          "WP17LaunchOpenTests"
+        ]
+      }
+    },
+    {
+      "area": "entry-community-menu-bar",
+      "paths": [
+        "desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/CommunityMenuBar.swift"
+      ],
+      "classes": {
+        "app-integration": [
+          "CardPointerEvidenceTests",
+          "CommunityDockSnapshotTests",
+          "D65ZeroQuotaTests",
+          "DockBehaviourTests",
+          "DockCardCockpitEntryTests",
+          "DockCarryKeepsWidgetTests",
+          "DockContentProviderTests",
+          "G1CardThemeAndGlowTests",
+          "G3CardMarkAndGapTests",
+          "H33DockPresenterTests",
+          "PluginRingCloseMenuTests",
+          "ProductionDockFactoryTests",
+          "ProductionEditionTests",
+          "QuotaWidgetCardPrototypeTests",
+          "ResourceDockBridgeTests",
+          "RingCardHostTimingTests",
+          "RingCardTimingTests",
+          "StatusItemLaunchTests",
+          "V01TrayTemplateTests",
+          "WP15WidgetRingCardGUITests"
+        ]
+      }
+    },
+    {
+      "area": "entry-community-application-factory",
+      "paths": [
+        "desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/CommunityApplicationFactory.swift"
+      ],
+      "classes": {
+        "app-integration": [
+          "BundledNoticeFactoryTests",
+          "H33DockPresenterTests",
+          "ProductionApplicationFactoryTests"
+        ]
+      }
+    },
+    {
+      "area": "entry-community-cockpit-application-factory",
+      "paths": [
+        "desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/CommunityCockpitApplicationFactory.swift"
+      ],
+      "classes": {
+        "app-integration": [
+          "CockpitSavedOrderTests",
+          "CommunityCockpitEntryTests",
+          "DockPulsePlacementNormalEntryTests",
+          "DockRingCarryOrderTests",
+          "EngineLifecycleNormalEntryTests",
+          "G1SettingsJourneys",
+          "NativeShellBatchTests",
+          "NightOnlyCockpitTests",
+          "NormalEntryActivityTests"
+        ]
+      }
+    },
+    {
+      "area": "entry-static-dock-preview-host",
+      "paths": [
+        "desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/StaticDockPreviewHost.swift"
+      ],
+      "classes": {
+        "app-integration": [
+          "CardPointerEvidenceTests",
+          "CommunityDockSnapshotTests",
+          "D65ZeroQuotaTests",
+          "DockBehaviourTests",
+          "DockCarryKeepsWidgetTests",
+          "DockContentProviderTests",
+          "G1CardThemeAndGlowTests",
+          "G3CardMarkAndGapTests",
+          "H33DockPresenterTests",
+          "HeldDockDropTests",
+          "PluginRingCloseMenuTests",
+          "ProductionDockFactoryTests",
+          "QuotaWidgetCardPrototypeTests",
+          "ResourceDockBridgeTests",
+          "RingCardHostTimingTests",
+          "RingCardTimingTests",
+          "WP15WidgetRingCardGUITests"
+        ]
+      }
+    },
+    {
+      "area": "entry-settings-application",
+      "paths": [
+        "desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/SettingsApplication.swift"
+      ],
+      "classes": {
+        "app-integration": [
+          "CommunityCockpitEntryTests",
+          "CommunityDockSnapshotTests",
+          "CommunityPlacementSaveTests",
+          "DockBehaviourTests",
+          "DockContentProviderTests",
+          "DockWorkingHostInjectionTests",
+          "H33DockPresenterTests",
+          "NormalEntryActivityTests",
+          "ProductionApplicationFactoryTests",
+          "ProductionDockFactoryTests",
+          "ZaiMarkSwitchTests"
+        ]
+      }
+    },
+    {
+      "area": "entry-settings-window-host",
+      "paths": [
+        "desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/SettingsWindowHost.swift"
+      ],
+      "classes": {
+        "app-integration": [
+          "D238LaterInstalledToolTests",
+          "D65ZeroQuotaTests",
+          "DockCarryKeepsWidgetTests",
+          "DockPulsePlacementNormalEntryTests",
+          "EngineLifecycleNormalEntryTests",
+          "EngineRowsEntryTests",
+          "G3CardMarkAndGapTests",
+          "P1ExactPlacementTests",
+          "WP15WidgetRingCardGUITests",
+          "WP17LaunchOpenTests"
+        ]
+      }
+    },
+    {
+      "area": "settings",
+      "paths": [
+        "desktop/native/ModelPlanSettings/Sources/**",
+        "desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/{SettingsApplication,SettingsWindowHost,SettingsNotificationAuthorization}.swift"
+      ],
+      "classes": {
+        "app-integration": [
+          "G1SettingsJourneys",
+          "G1WidgetSettingsJourneys",
+          "G1WidgetSettingsJourneysB",
+          "G3FirstRunSubscriptionsLayoutTests",
+          "G3SettingsRowMeasurementTests",
+          "SET905ShortcutRegistrationJourneyTests",
+          "SET906ShortcutDefaultsJourneyTests",
+          "SET909DockDefaultsJourneyTests",
+          "SET916SubscriptionControlsJourneyTests",
+          "SET918NotificationKindsJourneyTests",
+          "SET926CacheHintsJourneyTests",
+          "SET926SystemFallbackJourneyTests",
+          "StatusHelpMenuTests",
+          "WidgetControlsSettingsJourneyTests"
+        ],
+        "settings": [
+          "BehaviorWindowTests",
+          "NativeSettingsWindowTests",
+          "PrivacyWindowTests",
+          "SettingsB5GridTests",
+          "SettingsDiagramReducedMotionTests",
+          "SettingsLayoutOffscreenTests",
+          "SettingsScopeConsentLayoutSettleTests"
+        ]
+      },
+      "curated": true
+    }
+  ]
+}

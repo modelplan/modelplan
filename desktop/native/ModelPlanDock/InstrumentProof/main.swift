@@ -325,7 +325,9 @@ struct NativeFailure:Error {let message:String}
     let flicker=jet.animation(forKey:"stepped-images") as! CAKeyframeAnimation
     try require(spin.duration==2 && spin.keyPath=="transform.rotation.z" && spin.repeatCount.isInfinite,"host-supplied period, effect-only Z rotation")
     try require(spin.timingFunction==CAMediaTimingFunction(name:.linear),"linear motion timing")
-    try require(flicker.duration==1 && flicker.calculationMode == .discrete && flicker.values?.count==9,"original nine-pose one-second bitmap clock unchanged")
+    // Owner build-6 item +g: nine poses forward and back (0...8, 7...1) at the same 1/9 s step; no seam jump.
+    try require(abs(flicker.duration-16.0/9)<1e-9 && flicker.calculationMode == .discrete && flicker.values?.count==16 && flicker.keyTimes?.count==17,"nine-pose bitmap clock plays forward and back at its one-second pass rate")
+    try require(motionDriver.framePoseOrders["work-0"]==[0,1,2,3,4,5,6,7,8,7,6,5,4,3,2,1] && motionDriver.cycleSeconds["work-0"]==1,"reflected flame order has no pose 8 to pose 0 jump")
     try require(effectsView.layer?.animationKeys()?.isEmpty ?? true,"static surface has no rotation")
     let motionRoot=effectsView.layer!,centre=jet.convert(CGPoint(x:32,y:32),to:effectsView.layer!)
     for (seconds,expected) in [(0.0,CGPoint(x:32,y:4)),(0.5,CGPoint(x:60,y:32)),(1.0,CGPoint(x:32,y:60)),(1.5,CGPoint(x:4,y:32)),(2.0,CGPoint(x:32,y:4))] {
@@ -452,6 +454,19 @@ struct NativeFailure:Error {let message:String}
     try require(abs(edgeDriver.presentation!.placement!.sliverFrame.midY-(anchorBefore+20))<0.001,"same-edge grip drag preserves grab offset, no centre jump")
     edgeDriver.cancelBackgroundMove()
     edgeDriver.stop()
+    // WP-17: the other edges' layouts exist only while a press is held and the next full rebuild drops them. That is
+    // not a geometry change: it never re-arms the arrival guard nor collapses the widget, so the widget can be pressed
+    // again right after a drop (fix-main: DockCarryKeepsWidgetTests second drag after a ring carry onto another edge).
+    let rightOnly=edgeLayouts.filter{$0.edge == .right}
+    var lazyEnv=DockEdgeEnvironment(displays:[display],layouts:rightOnly,pointer:CGPoint(x:999,y:400))
+    let lazyScheduler=NeutralEdgeScheduler(),lazyDriver=DockEdgeController(preference:.init(displayID:"screen",edge:.right),clock:{edgeTime},scheduler:lazyScheduler,read:{lazyEnv})
+    edgeTime=40;lazyDriver.start();lazyDriver.reveal();edgeTime=40.4
+    try require(lazyDriver.presentation?.state == .expanded && lazyDriver.acceptsPress(),"precondition: an expanded widget past its arrival guard")
+    lazyEnv.layouts=edgeLayouts;lazyDriver.refresh();lazyEnv.layouts=rightOnly;lazyDriver.refresh()
+    try require(lazyDriver.presentation?.state == .expanded && lazyDriver.acceptsPress(),"alternate edge layouts coming and going keep the widget expanded and pressable")
+    lazyEnv.displays=[];lazyEnv.layouts=[];lazyDriver.refresh();lazyEnv.displays=[display];lazyEnv.layouts=rightOnly;lazyDriver.refresh()
+    try require(!lazyDriver.acceptsPress(),"a real display change still re-arms the arrival guard")
+    lazyDriver.stop()
     let sliver=DockSliverView(frame:CGRect(x:0,y:0,width:3,height:20));var sliverPresses=0;sliver.onReveal={sliverPresses+=1}
     try sliver.apply(image:nil,logicalSize:CGSize(width:3,height:20),scale:2,accessibilityLabel:"Synthetic reveal")
     try require(sliver.accessibilityPerformPress() && sliverPresses==1 && sliver.retainedBytes==0,"neutral sliver has an explicit AX reveal")

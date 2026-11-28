@@ -1,0 +1,1 @@
+Show the cockpit's whole engine flame: the window now reserves room for the full blue flame and fits it on screen (the cockpit is slightly smaller on 13-inch laptops with the Dock), and clicks on the transparent flame area go to what is beneath.

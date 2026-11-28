@@ -51,7 +51,7 @@ func (s *RefreshScheduler) RequestMember(ctx context.Context, member wire.Refres
 	if err != nil {
 		return wire.MemberRefreshResult{}, Stamp{}, err
 	}
-	admission := consent.Capture()
+	admission, ticket := s.capture()
 	stamp := stampOfFence(admission.Fence())
 	if stamp != view.Stamp {
 		return wire.MemberRefreshResult{}, Stamp{}, ProtocolError{wire.CodeConsentChanged}
@@ -78,7 +78,7 @@ func (s *RefreshScheduler) RequestMember(ctx context.Context, member wire.Refres
 	if !quota.MemberProfilesAreScoped(definition.Tool) && routeMembers != 1 {
 		return refused, stamp, nil
 	}
-	paths, ok := quota.NarrowMemberPaths(s.paths(admission), definition.Tool, member.AccountLocator, member.SubscriptionRef)
+	paths, ok := quota.NarrowMemberPaths(s.paths(admission, ticket), definition.Tool, member.AccountLocator, member.SubscriptionRef)
 	if !ok {
 		return refused, stamp, nil
 	}

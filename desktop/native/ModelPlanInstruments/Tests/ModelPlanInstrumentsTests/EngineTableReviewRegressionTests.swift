@@ -85,7 +85,7 @@ import XCTest
             let format = InstrumentFormat(language)
             for minutes in [60.0, 120.0] { XCTAssertTrue(body.contains(format.reset(Fixtures.now.addingTimeInterval(minutes * 60), now: Fixtures.now))) }
             XCTAssertTrue(body.contains(language == .chinese ? "预告" : "announced"))
-            XCTAssertTrue(body.contains(language == .chinese ? "用完" : "out ~"))
+            XCTAssertTrue(body.contains(language == .chinese ? "预估" : "est. out in"))
             let region = try XCTUnwrap(view.recipe?.regions.first { $0.id == "engine.acct.row.2" })
             XCTAssertEqual(region.help, cell.help) // Pointer dwell consumes this exact explanation.
             let control = try XCTUnwrap(view.control(for: region.id)); XCTAssertTrue(control.becomeFirstResponder())

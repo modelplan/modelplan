@@ -1,4 +1,4 @@
-// 总览 (V1-FINAL §8.1, r5-1 option A): three layers from top to bottom. 1 the alert rows (tightest first, four lines at
+// 总览 (V1-FINAL §8.1, r5-1 option A): three layers from top to bottom. 1 the alert rows (tightest first, two or three lines at
 // most, "+N ▸" for the rest); 2 the totals row (the range's ≈cost large, its tokens beside it, ≈cost per day on the right,
 // "since MM-DD" instead of the range when the record is shorter); 3 one bar per day (per hour for Today), stacked in the
 // subscription colours, its height the day's ≈cost from zero. No price data means no bars: there is no token fallback.
@@ -8,12 +8,19 @@ import {chartPalette} from '../chart-colours.js';
 import {esc, tok, unit, md, mon, tip, fill} from './fmt.js';
 import {accountsIn, rangeKey} from './scope.js';
 import {statusItems,statusRow} from './public-helpers.js';
+import {bullet} from './alerts.js';
 
 // The same local wall time `back` calendar days earlier: a day across a DST change is 23 or 25 hours, so fixed 24-hour
 // steps would date a bucket a day off (audit F 6). The series are indexed by local calendar day (prototype-history.ts).
 const daysBefore = (ms, back) => { const x = new Date(ms); return new Date(x.getFullYear(), x.getMonth(), x.getDate() - back, x.getHours(), x.getMinutes(), x.getSeconds(), x.getMilliseconds()).getTime(); };
 
-export function alertList(d, {max = 4} = {}) {
+// D-b6-2 (owner build 6): the chart is the page's purpose, so it keeps at least CHART_MIN_SHARE of the page body; the alert
+// lines get what is left after the totals row and note (OVERHEAD px), one line costs LINE px. The budget counts the "+N ▸" line,
+// so 2 means one alert and "+N ▸" (two alerts that fit are both shown), and it is never above 3 however tall the screen is.
+export const CHART_MIN_SHARE = 0.55, ALERT_OVERHEAD = 56, ALERT_LINE = 17, ALERT_LINES = [2, 3];
+export const alertBudget = pageH => Math.max(ALERT_LINES[0], Math.min(ALERT_LINES[1], Math.floor((pageH - Math.round(pageH * CHART_MIN_SHARE) - ALERT_OVERHEAD - 3) / ALERT_LINE)));
+
+export function alertList(d, {max = 3} = {}) {
   let a = statusItems(d.alerts);
   // Three or more subscriptions that cannot be read merge into one grey line (V1-FINAL §8.1). A retained (stale) reading is
   // not unreadable: it keeps its own line with the reading's age.
@@ -21,7 +28,7 @@ export function alertList(d, {max = 4} = {}) {
   if (grey.length >= 3) a = [...a.filter(x => !grey.includes(x)), {level: 'grey', kind: 'unreadable', text: t('mfd.ovUnreadN', {n: grey.length})}];
   if (!a.length) return '';
   const shown = a.length > max ? a.slice(0, max - 1) : a;
-  return `<ul class="mfd-alerts">${shown.map(x => statusRow(x)||`<li class="al-${x.level}" data-tip="${esc(x.text)}"><i>●</i><span>${esc(x.text)}</span></li>`).join('')}${
+  return `<ul class="mfd-alerts">${shown.map(x => statusRow(x)||`<li class="al-${x.level}"${x.news ? ` data-news="${esc(x.news)}"` : ''} data-tip="${esc(x.text)}">${bullet(x)}<span>${esc(x.text)}</span></li>`).join('')}${
     a.length > shown.length ? `<li class="al-more"><button data-mfd="alerts">${t('mfd.moreAlerts', {n: a.length - shown.length})}</button></li>` : ''}</ul>`;
 }
 
@@ -111,8 +118,8 @@ export function overviewBars(d,ui,list){
 const importNote=(imp,v)=>imp>0&&imp<v?` · ${t('mfd.importedPart',{v:tok(imp)})}`:imp>0&&imp>=v?` · ${t('mfd.importedDay')}`:'';
 
 /* 点阵 (D390): the current range as a day-by-hour grid. Columns are the days of the range, rows are six four-hour bands
-   (Today: one row of 24 hours). Only hours the hourly series records have a cell; the wire keeps hourly rows for today and
-   yesterday, so older days draw nothing and a range without any hourly record says so. Neutral LCD ink in 全部, the vendor
+   (Today: one row of 24 hours). Only hours the hourly series records have a cell; the wire keeps hourly rows for 30 days (D402),
+   so 7天 and 30天 fill, and a range without any hourly record says so. Neutral LCD ink in 全部, the vendor
    colour in a subscription scope. Hover: the day, the hours and the tokens per subscription. */
 const BAND = 4;
 const hourlySeries = (d, ui) => accountsIn(d, ui).map(a => ({a, h: (d.hourlyLong || d.hourly || []).find(x => x.accountId === a.id)})).filter(x => x.h).map(x => ({a: x.a, instants: x.h.instants, values: x.h.values}));
@@ -139,7 +146,7 @@ const p2 = n => String(n).padStart(2, '0');
 function heatmap(d, ui) {
   const {w: AW, h: AH} = fill(ui, 'ov', {w: 300, h: 110}), g = heatCells(d, ui);
   if (!g.any) return `<p class="ov-heat-empty">${t('mfd.heatNoHours')}</p>`;
-  const gap = 2, top = 12, lab = g.today ? 0 : 16, note = 14;
+  const gap = 2, top = 12, lab = g.today ? 0 : 16, note = 0;
   const cw = Math.max(4, Math.min(g.today ? 18 : 28, Math.floor((AW - lab + gap) / g.cols - gap))), ch = Math.max(6, Math.min(g.today ? 24 : 20, Math.floor((AH - top - note + gap) / g.rows - gap)));
   const W = lab + g.cols * (cw + gap) - gap, H = top + g.rows * (ch + gap) - gap, x0 = Math.max(0, Math.floor((AW - W) / 2)), y0 = Math.max(0, Math.floor((AH - note - H) / 2));
   const colour = ui.scope ? accountsIn(d, ui)[0]?.colour : null, nowHour = new Date(d.now).getHours();
@@ -151,8 +158,7 @@ function heatmap(d, ui) {
   const label = (i, anchor) => `<text class="hm-m" x="${lab + i * (cw + gap) + (anchor === 'end' ? cw : 0)}" y="9" text-anchor="${anchor}">${esc(g.today ? `${p2(i)}h` : md(g.days[i], ui))}</text>`;
   const marks = g.today ? [0, 6, 12, 18].map(i => label(i, 'start')) : g.cols > 1 ? [label(0, 'start'), label(g.cols - 1, 'end')] : [label(0, 'start')];
   const bands = g.today ? '' : Array.from({length: g.rows}, (_, r) => `<text class="hm-m" x="0" y="${top + r * (ch + gap) + ch / 2 + 3}">${p2(r * BAND)}</text>`).join('');
-  return `<svg class="ov-heat ${colour ? 'vendor' : ''}" style="left:${x0}px;top:${y0}px;${colour ? `--hv:${colour}` : ''}" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${t(g.today ? 'mfd.heatAriaToday' : 'mfd.heatAria', {d: g.cols})}">${marks.join('')}${bands}${rects}</svg>
-    <p class="hm-since" style="left:${x0}px">${t('mfd.heatNote')}</p>`;
+  return `<svg class="ov-heat ${colour ? 'vendor' : ''}" style="left:${x0}px;top:${y0}px;${colour ? `--hv:${colour}` : ''}" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${t(g.today ? 'mfd.heatAriaToday' : 'mfd.heatAria', {d: g.cols})}">${marks.join('')}${bands}${rects}</svg>`;
 }
 
 
@@ -168,9 +174,9 @@ export const overview = {
     ui.chart === 'grid' ? null : {id:'stack',a:{value:'stack', text:t('mfd.oStack'),on:ui.stack},b:{value:'split', text:t('mfd.oSplit'),on:!ui.stack}},
     null],
   render(d, ui) {
-    // The taller screen shows four alert lines, the short one only the tightest plus "+N ▸" (V1-FINAL §13); the chart
-    // takes the rest of the height (data-fill), so the page always fills the screen.
-    const h = fill(ui, 'page', {w: 330, h: 190}).h - 12, max = h >= 165 ? 4 : 2;
+    // The alert budget follows the measured page body (V1-FINAL §13) but keeps the chart at 55% of it: two or three lines
+    // at most, the rest behind "+N ▸" (alertBudget). The chart takes the rest of the height (data-fill).
+    const max = alertBudget(fill(ui, 'page', {w: 330, h: 190}).h);
     const alerts = alertList(d, {max}), accounts = accountsIn(d, ui);
     const list = series(d, ui), costs = costSeries(d, ui);
     const todays = accounts.map(a => a.todayTokens), todayKnown = todays.length > 0 && todays.every(Number.isFinite);

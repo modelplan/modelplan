@@ -160,6 +160,19 @@ per section, printed against the budgets in the step summary, uploaded as the `w
 and fails only when fewer than 10 samples (60 idle seconds) were taken. A run on the GUI Mac needs a new `trusted-mac.yml`
 task (its GUI leg compiles without the test SPI) and so a new pin and runner-group entry, as above.
 
+## Nightly GUI run (D169, D193)
+
+The scheduled GUI run on `main` goes to the GUI Macs (`modelplan-mac-gui`) like the merge queue, not to hosted
+`macos-latest`: on a hosted Mac the full suite hit the 70 minute job limit three nights running, while it takes 13 to
+33 minutes on ours. A scheduled run's actor is whoever last changed the cron (the merge-queue bot), so the owner-actor
+gate of the route cannot hold for it. The route therefore admits, as an alternative to the owner gate, only a
+`schedule` event on `refs/heads/main` whose `github.workflow_ref` is
+`modelplan/modelplan/.github/workflows/desktop.yml@refs/heads/main`, whose `github.event.schedule` is the nightly
+cron `23 9 * * *`, for the `native` and `native-owner-gui` tasks. The GUI VMs' local admission check (workflow-source
+and account checks before a job starts, not in this repository) must carry the same exception, validated from the
+workflow ref and schedule field rather than the actor, before the runner group allows the pinned reference. There is no hosted fallback: if no GUI Mac is
+online, the nightly waits in the queue.
+
 ## Merge queue
 
 A PR does not have to merge `main` before it lands. The queue builds "PR + latest
@@ -205,8 +218,9 @@ test files the PR touches (at most 8, otherwise build-tests only). The full suit
 headless legs, not of the compile check.
 
 A selection is a speed-up for the PR round, not the merge gate. The merge queue runs the full GUI
-leg on the group commit, and `desktop` must pass there before anything reaches `main`; the
-coordinator's gate still requires a successful GUI leg at the PR head. A `schedule` run at 09:23
+leg on the group commit, and `desktop` must pass there before anything reaches `main`. Before a PR
+may enter the queue, `modelplan-gates` requires a green PR GUI run of the mapped classes at its exact
+head when its paths map to any (D481, below). A `schedule` run at 09:23
 UTC runs the full GUI leg on `main` (and nothing else); it is skipped when a nightly at the same `main`
 commit already passed or is still queued or running. `trusted-mac.yml` admits `merge_group` (queue branches of `main`) and
 `schedule` (`main`) runs to the owner's Macs for the GUI tasks only, under the same owner gate.
@@ -225,6 +239,67 @@ each Mac job on a scope output (`desktop.yml` `pr-scope`, `ci.yml` and `repo-che
 job a PR does not trigger needs no stub: `merge-gates` counts only runs that exist (plus the `ci` anchor) and a skipped
 job is green. `trusted-mac.yml` stays untouched; the filters live in its callers. Concurrency cancels only
 `pull_request` runs of the same PR (`workflow-policy.test.mjs` enforces both rules).
+
+## PR GUI leg before the merge queue (D481)
+
+Owner decision D481 item 2 (2026-11-27). #1208 changed the ring geometry, passed every PR check, and broke
+`D65ZeroQuotaTests` on `main` through the queue's full GUI leg, which then failed every later group. A PR that touches
+code a GUI test class exercises must now pass those classes at its exact head before `modelplan-gates` lets it into the
+queue. The queue's full GUI leg and the nightly stay as they are.
+
+- **Map.** `desktop/native/tools/ci/gui-test-map.json` lists areas: path globs (`**`, `*`, `?`, `{a,b}`) and the GUI test
+  classes that exercise them, per package (`app-integration`, `settings`). It was seeded from the code (for each source
+  file, the GUI classes whose tests name its declarations, unioned per area; the settings area is curated) and covers
+  the ring and Dock presentation, the third-party Dock resources, cards, placement and drag, the widget window, the menu-bar
+  status item and Settings. Each entry-point file (the status-item application `EngineDockMenuApplication.swift`, the
+  normal entry, the rows console, the menu bar, the application factories, the static Dock preview host and the Settings
+  hosts) has its own `entry-*` area with every class whose tests name its declarations. Every source file a non-curated
+  area names must cover at least what `gui_test_selection.py` finds for it; the Settings area is marked `"curated": true`.
+  Conditionally compiled classes are never mapped (R11): a mapped class must be declared outside every `#if` block
+  (any condition, nesting and `#elseif`/`#else` included), the map test fails otherwise, and the seeding rule skips them.
+  Journeys behind a compile flag (for example `DockStripRealServerTests` under `MODELPLAN_DOCK_REAL_STRIP_JOURNEY`) stay
+  covered where their flag is enabled (their own dispatch or the queue leg); the PR-stage gate does not claim them. `scripts/tests/gui-test-map.test.mjs` (repo checks) keeps it valid: every class is declared
+  in its package, `app-integration` classes are on the GUI share (not headless), and every glob, and every brace
+  alternative, matches a tracked file. Add an area, or classes, when a GUI test starts covering new code. A map change
+  is reviewed like the gate itself (`scripts/merge-gates/gui-map.mjs` is the shared selector).
+- **Run.** The coordinator dispatches `desktop.yml` on the PR's own head branch with `pr=<n>` and `sha=<head>`, after
+  `mac-compile` passed at that head, never for a draft:
+
+  ```
+  gh workflow run desktop.yml -R modelplan/modelplan --ref <headRefName> -f pr=<n> -f sha=<headRefOid>
+  ```
+
+  The run is titled `desktop PR GUI #<n> @ <sha>`. `gui-scope` fails unless the branch is exactly at `sha`, the PR is
+  open, ready, from this repository, targets `main` and has that head and branch. It reads the PR's files from the API
+  (renames count with their old path; a list of 3000 files or more selects every mapped class), selects the classes
+  with the head's map and `main`'s map unioned, and passes the `app-integration` ones to the pinned `trusted-mac.yml`
+  as `gui_classes` (`none` when only `settings` classes are mapped: that package runs whole in every GUI leg). No mapped
+  class: `run=false` and nothing runs. A selected class that the head's test sources do not declare (the map on `main`
+  is newer than the branch) is dropped from the run and recorded as absent. `gui-scope` writes two notice annotations
+  (`gui-map.mjs`; GitHub truncates a message at 4096 characters, so each stays within 3500):
+  `D481 PR GUI classes` holds the classes it ran, as `none`, a sorted `<package>:<Class>,...` list, `all@<sha256>` when
+  that is every class of its maps, or `sha256:<hex>:<count>` for any other list longer than 3500 characters (the hash is
+  sha256, in hex, of the sorted names joined by `,`). `D481 PR GUI absent classes` holds the absent ones (`none`, a
+  list, or `many:<count>`). Only `gui-scope` and the GUI legs (`native`, or `native-hosted` +
+  `native-owner-gui` under `MAC_CI_GUI_POOL=hosted`) run; `pr-ref` resolves no merge, so the Linux jobs, `app-smoke` and
+  `native-headless` skip. `trusted-mac.yml` is unchanged: a branch dispatch by the owner account is already admitted to
+  the GUI Macs and is the only run that narrows the share. A PR branch whose `desktop.yml` predates this has no `sha`
+  input (the dispatch is rejected): merge `main` into it first.
+- **Gate.** `scripts/merge-gates/rules.mjs` `prGuiState`: for a ready PR whose changed paths map to at least one class
+  under `main`'s map (plus the head's map when the PR changes it), the newest `desktop` dispatch run titled
+  `desktop PR GUI #<n> @ <head>`, at that head on the PR's branch in this repository and dispatched by the owner account,
+  must have succeeded with `gui-scope` green, a GUI leg that ran green, and records that cover every class required now.
+  The gate selects with the same union as the run (`main`'s map plus the head's). A required class recorded as absent is
+  PENDING `merge main first: class <X> does not exist at this head`. A plain list must contain every required class; an
+  `all@` hash must equal the hash of the gate's full set; a `sha256:` hash and count must equal those of the required set
+  itself. A smaller, missing or different record (for example the map changed on `main` after the run) is PENDING
+  `re-run needed: …`: dispatch again at the same head. The newest bound run decides whatever its state, and
+  `merge-gates.yml` re-evaluates when a PR GUI run is requested as well as when it completes, so a newer queued run turns
+  an earlier green status pending at once. Until one exists the status is
+  `waiting for PR GUI run (classes: …)` (after `mac-compile`); a failed or cancelled newest run, or a green one that ran
+  no GUI leg (its selection disagreed with the gate's), fails it. A PR GUI run never counts as the PR's own `desktop` run
+  in the CI check, and a `desktop` dispatch run with that title re-evaluates the PR it names (`merge-gates.yml`). PRs
+  with no mapped class are unaffected.
 
 ## Migration
 

@@ -58,29 +58,19 @@ test("trust needs the login and the numeric id; deleted authors and drafts never
   assert.deepEqual(items.map((x) => x.body), ["z"]);
 });
 
-test("sticky REVIEWER: only the assigned lane's verdict counts; others are advisory", () => {
+test("D395 stateless landing: a REVIEWER assignment never changes what lands; any counting block at the head blocks", () => {
   const t2 = [file("cli/internal/quota/x.go")];
   const rv = (lane) => `REVIEWER: ${lane}`;
   const mixed = [comment(v("block", H, "macrev2")), comment(v("block", H, "macrevb")), comment(v("merge", H, "macrevd"))];
-  assert.equal(evalPr({ files: t2, comments: mixed }).state, R.FAILURE, "no REVIEWER: old behaviour, any block stops it");
-  const ok = evalPr({ files: t2, comments: [comment(rv("macrevd")), ...mixed] });
-  assert.equal(ok.state, R.SUCCESS, "sticky merge passes over other lanes' blocks");
-  assert.match(ok.why, /info: .*\(macrev2\) block/);
-  assert.equal(evalPr({ files: t2, comments: [comment(rv("macrevd")), comment(v("block", H, "macrevd")), comment(v("merge", H, "macrev2"))] }).state, R.FAILURE, "sticky block fails");
-  assert.equal(evalPr({ files: t2, comments: [comment(rv("macrevd")), comment(v("merge", H, "macrev2"))] }).state, R.PENDING, "other lane merge does not satisfy");
-  assert.equal(evalPr({ files: t2, comments: [comment(rv("macrev2")), comment(rv("macrevd")), ...mixed] }).state, R.SUCCESS, "latest REVIEWER wins");
-  assert.equal(evalPr({ files: t2, comments: mixed, reviews: [review(rv("macrevd"))] }).state, R.FAILURE, "a REVIEWER line in a review never assigns");
-  assert.equal(evalPr({ files: t2, comments: [comment(rv("macrevd")), ...mixed], reviews: [review(rv("macrev2"))] }).state, R.SUCCESS, "a review cannot reassign");
-  for (const bad of ["sonnet", "nosuchlane"]) {
-    const r = evalPr({ files: [file("docs/a.md")], comments: [comment(rv(bad)), comment(v("block", H, "macrev2"))] });
-    assert.equal(r.state, R.FAILURE, `${bad} assignment hides no GPT block`);
-    assert.equal(evalPr({ files: [file("docs/a.md")], comments: [comment(rv(bad))] }).state, R.PENDING, `${bad} assignment holds the PR`);
-    assert.equal(evalPr({ files: t2, comments: [comment(rv(bad)), comment(v("merge", H, bad)), comment(v("merge", H, "macrevd"))] }).state, R.PENDING, `${bad} cannot pass tier 2`);
-  }
-  assert.equal(evalPr({ files: t2, comments: [comment(rv("macrevc")), comment(v("merge", H, "macrevc")), comment(v("merge", H, "macrevd"))] }).state, R.PENDING, "Terra assignment is invalid on tier 2");
-  const stranger = { login: "mallory", id: 5 };
-  assert.equal(evalPr({ files: t2, comments: [comment(rv("macrevd"), stranger), ...mixed] }).state, R.FAILURE, "untrusted REVIEWER ignored");
+  assert.equal(evalPr({ files: t2, comments: mixed }).state, R.FAILURE, "any block stops it");
+  assert.equal(evalPr({ files: t2, comments: [comment(rv("macrevd")), ...mixed] }).state, R.FAILURE, "an assignment hides no block");
+  assert.equal(evalPr({ files: t2, comments: [comment(rv("macrevd")), comment(v("merge", H, "macrev2"))] }).state, R.SUCCESS, "any Sol lane's merge lands, whoever is assigned");
+  assert.equal(evalPr({ files: t2, comments: [comment(rv("nosuchlane")), comment(v("merge", H, "macrevd"))] }).state, R.SUCCESS, "an invalid assignment holds nothing");
+  assert.equal(evalPr({ files: t2, comments: [comment(rv("macrevc")), comment(v("merge", H, "macrevc"))] }).state, R.PENDING, "Terra never admits tier 2");
+  assert.equal(evalPr({ files: [file("docs/a.md")], comments: [comment(rv("sonnet")), comment(v("block", H, "macrev2"))] }).state, R.FAILURE, "a GPT block stops tier 0");
+  assert.equal(evalPr({ files: [file("docs/a.md")], comments: [comment(rv("sonnet"))] }).state, R.SUCCESS, "tier 0 needs no verdict, whatever is assigned");
 });
+
 
 test("tier: path rules, test-only rule, override and gate self-protection", () => {
   assert.equal(R.pathTier(["docs/a.md", ".github/workflows/ci.yml", "x.png"]), 0);
@@ -120,7 +110,7 @@ test("tier gates: tier 1 needs a GPT merge, tier 2 needs a Sol lane, macrev is a
   const t2 = [file("clients/swift/Wire.swift")];
   const glm = comment(`GLMREV: OK @ ${H}`);
   assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "macrev")), glm] }).state, R.PENDING);
-  assert.equal(evalPr({ files: t2, comments: [comment(v("block", H, "macrev")), comment(v("merge", H, "macrev2")), glm] }).state, R.SUCCESS);
+  assert.equal(evalPr({ files: t2, comments: [comment(v("block", H, "macrev")), comment(v("merge", H, "macrev2")), glm] }).state, R.FAILURE, "D395 stateless: a Terra block blocks tier 2 too");
   // D243: one review gate. A GLM or (sonnet) block is reviewer input, shown in the description, never a FAILURE.
   const glmBlock = evalPr({ files: t2, comments: [comment(v("merge", H, "macrev2")), comment(v("block", H, "glm")), glm] });
   assert.equal(glmBlock.state, R.SUCCESS);
@@ -141,7 +131,7 @@ test("tier gates: tier 1 needs a GPT merge, tier 2 needs a Sol lane, macrev is a
   assert.equal(evalPr({ comments: [comment(v("merge", H, "macrev2"))] }).state, R.SUCCESS, "tier 1 Sol");
 });
 
-test("R13: a PR with a Ledger: G3-nn line is at least tier 2, so Terra alone cannot land it", () => {
+test("R13/D482: a PR with a Ledger: G3-nn line is IMPORTANT (at least tier 1), so only a Sol lane lands it", () => {
   const body = "Ledger: G3-65\nScenarios: V-01";
   const ledger = pr({ body });
   assert.ok(R.ledgerPr(ledger));
@@ -153,10 +143,15 @@ test("R13: a PR with a Ledger: G3-nn line is at least tier 2, so Terra alone can
   const e = (comments, p) => evalPr({ p, files: [file("scripts/tool.mjs")], comments: [...comments, glm, av] });
   assert.equal(R.pathTier(["scripts/tool.mjs"]), 1, "the files alone are tier 1");
   assert.equal(e([comment(v("merge", H, "macrevc"))], ledger).state, R.PENDING, "Terra alone is not enough");
-  assert.equal(e([comment(v("merge", H, "macrevc"))], ledger).tier, 2);
+  assert.equal(e([comment(v("merge", H, "macrevc"))], ledger).tier, 1, "D482: no tier-2 floor; the class carries R13");
+  assert.equal(e([comment(v("merge", H, "macrevc"))], ledger).review, R.IMPORTANT);
+  assert.equal(e([comment(v("merge", H, "ghglm"))], ledger).state, R.PENDING, "D482: GLM alone is not enough either");
+  assert.equal(R.evaluatePr({ pr: ledger, items: R.feed([comment(v("merge", H, "ghglm")), glm, av]), files: [file("scripts/tool.mjs")], runs: greenCi, statuses: [compileOk], verifiedEdge: () => false, conf, glmTiers: [1, 2] }).state, R.PENDING, "D482: REVIEW_GLM_TIERS does not widen it");
+  const docsLedger = R.evaluatePr({ pr: ledger, items: R.feed([glm, av]), files: [file("docs/a.md")], runs: greenCi, statuses: [compileOk], verifiedEdge: () => false, conf });
+  assert.equal(docsLedger.tier, 1, "a docs-only ledger PR is tier 1 (ledgerMinTier)"); assert.equal(docsLedger.state, R.PENDING);
   assert.equal(e([comment(v("merge", H, "macrev2"))], ledger).state, R.SUCCESS, "Sol lands it");
   assert.equal(e([comment(v("merge", H, "macrevb"))], ledger).state, R.SUCCESS);
-  assert.equal(e([comment("REVIEW-TIER: 0"), comment(v("merge", H, "macrevc"))], ledger).state, R.PENDING, "an override cannot lower it below 2");
+  assert.equal(e([comment("REVIEW-TIER: 0"), comment(v("merge", H, "macrevc"))], ledger).state, R.PENDING, "an override cannot lower it below tier 1 or make it normal");
   assert.equal(e([comment(v("merge", H, "macrevc"))], pr({ body: "Scenarios: none" })).state, R.SUCCESS, "a non-ledger PR stays tier 1");
 });
 
@@ -172,8 +167,7 @@ test("workflow reviewer (gh-terra pilot): a Terra lane; its shadow name and othe
   assert.equal(evalPr({ comments: [comment(v("block", H, "gh-terra")), comment(v("merge", H, "macrevc"))] }).state, R.FAILURE, "a gh-terra block stops tier 1");
   assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "gh-terra"))] }).state, R.PENDING, "tier 2 needs Sol");
   const t2Block = evalPr({ files: t2, comments: [comment(v("block", H, "gh-terra")), comment(v("merge", H, "macrev2"))] });
-  assert.equal(t2Block.state, R.SUCCESS, "on tier 2 a Terra block is advice");
-  assert.match(t2Block.why, /info: .*\(gh-terra\) block/);
+  assert.equal(t2Block.state, R.FAILURE, "D395 stateless: any GPT block at the head blocks, Terra on tier 2 too");
   assert.equal(evalPr({ comments: [comment(v("merge", H, "gh-terra-shadow"))] }).state, R.PENDING, "shadow never counts");
   const shadow = evalPr({ comments: [comment(v("block", H, "gh-terra-shadow")), comment(v("merge", H, "macrevc"))] });
   assert.equal(shadow.state, R.SUCCESS, "a shadow block is input");
@@ -189,15 +183,16 @@ test("Sol workflow reviewer (ghsol, D352): a Sol lane for tiers 1 and 2 and a va
   assert.ok(!R.SOL_LANES.includes("(ghsolshadow)"));
   const t2 = [file("clients/swift/Wire.swift")];
   const rv = (lane) => comment(`REVIEWER: ${lane}`);
-  for (const files of [undefined, t2]) {
-    const tier = files ? 2 : 1;
+  // tier 1 here is an IMPORTANT path (D395: on a NORMAL PR an assignment pins nothing, see the D395-5 test)
+  for (const files of [[file("scripts/refresh-tool.mjs")], t2]) {
+    const tier = files === t2 ? 2 : 1;
     assert.equal(evalPr({ files, comments: [comment(v("merge", H, "ghsol"))] }).state, R.SUCCESS, `tier ${tier}: ghsol merge passes`);
     assert.equal(evalPr({ files, comments: [comment(v("block", H, "ghsol")), comment(v("merge", H, "macrev2"))] }).state, R.FAILURE, `tier ${tier}: a ghsol block stops it`);
-    // Sticky: the assigned ghsol is the only verdict that counts, either way round.
+    // D395 stateless: an assignment changes nothing; another lane's block blocks, another Sol lane's merge lands.
     const sticky = evalPr({ files, comments: [rv("ghsol"), comment(v("block", H, "macrevb")), comment(v("merge", H, "ghsol"))] });
-    assert.equal(sticky.state, R.SUCCESS, `tier ${tier}: sticky ghsol merge passes over another lane's block`);
-    assert.match(sticky.why, /info: reviewer \(ghsol\); \(macrevb\) block/);
-    assert.equal(evalPr({ files, comments: [rv("(ghsol)"), comment(v("merge", H, "macrevb"))] }).state, R.PENDING, `tier ${tier}: another lane's merge does not satisfy a ghsol assignment`);
+    assert.equal(sticky.state, R.FAILURE, `tier ${tier}: another lane's block stops it whoever is assigned`);
+    assert.match(sticky.why, /reviewer \(ghsol\)/);
+    assert.equal(evalPr({ files, comments: [rv("(ghsol)"), comment(v("merge", H, "macrevb"))] }).state, R.SUCCESS, `tier ${tier}: any Sol lane's merge lands`);
     assert.equal(evalPr({ files, comments: [rv("ghsol"), comment(v("block", H, "ghsol")), comment(v("merge", H, "macrevb"))] }).state, R.FAILURE, `tier ${tier}: sticky ghsol block fails`);
     // Shadow: never counts, never assigns; its block is reported only.
     assert.equal(evalPr({ files, comments: [comment(v("merge", H, "ghsolshadow"))] }).state, R.PENDING, `tier ${tier}: shadow never counts`);
@@ -205,8 +200,7 @@ test("Sol workflow reviewer (ghsol, D352): a Sol lane for tiers 1 and 2 and a va
     assert.equal(shadow.state, R.SUCCESS, `tier ${tier}: a shadow block is advice`);
     assert.match(shadow.why, /info: .*\(ghsolshadow\) block/);
     const badSticky = evalPr({ files, comments: [rv("ghsolshadow"), comment(v("merge", H, "ghsolshadow")), comment(v("merge", H, "macrev2"))] });
-    assert.equal(badSticky.state, R.PENDING, `tier ${tier}: the shadow lane cannot be the sticky reviewer`);
-    assert.match(badSticky.why, /a valid REVIEWER \(\(ghsolshadow\) cannot review/);
+    assert.equal(badSticky.state, R.SUCCESS, `tier ${tier}: a shadow assignment holds nothing (D395 stateless); macrev2's merge lands`);
   }
   assert.equal(evalPr({ comments: [comment(v("merge", H, "ghsol"), { login: "github-actions[bot]", id: 41898282 })] }).state, R.PENDING, "only the trusted account posts verdicts");
   // The comment format the workflow posts: the record and quoted answer first, the VERDICT as the last line.
@@ -1485,7 +1479,8 @@ test("gh lanes: shadow lanes never admit data-sync; ghglm counts only on its con
   assert.ok(!R.eligibleLanes(1).includes("(ghglm)") && R.eligibleLanes(1, [1]).includes("(ghglm)") && !R.eligibleLanes(2, [1]).includes("(ghglm)") && R.eligibleLanes(2, [2]).includes("(ghglm)"));
   const docs = [file("docs/a.md")];
   assert.equal(evalPr({ files: docs, comments: [comment(v("block", H, "ghglm"))] }).state, R.SUCCESS, "a tier-0 ghglm block is advice");
-  assert.equal(evalPr({ files: [file("scripts/tool.mjs")], comments: [comment(v("block", H, "ghglm"))] }).state, R.PENDING, "a ghglm block never vetoes by default");
+  // an IMPORTANT tier-1 PR (D482: a credentials/token path); on a NORMAL PR the GLM verdict counts (see the D395 tests)
+  assert.equal(evalPr({ files: [file("cli/internal/setup/oauth_flow.go")], comments: [comment(v("block", H, "ghglm"))] }).state, R.PENDING, "a ghglm block never vetoes an important PR by default");
   assert.ok(R.isShadowLane("(ghsolshadow)") && R.isShadowLane("gh-terra-shadow") && !R.isShadowLane("(ghsol)"));
 });
 
@@ -1509,33 +1504,31 @@ test("review:gpt: GLM is advisory and a REVIEWER: ghglm assignment pins nothing 
   assert.equal(R.reviewerLane(R.feed([pin])), "(ghglm)");
   assert.equal(R.reviewerLane(R.feed([pin]), true), null);
   assert.equal(ev(labelled, [pin, comment(v("merge", H, "ghsol"))]).state, R.SUCCESS);
-  assert.notEqual(ev(pr(), [pin, comment(v("merge", H, "ghsol"))]).state, R.SUCCESS);
+  // D396: REVIEWER: ghglm / ghsol assigns the workflow reviewer pair, so ghsol's merge counts there too; another lane's does not
+  assert.equal(ev(pr(), [pin, comment(v("merge", H, "ghsol"))]).state, R.SUCCESS);
+  assert.equal(ev(pr(), [pin, comment(v("merge", H, "macrev2"))]).state, R.SUCCESS, "D395 stateless: any Sol lane's merge lands");
   // a REVIEWER: assignment to another lane still pins a labelled PR
   assert.equal(R.reviewerLane(R.feed([comment("REVIEWER: ghsol")]), true), "(ghsol)");
 });
 
-// owner 2026-11-21: on a review:gpt PR whose GPT is out of quota, the workflow's marked GLM verdict counts.
-test("review:gpt: the GLM fallback verdict counts only with the workflow's marker line at the exact head", () => {
+// macrev2-1254 (supersedes owner 2026-11-21): a GLM fallback verdict NEVER counts on an IMPORTANT PR; a review:gpt label makes a
+// PR IMPORTANT. The workflow no longer writes the marker and the gate ignores it, marked or not, labelled or not.
+test("review:gpt / IMPORTANT: a GLM fallback verdict (marked or not) is advisory; only an exact-head Sol merge lands the PR", () => {
   const labelled = pr({ labels: [{ name: "review:gpt" }] });
-  const files = [file("cli/internal/quota/x.go")];
+  const files = [file("cli/internal/keychain/x.go")];   // tier 2 and IMPORTANT (credentials)
   const ev = (p, comments) => R.evaluatePr({ pr: p, items: R.feed(comments), files, runs: greenCi, statuses: [], verifiedEdge: () => false, conf });   // REVIEW_GLM_TIERS empty
   const M = R.GPT_FALLBACK_MARKER;
-  assert.equal(M, "REVIEW-GPT-FALLBACK: GPT quota out; GLM verdict counts; mandatory nightly sampling");
+  assert.equal(R.gptFallbackVerdict(R.feed([comment(`x\n${M}\nVERDICT: merge @ ${H} (ghglm)`)]), H), null);
   const marked = (verdict, sha = H) => comment(`GLM review\n\n${M}\n\nVERDICT: ${verdict} @ ${sha} (ghglm)`);
-  assert.equal(ev(labelled, [marked("merge")]).state, R.SUCCESS, "marked merge counts");
-  assert.equal(ev(labelled, [marked("block")]).state, R.FAILURE, "marked block blocks");
-  assert.equal(ev(labelled, [comment(v("merge", H, "ghglm"))]).state, R.PENDING, "no marker: advisory");
-  assert.equal(ev(labelled, [comment(v("block", H, "ghglm"))]).state, R.PENDING);
-  // the marker must be in the same comment as the verdict, exact, and at the exact head
-  assert.equal(ev(labelled, [comment(M), comment(v("merge", H, "ghglm"))]).state, R.PENDING, "marker in another comment");
-  assert.equal(ev(labelled, [comment(`${M} extra\n\nVERDICT: merge @ ${H} (ghglm)`)]).state, R.PENDING, "inexact marker line");
-  assert.equal(ev(labelled, [marked("merge", OLD)]).state, R.PENDING, "other head");
-  assert.equal(ev(labelled, [{ ...marked("merge"), user: { login: "x", id: 2 } }]).state, R.PENDING, "untrusted author");
-  // unlabelled: the marker changes nothing (GLM counts only on REVIEW_GLM_TIERS)
-  assert.equal(ev(pr(), [marked("merge")]).state, R.PENDING);
-  assert.equal(R.evaluatePr({ pr: pr(), items: R.feed([comment(v("merge", H, "ghglm"))]), files, runs: greenCi, statuses: [], verifiedEdge: () => false, conf, glmTiers: [2] }).state, R.SUCCESS, "unlabelled unchanged");
-  // GPT still decides when it answered: GPT merge beats nothing, a GPT block beats a marked GLM merge
-  assert.equal(ev(labelled, [marked("merge"), comment(v("block", H, "ghsol"))]).state, R.FAILURE);
+  for (const p of [labelled, pr()]) {
+    assert.equal(ev(p, [marked("merge")]).state, R.PENDING, "marked GLM merge does not count");
+    assert.equal(ev(p, [comment(v("merge", H, "ghglm"))]).state, R.PENDING, "unmarked GLM merge does not count");
+    assert.equal(ev(p, [marked("block")]).state, R.PENDING, "an advisory GLM block does not veto");
+    assert.equal(ev(p, [marked("merge"), comment(v("merge", H, "ghsol"))]).state, R.SUCCESS, "an exact-head Sol merge satisfies it");
+    assert.equal(ev(p, [marked("merge"), comment(v("block", H, "ghsol"))]).state, R.FAILURE, "a Sol block still blocks");
+  }
+  assert.equal(R.evaluatePr({ pr: pr(), items: R.feed([comment(v("merge", H, "ghglm"))]), files, runs: greenCi, statuses: [], verifiedEdge: () => false, conf, glmTiers: [2] }).state, R.PENDING, "D482: REVIEW_GLM_TIERS never widens an IMPORTANT PR");
+  assert.equal(R.evaluatePr({ pr: pr(), items: R.feed([comment(v("merge", H, "ghglm"))]), files: [file("cli/internal/quota/x.go")], runs: greenCi, statuses: [], verifiedEdge: () => false, conf }).state, R.SUCCESS, "D482: a tier-2 NORMAL PR lands on the GLM verdict");
 });
 
 test("D374: a native head cannot merge without a mac-compile success status at its head", () => {
@@ -1555,4 +1548,333 @@ test("D374: a native head cannot merge without a mac-compile success status at i
   // A truncated file list could hide a native file: it waits for the compile too.
   const many = Array.from({ length: R.FILE_LIST_LIMIT }, (_, i) => file(`docs/${i}.md`));
   assert.equal(evalPr({ files: many, comments: merge, statuses: [] }).state, R.PENDING);
+});
+
+// ---- D395/D396 review routing (owner 2026-11-24) ----
+test("D482 routing: privacy/consent/credentials/security, gates/CI/release and ledger PRs are IMPORTANT; the rest is NORMAL", () => {
+  const cls = (paths, extra = {}) => R.reviewClass({ paths, ...extra }).cls;
+  for (const p of [
+    "cli/cmd/modelplan/consent_scopes.go", "cli/internal/keychain/security.go", "cli/internal/diagnostics/bundle.go",
+    "cli/internal/cliupdate/update.go", "claude-code/cli-pin.json", "desktop/native/credential-agent-artifact-pin.json",
+    ".github/workflows/pr-review-sol.yml", ".github/workflows/trusted-mac.yml", ".github/workflows/merge-gates.yml", ".github/workflows/mac-compile.yml",
+    ".github/workflows/cli-release.yml", ".github/actions/build/action.yml", "scripts/merge-gates/rules.mjs", "cli/go.sum",
+    "desktop/native/ModelPlanApp/ModelPlan.entitlements", "cli/internal/setup/oauth_flow.go", "cli/internal/zai/api_key.go",
+  ]) assert.equal(cls([p]), R.IMPORTANT, p);
+  // D482: wire, the Swift<->Go seam, readers, timing/lifecycle and path tier 2 alone are NORMAL now
+  for (const p of [
+    "desktop/native/Sources/ModelPlanCore/Wire.swift", "desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/HostDeadlineFence.swift",
+    "cli/internal/readers/transport.go", "cli/internal/appserver/server.go", "cli/internal/quota/x.go",
+    "desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/EngineLifecycleController.swift",
+    "desktop/native/Sources/ModelPlanCore/CLITransport.swift", "cli/internal/speed/lock_unix.go", "cli/internal/localusage/codex.go",
+    "desktop/native/ModelPlanShell/MainThreadHangWatchdog.swift", "desktop/cockpit/src/bridge/host.ts",
+    "desktop/native/ModelPlanDock/Sources/ModelPlanDock/DockRevealMotion.swift", "cli/internal/render/quota.go",
+    "desktop/cockpit/src/screens/today.ts", "scripts/tool.mjs", "cli/internal/advise/advise.go", "desktop/tests/cockpit/a.spec.mjs",
+    "desktop/tests/cockpit/browser/deadline-refresh.spec.mjs", "desktop/official-visuals/cockpit/throttle/throttle.css",
+    ".github/workflows/desktop.yml", ".github/workflows/dock-journeys.yml", ".github/workflows/u11-native.yml", ".github/workflows/e2e-journey.yml",
+  ]) assert.equal(cls([p]), R.NORMAL, p);
+  assert.equal(R.pathTier(["cli/internal/quota/x.go"]), 2, "a tier-2 path ...");
+  assert.equal(cls(["cli/internal/quota/x.go"]), R.NORMAL, "... is no longer IMPORTANT by itself");
+  // spanning native Swift and cockpit web is NORMAL
+  assert.equal(cls(["desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/StatusItemAnchor.swift", "desktop/cockpit/src/screens/today.ts"]), R.NORMAL);
+  // mixed: one important path makes the whole PR important
+  assert.equal(cls(["scripts/tool.mjs", "desktop/cockpit/src/screens/today.ts", "cli/cmd/modelplan/consent_scopes.go"]), R.IMPORTANT);
+  assert.match(R.reviewClass({ paths: ["scripts/tool.mjs", "cli/cmd/modelplan/consent_scopes.go"] }).why, /^consent: cli\/cmd\/modelplan\/consent_scopes\.go$/);
+  // labels, the ledger line, a trusted REVIEW-TIER: 2, an empty or long file list
+  assert.equal(cls(["scripts/tool.mjs"], { labels: [{ name: "review:codex" }] }), R.IMPORTANT);
+  assert.equal(cls(["scripts/tool.mjs"], { labels: ["review:gpt"] }), R.IMPORTANT);
+  assert.equal(cls(["scripts/tool.mjs"], { ledger: true }), R.IMPORTANT);
+  assert.equal(cls(["scripts/tool.mjs"], { override: 2 }), R.IMPORTANT);
+  assert.equal(cls(["scripts/tool.mjs"], { override: 1 }), R.NORMAL, "a lower override never makes a PR important");
+  assert.equal(cls(["cli/cmd/modelplan/consent_scopes.go"], { override: 1 }), R.IMPORTANT, "... nor normal");
+  assert.equal(cls([]), R.IMPORTANT);
+  assert.equal(cls(["scripts/tool.mjs"], { fileCount: R.REVIEW_ROUTING.maxFiles }), R.IMPORTANT);
+  // the table is valid for Python too (the coordinator reads it): no lookbehind, no named groups, no flags inside
+  for (const a of R.REVIEW_ROUTING.areas) assert.doesNotMatch(a.re, /\(\?[<=!:P]/, a.area);
+  assert.doesNotMatch(R.REVIEW_ROUTING.ledger, /\(\?[<=!:P]/);
+});
+
+test("macrevb-1311-1: an IMPORTANT PR is at least tier 1 (prReview); a NORMAL tier-0 PR needs no verdict", () => {
+  assert.deepEqual(R.prReview({ paths: [".github/workflows/trusted-mac.yml"] }), { tier: 1, cls: R.IMPORTANT, why: "gates-ci: .github/workflows/trusted-mac.yml" });
+  assert.deepEqual(R.prReview({ paths: [".github/workflows/ci.yml"] }), { tier: 1, cls: R.IMPORTANT, why: "gates-ci: .github/workflows/ci.yml" }, "ci is a required gate input");
+  assert.equal(R.prReview({ paths: [".github/workflows/repo-checks.yml"] }).cls, R.IMPORTANT, "repo checks is a required gate input");
+  assert.deepEqual(R.prReview({ paths: [".github/workflows/desktop.yml"] }), { tier: 0, cls: R.NORMAL, why: "no important path" }, "a desktop.yml test leg is NORMAL");
+  assert.equal(R.prReview({ paths: ["docs/a.md"], labels: ["review:gpt"] }).tier, 1);
+  assert.equal(R.prReview({ paths: ["docs/a.md"], renamed: true }).tier, 1);
+  assert.equal(R.prReview({ paths: ["docs/a.md"], override: 0, ledger: true }).tier, 1);
+  assert.deepEqual(R.prReview({ paths: ["docs/a.md"] }), { tier: 0, cls: R.NORMAL, why: "no important path" });
+  // macrevb-1311-4: every workflow that triggers, labels, dispatches or posts reviews or gate inputs is IMPORTANT
+  for (const w of R.prPaths([file(".github/workflows/review-label.yml"), file(".github/workflows/pr-review.yml"), file(".github/workflows/pr-review-sol.yml"),
+    file(".github/workflows/merge-gates.yml"), file(".github/workflows/merge-gates-probe.yml"), file(".github/workflows/mac-compile.yml"),
+    file(".github/workflows/mac-compile-trigger.yml"), file(".github/workflows/mac-compile-sweep.yml"), file(".github/workflows/trusted-mac.yml"),
+    file(".github/workflows/data-sync.yml"), file(".github/workflows/post-merge-hosted.yml"), file(".github/workflows/ci.yml"), file(".github/workflows/repo-checks.yml"), file(".github/workflows/release.yml"),
+    file(".github/workflows/macos-distribution.yml"), file(".github/workflows/u10-candidate.yml")]))
+    assert.equal(R.prReview({ paths: [w] }).cls, R.IMPORTANT, w);
+  const rl = evalPr({ files: [file(".github/workflows/review-label.yml")], comments: [comment(v("merge", H, "ghglm"))] });
+  assert.deepEqual([rl.state, rl.tier, rl.review], [R.PENDING, 1, R.IMPORTANT], "a review-label-only PR waits for Sol");
+  assert.equal(evalPr({ files: [file(".github/workflows/review-label.yml")], comments: [comment(v("merge", H, "ghsol"))] }).state, R.SUCCESS);
+  const wf = evalPr({ files: [file(".github/workflows/trusted-mac.yml")] });
+  assert.deepEqual([wf.state, wf.tier, wf.review], [R.PENDING, 1, R.IMPORTANT], wf.why);
+  assert.equal(evalPr({ files: [file(".github/workflows/trusted-mac.yml")], comments: [comment(v("merge", H, "macrevb"))] }).state, R.SUCCESS);
+  assert.equal(evalPr({ files: [file(".github/workflows/desktop.yml"), file("desktop/native/ModelPlanDock/Sources/ModelPlanDock/DockRevealMotion.swift")], comments: [comment(v("merge", H, "ghglm"))] }).review, R.NORMAL, "a feature PR with a desktop.yml test leg is NORMAL");
+  assert.equal(evalPr({ files: [file("docs/a.md")] }).state, R.SUCCESS, "normal tier 0: no review");
+});
+
+// The shared vectors: decide.py review_class (the coordinator) runs the same "examples" of review-routing.json.
+test("D482 shared examples: reviewClass answers every example of review-routing.json", () => {
+  assert.equal(R.REVIEW_ROUTING.version, 2);
+  assert.ok(R.REVIEW_ROUTING.examples.length >= 20);
+  for (const x of R.REVIEW_ROUTING.examples) {
+    const r = R.reviewClass({ paths: x.paths, labels: x.labels ?? [], override: x.override ?? null, ledger: R.ledgerPr({ body: x.body ?? "" }), renamed: x.renamed ?? false });
+    assert.equal(r.cls, x.cls, JSON.stringify(x));
+    if (x.why) assert.ok(r.why.startsWith(x.why) || r.why.includes(x.why), `${JSON.stringify(x)} -> ${r.why}`);
+  }
+});
+
+test("D395 gate: a NORMAL PR lands on the GLM verdict; an IMPORTANT one still needs a GPT lane", () => {
+  const normal = [file("scripts/tool.mjs")], important = [file("cli/cmd/modelplan/consent_scopes.go")];
+  const mixed = [file("scripts/tool.mjs"), file("cli/internal/setup/oauth_flow.go")];
+  // normal: the exact-head (ghglm) merge is enough; its block blocks; a stale-head GLM verdict is not enough
+  const n = evalPr({ files: normal, comments: [comment(v("merge", H, "ghglm"))] });
+  assert.equal(n.state, R.SUCCESS); assert.equal(n.review, R.NORMAL); assert.match(n.why, /D482 normal/);
+  assert.equal(evalPr({ files: normal, comments: [comment(v("block", H, "ghglm"))] }).state, R.FAILURE);
+  assert.equal(evalPr({ files: normal, comments: [comment(v("merge", "b".repeat(40), "ghglm"))] }).state, R.PENDING);
+  // important (tier 2 here) and mixed (tier 1 + one token path): GLM is advice, a GPT lane decides
+  for (const files of [important, mixed]) {
+    const r = evalPr({ files, comments: [comment(v("merge", H, "ghglm"))] });
+    assert.equal(r.state, R.PENDING); assert.equal(r.review, R.IMPORTANT);
+    assert.equal(evalPr({ files, comments: [comment(v("merge", H, "ghglm")), comment(v("merge", H, "macrev2"))] }).state, R.SUCCESS);
+  }
+  // review:codex makes a normal PR important
+  assert.equal(evalPr({ files: normal, p: pr({ labels: [{ name: "review:codex" }] }), comments: [comment(v("merge", H, "ghglm"))] }).state, R.PENDING);
+});
+
+test("D395 fallback: a NORMAL PR also lands on a Codex verdict, and a GLM verdict counts again on the next head (no sticky state)", () => {
+  const normal = [file("scripts/tool.mjs")], H2 = "c".repeat(40);
+  // GLM out at head A: a Codex lane reviewed it and became the sticky reviewer; its merge counts
+  const codexA = [comment("REVIEWER: macrevb"), comment(v("merge", H, "macrevb"))];
+  assert.equal(evalPr({ files: normal, comments: codexA }).state, R.SUCCESS);
+  // GLM back at head B: the GLM verdict counts although macrevb is still assigned; a GLM block still blocks
+  const atB = (extra) => evalPr({ files: normal, p: pr({ head: { ...pr().head, sha: H2 } }), comments: [...codexA, ...extra] });
+  assert.equal(atB([comment(v("merge", H2, "ghglm"))]).state, R.SUCCESS);
+  assert.equal(atB([comment(v("block", H2, "ghglm")), comment(v("merge", H2, "macrevb"))]).state, R.FAILURE);
+  assert.equal(atB([]).state, R.PENDING);
+  // on an IMPORTANT PR any Sol lane lands it too (D395 stateless), but never Terra or GLM outside a D366 fallback
+  const imp = [file("cli/cmd/modelplan/consent_scopes.go")];
+  assert.equal(evalPr({ files: imp, comments: [comment("REVIEWER: macrevb"), comment(v("merge", H, "ghsol"))] }).state, R.SUCCESS);
+  assert.equal(evalPr({ files: [file("cli/internal/setup/oauth_flow.go")], comments: [comment(v("merge", H, "macrevc"))] }).state, R.PENDING, "important tier 1: Terra does not admit");
+  assert.equal(evalPr({ files: [file("cli/internal/quota/x.go")], comments: [comment(v("merge", H, "macrevc"))] }).state, R.PENDING, "D482: normal tier 2: Terra does not admit (D149)");
+});
+
+test("D396 sticky ghsol: the workflow pair accepts the GLM quota-fallback verdict wherever GLM may decide", () => {
+  const pin = comment("REVIEWER: ghsol");
+  // normal PR: counts
+  assert.equal(evalPr({ files: [file("scripts/tool.mjs")], comments: [pin, comment(v("merge", H, "ghglm"))] }).state, R.SUCCESS);
+  // D482: an important PR never lands on GLM, REVIEW_GLM_TIERS=1,2 (D366/D469) included
+  const imp = [file("cli/cmd/modelplan/consent_scopes.go")];
+  const ev = (glmTiers) => R.evaluatePr({ pr: pr(), items: R.feed([pin, comment(v("merge", H, "ghglm"))]), files: imp, runs: greenCi, statuses: [compileOk], verifiedEdge: () => false, conf, glmTiers });
+  assert.equal(ev([1, 2]).state, R.PENDING);
+  // important PR outside a fallback: GLM is advice
+  assert.equal(ev([]).state, R.PENDING);
+  assert.deepEqual(R.stickyLanes("(ghsol)", R.eligibleLanes(1, [], R.NORMAL)), ["(ghsol)", "(ghglm)"]);
+  assert.deepEqual(R.stickyLanes("(ghsol)", R.eligibleLanes(1)), ["(ghsol)"]);
+  assert.deepEqual(R.stickyLanes("(macrevb)", R.eligibleLanes(1, [], R.NORMAL)), ["(macrevb)"]);
+});
+
+test("D395-5/6: on a NORMAL PR no assignment pins a lane (a Codex verdict counts under a workflow sticky); any rename is IMPORTANT", () => {
+  const normal = [file("scripts/tool.mjs")];
+  assert.equal(evalPr({ files: normal, comments: [comment("REVIEWER: ghsol"), comment(v("merge", H, "macrevb"))] }).state, R.SUCCESS);
+  assert.equal(evalPr({ files: normal, comments: [comment("REVIEWER: ghsol"), comment(v("block", H, "macrevb")), comment(v("merge", H, "ghglm"))] }).state, R.FAILURE, "any counting block blocks");
+  // an important PR: no pin either (D395 stateless); any Sol lane's merge lands it
+  assert.equal(evalPr({ files: [file("cli/cmd/modelplan/consent_scopes.go")], comments: [comment("REVIEWER: ghsol"), comment(v("merge", H, "macrevb"))] }).state, R.SUCCESS);
+  // a rename out of an important area, or any rename at all, is important on both gates (the coordinator sees no old path)
+  const mv = [file("cli/internal/metrics/frame.go", { status: "renamed", previous_filename: "cli/internal/appserver/frame.go" })];
+  const r = evalPr({ files: mv, comments: [comment(v("merge", H, "ghglm"))] });
+  assert.equal(r.review, R.IMPORTANT); assert.equal(r.state, R.PENDING);
+  assert.equal(R.reviewClass({ paths: ["src/b.ts"], renamed: R.hasRename([{ filename: "src/b.ts", status: "renamed", previous_filename: "src/a.ts" }]) }).why, "renamed file");
+});
+
+// ---- D481: PR GUI leg ----
+const GM = await import("../merge-gates/gui-map.mjs");
+const guiMap = GM.parseMap(readFileSync(join(root, "desktop/native/tools/ci/gui-test-map.json"), "utf8"));
+const RING = "desktop/native/ModelPlanDock/Native/DockInstrumentRenderer.swift";
+const guiRun = (conclusion = "success", id = 50, status = "completed", over = {}) => run(".github/workflows/desktop.yml", conclusion, id, status, {
+  event: "workflow_dispatch", pull_requests: [], display_title: `desktop PR GUI #7 @ ${H}`, actor: ME, triggering_actor: ME, ...over });
+const gjob = (name, conclusion = "success") => ({ name, conclusion });
+const guiJobs = [gjob("gui-scope"), gjob("native (macos-latest) / native (macos-latest)")];
+// What a green run's gui-scope recorded (the notice evaluate.mjs reads back): by default exactly the ring PR's classes.
+const ringRecord = R.requiredGuiClasses([RING], [guiMap]).join(",");
+const evalGui = ({ files = [file(RING)], runs = greenCi, statuses = [compileOk], maps = [guiMap], p = pr(), comments = [comment(v("merge", H, "macrev2"))] } = {}) =>
+  R.evaluatePr({ pr: p, items: R.feed(comments, []), files, runs, statuses, verifiedEdge: () => false, conf, guiMaps: maps });
+
+test("D481: a ready PR whose paths map to GUI classes waits for an exact-head PR GUI run of them", () => {
+  const waiting = evalGui();
+  assert.equal(waiting.state, R.PENDING);
+  assert.match(waiting.why, /^waiting for PR GUI run \(classes: CommunityDockSnapshotTests, D65ZeroQuotaTests, DockAccessibilityFrameTests \+\d+\)/);
+  assert.ok(waiting.guiClasses.includes("app-integration:D65ZeroQuotaTests"), "the full list is in the logged result");
+  assert.ok(R.description(waiting.why).length <= 140);
+  assert.equal(evalGui({ runs: [...greenCi, guiRun("success", 50, "completed", { jobs: guiJobs, guiRecord: ringRecord, guiAbsent: "none" })] }).state, R.SUCCESS);
+  assert.equal(evalGui({ runs: [...greenCi, guiRun(null, 50, "in_progress")] }).state, R.PENDING, "running");
+  assert.match(evalGui({ runs: [...greenCi, guiRun(null, 50, "queued")] }).why, /^PR GUI run in progress/);
+  const failed = evalGui({ runs: [...greenCi, guiRun("failure")] });
+  assert.equal(failed.state, R.FAILURE);
+  assert.match(failed.why, /^PR GUI run failure \(classes: /);
+  assert.equal(evalGui({ runs: [...greenCi, guiRun("cancelled")] }).state, R.FAILURE, "a cancelled newest run is re-dispatched, not a pass");
+  assert.equal(evalGui({ runs: [...greenCi, guiRun("success")] }).state, R.PENDING, "jobs not read yet: not a pass");
+  // The run must actually have run a GUI leg: one pool green.
+  // A GUI job skipped before it expanded keeps its matrix expression in the name (gui-scope said run=false).
+  const skipped = evalGui({ runs: [...greenCi, guiRun("success", 50, "completed", { jobs: [gjob("gui-scope"), gjob("native (${{ matrix.os }})", "skipped")], guiRecord: ringRecord, guiAbsent: "none" })] });
+  assert.equal(skipped.state, R.FAILURE, "its selection found no class: disagrees with the gate's map");
+  assert.match(skipped.why, /^PR GUI run ran no GUI leg, but the map needs classes: /);
+  assert.equal(evalGui({ runs: [...greenCi, guiRun("success", 50, "completed", { jobs: [gjob("gui-scope"), gjob("native (macos-latest) / native (macos-latest)", "skipped")], guiRecord: ringRecord, guiAbsent: "none" })] }).state, R.FAILURE, "an expanded GUI job skipped");
+  assert.equal(evalGui({ runs: [...greenCi, guiRun("success", 50, "completed", { jobs: [gjob("native (macos-latest) / native (macos-latest)")] })] }).state, R.FAILURE, "no gui-scope");
+  const hosted = [gjob("gui-scope"), gjob("native-hosted (macos-15) / native-hosted-gui (macos-15)"), gjob("native-owner-gui (macos-latest) / native-owner-gui (macos-latest)")];
+  assert.equal(evalGui({ runs: [...greenCi, guiRun("success", 50, "completed", { jobs: hosted, guiRecord: ringRecord, guiAbsent: "none" })] }).state, R.SUCCESS, "hosted pool pair");
+  assert.equal(evalGui({ runs: [...greenCi, guiRun("success", 50, "completed", { jobs: hosted.slice(0, 2), guiRecord: ringRecord, guiAbsent: "none" })] }).state, R.FAILURE, "half the pair");
+  // The newest bound run decides.
+  assert.equal(evalGui({ runs: [...greenCi, guiRun("success", 50, "completed", { jobs: guiJobs, guiRecord: ringRecord, guiAbsent: "none" }), guiRun("failure", 51)] }).state, R.FAILURE);
+  assert.equal(evalGui({ runs: [...greenCi, guiRun("failure", 50), guiRun("success", 51, "completed", { jobs: guiJobs, guiRecord: ringRecord, guiAbsent: "none" })] }).state, R.SUCCESS);
+});
+
+test("D481 (macrev2-1310-1): a green run counts only when its recorded class set covers the classes required now", () => {
+  const green = (guiRecord) => [...greenCi, guiRun("success", 50, "completed", { jobs: guiJobs, guiAbsent: "none", ...(guiRecord === undefined ? {} : { guiRecord }) })];
+  assert.equal(evalGui({ runs: green(ringRecord) }).state, R.SUCCESS);
+  assert.equal(evalGui({ runs: green(ringRecord + ",settings:SettingsB5GridTests") }).state, R.SUCCESS, "a larger record is fine");
+  // Same PR, same sha: main's map grows by one class after the run. The old run no longer satisfies the gate.
+  const grown = { ...guiMap, areas: guiMap.areas.map((a) => a.area !== "dock-ring-presentation" ? a
+    : { ...a, classes: { ...a.classes, "app-integration": [...a.classes["app-integration"], "StatusItemAnchorTests"].sort() } }) };
+  assert.equal(R.requiredGuiClasses([RING], [grown]).length, R.requiredGuiClasses([RING], [guiMap]).length + 1, "the requirement grew by one");
+  const stale = evalGui({ runs: green(ringRecord), maps: [grown] });
+  assert.equal(stale.state, R.PENDING);
+  assert.match(stale.why, /^re-run needed: PR GUI run did not cover StatusItemAnchorTests/);
+  // A re-run at the same head that records the grown set passes again.
+  assert.equal(evalGui({ runs: [...green(ringRecord), guiRun("success", 51, "completed", { jobs: guiJobs, guiRecord: R.requiredGuiClasses([RING], [grown]).join(","), guiAbsent: "none" })], maps: [grown] }).state, R.SUCCESS);
+  // No record, an unreadable one, or "none" while classes are required: never a pass.
+  for (const [why, rec] of [["no record", undefined], ["none", "none"], ["unqualified", "D65ZeroQuotaTests"], ["empty", ""], ["junk", "a:b;c"]]) {
+    const r = evalGui({ runs: green(rec) });
+    assert.equal(r.state, R.PENDING, why);
+    assert.match(r.why, /^re-run needed: /, why);
+  }
+});
+
+test("D481 (macrev2-1310-3): the newest same-head run decides whatever its state; its start re-evaluates the PR", () => {
+  const older = guiRun("success", 50, "completed", { jobs: guiJobs, guiRecord: ringRecord, guiAbsent: "none" });
+  assert.equal(evalGui({ runs: [...greenCi, older] }).state, R.SUCCESS, "first run green");
+  for (const status of ["requested", "queued", "waiting", "pending", "in_progress"]) {
+    const r = evalGui({ runs: [...greenCi, older, guiRun(null, 51, status)] });
+    assert.equal(r.state, R.PENDING, status);
+    assert.match(r.why, /^PR GUI run in progress/, status);
+  }
+  assert.equal(evalGui({ runs: [...greenCi, older, guiRun("failure", 51)] }).state, R.FAILURE, "the second run's completed result");
+  assert.equal(evalGui({ runs: [...greenCi, older, guiRun("success", 51, "completed", { jobs: guiJobs, guiRecord: ringRecord, guiAbsent: "none" })] }).state, R.SUCCESS);
+  const gates = readFileSync(join(root, ".github/workflows/merge-gates.yml"), "utf8");
+  assert.match(gates, /^    types: \[completed, requested\]$/m, "a run's start is an event");
+  const jobIf = /^    if: >-\n((?:      .*\n)+)/m.exec(gates)[1];
+  // Only a PR GUI run re-evaluates on its start; every other workflow_run still waits for completion.
+  assert.match(jobIf, /\(github\.event_name == 'workflow_run' && github\.event\.action == 'completed' && contains\(fromJSON\('\["pull_request","pull_request_review","merge_group"\]'\)/);
+  const guiClause = /\|\| \(github\.event_name == 'workflow_run' && github\.event\.workflow_run\.event == 'workflow_dispatch'.*\n.*\n/.exec(jobIf)?.[0] ?? "";
+  assert.match(guiClause, /startsWith\(github\.event\.workflow_run\.display_title, 'desktop PR GUI #'\)\)/);
+  assert.doesNotMatch(guiClause, /event\.action/, "the PR GUI clause takes requested and completed");
+  const evaluate = readFileSync(join(root, "scripts/merge-gates/evaluate.mjs"), "utf8");
+  assert.match(evaluate, /\/check-runs\/\$\{scope\.id\}\/annotations/, "the record is read from gui-scope's annotations");
+});
+
+test("D481 (macrev2-1310-1 round 2): a required class undeclared at the head holds the PR with \"merge main first\"", () => {
+  // main's map gained StatusItemAnchorTests for the ring after the PR branched; gui-scope found it undeclared at the head,
+  // dropped it from the run and recorded it as absent. The other selected classes ran green: still not a pass.
+  const grown = { ...guiMap, areas: guiMap.areas.map((a) => a.area !== "dock-ring-presentation" ? a
+    : { ...a, classes: { ...a.classes, "app-integration": [...a.classes["app-integration"], "StatusItemAnchorTests"].sort() } }) };
+  const run = (guiAbsent, jobs = guiJobs) => [...greenCi, guiRun("success", 50, "completed", { jobs, guiRecord: ringRecord, guiAbsent })];
+  const r = evalGui({ runs: run("app-integration:StatusItemAnchorTests"), maps: [grown] });
+  assert.equal(r.state, R.PENDING);
+  assert.match(r.why, /^merge main first: class StatusItemAnchorTests does not exist at this head/);
+  // Every selected class absent: the GUI legs were skipped; it is still "merge main first", not a failure.
+  assert.match(evalGui({ runs: run("app-integration:StatusItemAnchorTests", [gjob("gui-scope"), gjob("native (${{ matrix.os }})", "skipped")]), maps: [grown] }).why, /^merge main first: /);
+  assert.match(evalGui({ runs: run("many:40") }).why, /^merge main first: 40 mapped classes do not exist at this head/);
+  // An absent class this gate does not require does not hold it; a missing or unreadable absent record does.
+  assert.equal(evalGui({ runs: run("app-integration:SomeOtherTests") }).state, R.SUCCESS);
+  for (const bad of [undefined, "", "Junk"]) assert.match(evalGui({ runs: run(bad) }).why, /^re-run needed: /, String(bad));
+});
+
+test("D481 (macrev2-1310-4): hashed records stay under the annotation limit and compare with the gate's own selection", () => {
+  const M = GM;
+  // The 3,000-file capped list: every class of the maps is required, and the run records "all@<hash>".
+  const many = Array.from({ length: R.FILE_LIST_LIMIT }, (_, i) => file(`docs/${i}.md`));
+  const full = R.requiredGuiClasses([], [guiMap], { truncated: true });
+  const allRec = M.makeRecord(full, full);
+  assert.match(allRec, /^all@[0-9a-f]{64}$/);
+  assert.ok(full.join(",").length > 4096, "the plain list would be truncated by GitHub");
+  const cap = (guiRecord) => evalGui({ files: many, runs: [...greenCi, guiRun("success", 50, "completed", { jobs: guiJobs, guiRecord, guiAbsent: "none" })] });
+  assert.equal(cap(allRec).state, R.SUCCESS, "a complete capped run passes");
+  assert.match(cap(full.join(",").slice(0, 4096)).why, /^re-run needed: /, "a truncated plain record holds");
+  assert.match(cap(`all@${"0".repeat(64)}`).why, /^re-run needed: PR GUI run's hashed class set/, "another full set holds");
+  assert.match(cap(M.makeRecord(full.slice(1), full)).why, /^re-run needed: /, "one class short holds");
+  // A long selection that is not the full set: "sha256:<hash>:<count>" of exactly the required set.
+  const big = Array.from({ length: 160 }, (_, i) => `ZzLongGeneratedClassNameNumber${String(i).padStart(3, "0")}Tests`);
+  const extra = { ...guiMap, areas: [{ area: "cli-big", paths: ["cli/**"], classes: { "app-integration": big } }] };
+  const req = R.requiredGuiClasses(["cli/x.go"], [guiMap, extra]);
+  const hashRec = M.makeRecord(req, R.requiredGuiClasses([], [guiMap, extra], { truncated: true }));
+  assert.match(hashRec, /^sha256:[0-9a-f]{64}:160$/);
+  const ev = (guiRecord) => evalGui({ files: [file("cli/x.go")], maps: [guiMap, extra], runs: [...greenCi, guiRun("success", 50, "completed", { jobs: guiJobs, guiRecord, guiAbsent: "none" })] });
+  assert.equal(ev(hashRec).state, R.SUCCESS);
+  assert.match(ev(hashRec.replace(/:160$/, ":159")).why, /^re-run needed: /);
+  assert.match(ev(M.makeRecord(req.slice(1), [])).why, /^re-run needed: /, "a different set's hash holds");
+  for (const r of [allRec, hashRec, M.makeAbsent(big.map((c) => `app-integration:${c}`))]) assert.ok(r.length <= M.RECORD_MAX && r.length < 4096);
+});
+
+test("D481: only a run bound to this PR's exact head, branch and repository, dispatched by the trusted account, counts", () => {
+  const ok = { jobs: guiJobs, guiRecord: ringRecord, guiAbsent: "none" };
+  for (const [why, over] of [
+    ["another PR in the title", { display_title: `desktop PR GUI #8 @ ${H}` }],
+    ["another head in the title", { display_title: `desktop PR GUI #7 @ ${OLD}` }],
+    ["run at another commit", { head_sha: OLD }],
+    ["another branch", { head_branch: "feature/y" }],
+    ["a fork's run", { head_repository: { full_name: "fork/modelplan" } }],
+    ["untrusted actor", { actor: { login: "guanbear", id: 1 } }],
+    ["untrusted triggering actor", { triggering_actor: { login: "x", id: 2 } }],
+    ["not a dispatch", { event: "push" }],
+    ["another workflow", { path: ".github/workflows/ci.yml", workflow_id: ".github/workflows/ci.yml" }],
+    ["a D112 merge run", { display_title: "desktop PR #7 merged with main" }],
+  ]) assert.equal(evalGui({ runs: [...greenCi, guiRun("success", 50, "completed", { ...ok, ...over })] }).state, R.PENDING, why);
+  assert.equal(evalGui({ runs: [...greenCi, guiRun("success", 50, "completed", { ...ok, path: ".github/workflows/desktop.yml@refs/heads/feature/x" })] }).state, R.SUCCESS, "a path with @ref");
+});
+
+test("D481: PRs with no mapped class, drafts and maps-off are unaffected; a PR GUI run never stands in for the PR's own desktop run", () => {
+  assert.equal(evalGui({ files: [file("scripts/tool.mjs")] }).state, R.SUCCESS, "no mapped path");
+  assert.equal(evalGui({ files: [file("desktop/native/ModelPlanDock/README.md")] }).state, R.SUCCESS, "native but unmapped");
+  assert.equal(evalGui({ maps: null }).state, R.SUCCESS, "no map given");
+  assert.equal(evalGui({ maps: [] }).state, R.SUCCESS);
+  assert.match(evalGui({ p: pr({ draft: true }) }).why, /^draft/);
+  // mac-compile is reported first: the coordinator dispatches the PR GUI run only after it passed.
+  assert.match(evalGui({ statuses: [] }).why, /^waiting for mac-compile at this head/);
+  // The PR's pull_request desktop run failed: a newer green PR GUI run (same workflow) must not displace it in ciState.
+  const prDesktopRed = run(".github/workflows/desktop.yml", "failure", 40);
+  const r = evalGui({ runs: [...greenCi, prDesktopRed, guiRun("success", 50, "completed", { jobs: guiJobs, guiRecord: ringRecord, guiAbsent: "none" })] });
+  assert.equal(r.state, R.FAILURE);
+  assert.match(r.why, /desktop\.yml failure/);
+  // ... and a failed PR GUI run is reported as such, not as a desktop CI failure; an unrequired one is ignored.
+  assert.match(evalGui({ runs: [...greenCi, run(".github/workflows/desktop.yml", "success", 40), guiRun("failure", 50)] }).why, /^PR GUI run failure/);
+  assert.equal(evalGui({ files: [file("scripts/tool.mjs")], runs: [...greenCi, guiRun("failure", 50)] }).state, R.SUCCESS);
+  // A cut-off file list could hide a mapped path: every mapped class is required.
+  const many = Array.from({ length: R.FILE_LIST_LIMIT }, (_, i) => file(`docs/${i}.md`));
+  const cut = evalGui({ files: many });
+  assert.equal(cut.state, R.PENDING);
+  assert.ok(cut.guiClasses.length > 50);
+  // The head's own map (a PR adding an area) is unioned with main's.
+  const extra = { ...guiMap, areas: [{ area: "cli-test", paths: ["cli/**"], classes: { settings: ["SettingsB5GridTests"] } }] };
+  assert.match(evalGui({ files: [file("cli/main.go")], maps: [guiMap, extra] }).why, /^waiting for PR GUI run \(classes: SettingsB5GridTests\)/);
+});
+
+test("D481: desktop.yml's PR GUI title is what the gate binds, and merge-gates re-evaluates on it with the map checked out", () => {
+  const desktop = readFileSync(join(root, ".github/workflows/desktop.yml"), "utf8");
+  const fmt = /^run-name: .*format\('(desktop PR GUI #\{0\} @ \{1\})', inputs\.pr, inputs\.sha\)/m.exec(desktop)?.[1];
+  assert.ok(fmt, "run-name formats the PR GUI title from pr and sha");
+  assert.match(fmt.replace("{0}", "7").replace("{1}", H), R.PR_GUI_TITLE);
+  const gates = readFileSync(join(root, ".github/workflows/merge-gates.yml"), "utf8");
+  const sparse = /sparse-checkout: \|\n((?:\s+\S+\n)+)/.exec(gates)[1].trim().split(/\s+/);
+  assert.ok(sparse.includes("desktop/native/tools/ci"), "main's GUI test map reaches the gate");
+  const jobIf = /^    if: >-\n((?:      .*\n)+)/m.exec(gates)[1];
+  assert.match(jobIf, /\|\| \(github\.event_name == 'workflow_run' && github\.event\.workflow_run\.event == 'workflow_dispatch' && github\.event\.workflow_run\.name == 'desktop'\n\s+&& startsWith\(github\.event\.workflow_run\.display_title, 'desktop PR GUI #'\)\)\n/);
+  const evaluate = readFileSync(join(root, "scripts/merge-gates/evaluate.mjs"), "utf8");
+  assert.match(evaluate, /guiMaps: maps/, "evaluate.mjs passes the maps");
+  assert.match(evaluate, /wr\.event === "workflow_dispatch"/, "a PR GUI run re-evaluates its PR");
 });

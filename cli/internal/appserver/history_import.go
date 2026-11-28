@@ -110,22 +110,44 @@ type OwedScheduler interface {
 	CancelOwed()
 }
 
+// anyGen: a start not tied to a retry generation (a manual start, or a direct launch call).
+const anyGen = -1
+
+// testHookRetryDue, when set, runs a due retry's start (after its generation check); tests use it
+// to land a Cancel between that check and the start.
+var testHookRetryDue func(start func())
+
 // StartOwedAfter checks for an owed import after delay, off the launch or grant path (owner
 // condition: the retry never disturbs). Cancel and Close stop a retry still waiting.
 func (c *ImportController) StartOwedAfter(delay time.Duration, days int) {
+	c.startOwedAfter(anyGen, delay, days)
+}
+
+// startOwedAfter schedules a retry under generation gen (anyGen: the current one). A retry whose
+// generation was cancelled or closed meanwhile never starts: the start re-checks gen under the
+// same lock that starts the run, so a Cancel cannot land between the check and the start.
+func (c *ImportController) startOwedAfter(gen int, delay time.Duration, days int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.closed {
+	if gen == anyGen {
+		gen = c.retryGen
+	}
+	if c.closed || gen != c.retryGen {
 		return
 	}
-	gen := c.retryGen
 	c.timers = append(c.timers, time.AfterFunc(delay, func() {
 		c.mu.Lock()
 		stale := c.closed || gen != c.retryGen
 		c.mu.Unlock()
-		if !stale {
-			c.StartOwed(days)
+		if stale {
+			return
 		}
+		start := func() { c.startOwed(gen, days) }
+		if h := testHookRetryDue; h != nil {
+			h(start)
+			return
+		}
+		start()
 	}))
 }
 
@@ -139,29 +161,35 @@ func (c *ImportController) stopRetriesLocked() {
 }
 
 // scheduleNext wakes for the next owed retry once its backoff ends (macrevd-967-5).
-func (c *ImportController) scheduleNext(days int) {
+func (c *ImportController) scheduleNext(gen, days int) {
 	s, ok := c.engine.(OwedScheduler)
 	if !ok {
 		return
 	}
 	now := time.Now()
 	if at, due := s.NextOwedAt(now); due {
-		c.StartOwedAfter(at.Sub(now), days)
+		c.startOwedAfter(gen, at.Sub(now), days)
 	}
 }
 
 // StartOwed starts the owed import in the background when one is owed and none is running. It is
 // quiet: a failure leaves the reported state as it was (the ledger keeps the attempt).
 func (c *ImportController) StartOwed(days int) {
+	c.startOwed(anyGen, days)
+}
+
+// startOwed is StartOwed for a retry of generation gen: it starts nothing once that generation
+// was cancelled or closed.
+func (c *ImportController) startOwed(gen, days int) {
 	r, ok := c.engine.(OwedRunner)
 	if !ok {
 		return
 	}
 	if !r.Owed() {
-		c.scheduleNext(days) // owed later: wake when its backoff ends
+		c.scheduleNext(gen, days) // owed later: wake when its backoff ends
 		return
 	}
-	_ = c.startRunQuiet(days, func(ctx context.Context, progress func(int, int)) ([]wire.HistoryImportSource, error) {
+	_ = c.startRunQuiet(gen, days, func(ctx context.Context, progress func(int, int)) ([]wire.HistoryImportSource, error) {
 		return r.RunOwed(ctx, days, progress)
 	}, func() { c.owedPending = days }, true)
 }
@@ -172,13 +200,15 @@ func (c *ImportController) startRun(days int, run func(context.Context, func(int
 
 // startRunOr is startRun; when an import is running it calls busy (under the lock) instead.
 func (c *ImportController) startRunOr(days int, run func(context.Context, func(int, int)) ([]wire.HistoryImportSource, error), busy func()) error {
-	return c.startRunQuiet(days, run, busy, false)
+	return c.startRunQuiet(anyGen, days, run, busy, false)
 }
 
-// startRunQuiet is startRunOr; a quiet run that fails restores the state reported before it.
-func (c *ImportController) startRunQuiet(days int, run func(context.Context, func(int, int)) ([]wire.HistoryImportSource, error), busy func(), quiet bool) error {
+// startRunQuiet is startRunOr; a quiet run that fails restores the state reported before it. A
+// retry passes its generation gen: once Cancel or Close moved past it, nothing starts or queues,
+// checked under the lock that starts the run. A manual start passes anyGen.
+func (c *ImportController) startRunQuiet(gen, days int, run func(context.Context, func(int, int)) ([]wire.HistoryImportSource, error), busy func(), quiet bool) error {
 	c.mu.Lock()
-	if c.closed {
+	if c.closed || (gen != anyGen && gen != c.retryGen) {
 		c.mu.Unlock()
 		return ProtocolError{wire.CodeBusy}
 	}
@@ -197,6 +227,9 @@ func (c *ImportController) startRunQuiet(days int, run func(context.Context, fun
 	}{c.phase, c.days, c.done, c.total, c.last}
 	ctx, cancel := context.WithCancel(context.Background())
 	c.phase, c.days, c.done, c.total, c.last, c.cancel, c.cancelAsked = wire.ImportRunning, days, 0, 0, nil, cancel, false
+	// Follow-ups of this run (a queued owed import, the next backoff) belong to the generation it
+	// started in, so a Cancel or Close while it settles stops them too.
+	runGen := c.retryGen
 	c.wg.Add(1)
 	c.mu.Unlock()
 	go func() {
@@ -231,9 +264,9 @@ func (c *ImportController) startRunQuiet(days int, run func(context.Context, fun
 		c.mu.Unlock()
 		switch {
 		case again > 0:
-			c.StartOwed(again)
+			c.startOwed(runGen, again)
 		case quiet && !stopped:
-			c.scheduleNext(days) // the next attempt after this one's backoff
+			c.scheduleNext(runGen, days) // the next attempt after this one's backoff
 		}
 	}()
 	return nil

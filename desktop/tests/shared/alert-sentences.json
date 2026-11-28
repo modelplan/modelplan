@@ -1,8 +1,61 @@
 {
- "comment": "ALR-50 (WP-11): one sentence per alert, the same in the ALERT tooltip, column wash, overview line, alert list, menu line and widget-card footer. The JS table (desktop/cockpit/src/alert-sentence.ts) and the Swift table (ModelPlanSettings/AlertSentence.swift) are both tested against these cases. `text` adds the reset when it is known; `short` is the form used when the reset does not fit.",
+ "comment": "ALR-50 (WP-11, D474 §3.2): one sentence family per alert. `form` names which of the three forms a case is: `quota` gives `text` (long: alert-list line 1, widget card footer, lamp tooltip) and `short` (总览 alert block, menu line); `usedUp` (every surface, text = short); `unreadable` / `unreadableMany` (grey lines). Every form keeps the reset time when it is known; the name fades first, the time is never cut. The JS table (desktop/cockpit/study/rocket-r1/alert-sentence.js) and the Swift table (ModelPlanSettings/AlertSentence.swift) are both tested against these cases.",
  "cases": [
   {
+   "name": "D474 §3.2 used-up form (spec table)",
+   "form": "usedUp",
+   "input": {
+    "kind": "quota",
+    "subscription": {
+     "en": "Codex",
+     "zh": "Codex"
+    },
+    "window": {
+     "en": "5h",
+     "zh": "5小时"
+    },
+    "remaining": 0,
+    "runOutMinutes": null,
+    "resetMinutes": 198
+   },
+   "en": {
+    "text": "Codex 5h used up · resets in 3h18",
+    "short": "Codex 5h used up · resets in 3h18"
+   },
+   "zh": {
+    "text": "Codex 5小时 已用完 · 3h18 后重置",
+    "short": "Codex 5小时 已用完 · 3h18 后重置"
+   }
+  },
+  {
+   "name": "D474 §3.2 long and short forms (spec table)",
+   "form": "quota",
+   "input": {
+    "kind": "quota",
+    "subscription": {
+     "en": "Codex",
+     "zh": "Codex"
+    },
+    "window": {
+     "en": "Weekly",
+     "zh": "每周"
+    },
+    "remaining": 53,
+    "runOutMinutes": 3840,
+    "resetMinutes": 6600
+   },
+   "en": {
+    "text": "Codex Weekly 53% · est. out in 2d16h · resets in 4d14h",
+    "short": "Codex Weekly 53% · est. 2d16h · resets 4d14h"
+   },
+   "zh": {
+    "text": "Codex 每周 53% · 预估 2d16h 用完 · 4d14h 后重置",
+    "short": "Codex 每周 53% · 预估2d16h · 4d14h后重置"
+   }
+  },
+  {
    "name": "amber forecast with a known reset",
+   "form": "quota",
    "input": {
     "kind": "quota",
     "subscription": {
@@ -18,16 +71,17 @@
     "resetMinutes": 3480
    },
    "en": {
-    "text": "Claude Weekly 42% · out ~1d20h · resets in 2d10h",
-    "short": "Claude Weekly 42% · out ~1d20h"
+    "text": "Claude Weekly 42% · est. out in 1d20h · resets in 2d10h",
+    "short": "Claude Weekly 42% · est. 1d20h · resets 2d10h"
    },
    "zh": {
-    "text": "Claude 每周 42% · 约1d20h用完 · 2d10h 后重置",
-    "short": "Claude 每周 42% · 约1d20h用完"
+    "text": "Claude 每周 42% · 预估 1d20h 用完 · 2d10h 后重置",
+    "short": "Claude 每周 42% · 预估1d20h · 2d10h后重置"
    }
   },
   {
    "name": "forecast with an unknown reset (WP-03)",
+   "form": "quota",
    "input": {
     "kind": "quota",
     "subscription": {
@@ -43,16 +97,17 @@
     "resetMinutes": null
    },
    "en": {
-    "text": "Codex 5h 60% · out ~40m",
-    "short": "Codex 5h 60% · out ~40m"
+    "text": "Codex 5h 60% · est. out in 40m",
+    "short": "Codex 5h 60% · est. 40m"
    },
    "zh": {
-    "text": "Codex 5小时 60% · 约40m用完",
-    "short": "Codex 5小时 60% · 约40m用完"
+    "text": "Codex 5小时 60% · 预估 40m 用完",
+    "short": "Codex 5小时 60% · 预估40m"
    }
   },
   {
    "name": "at the red line",
+   "form": "quota",
    "input": {
     "kind": "quota",
     "subscription": {
@@ -69,15 +124,16 @@
    },
    "en": {
     "text": "Codex 5h 20% · resets in 3h30",
-    "short": "Codex 5h 20%"
+    "short": "Codex 5h 20% · resets 3h30"
    },
    "zh": {
     "text": "Codex 5小时 20% · 3h30 后重置",
-    "short": "Codex 5小时 20%"
+    "short": "Codex 5小时 20% · 3h30后重置"
    }
   },
   {
    "name": "at the red line and forecast to run out",
+   "form": "quota",
    "input": {
     "kind": "quota",
     "subscription": {
@@ -93,16 +149,17 @@
     "resetMinutes": 198
    },
    "en": {
-    "text": "Codex 5h 18% · out ~40m · resets in 3h18",
-    "short": "Codex 5h 18% · out ~40m"
+    "text": "Codex 5h 18% · est. out in 40m · resets in 3h18",
+    "short": "Codex 5h 18% · est. 40m · resets 3h18"
    },
    "zh": {
-    "text": "Codex 5小时 18% · 约40m用完 · 3h18 后重置",
-    "short": "Codex 5小时 18% · 约40m用完"
+    "text": "Codex 5小时 18% · 预估 40m 用完 · 3h18 后重置",
+    "short": "Codex 5小时 18% · 预估40m · 3h18后重置"
    }
   },
   {
    "name": "used up with a known reset",
+   "form": "usedUp",
    "input": {
     "kind": "quota",
     "subscription": {
@@ -119,15 +176,16 @@
    },
    "en": {
     "text": "Claude Weekly used up · resets in 2h05",
-    "short": "Claude Weekly used up"
+    "short": "Claude Weekly used up · resets in 2h05"
    },
    "zh": {
     "text": "Claude 每周 已用完 · 2h05 后重置",
-    "short": "Claude 每周 已用完"
+    "short": "Claude 每周 已用完 · 2h05 后重置"
    }
   },
   {
    "name": "used up ignores a stale forecast and an unknown reset",
+   "form": "usedUp",
    "input": {
     "kind": "quota",
     "subscription": {
@@ -153,6 +211,7 @@
   },
   {
    "name": "rounding: a whole percent, never 1h60, at least one minute",
+   "form": "quota",
    "input": {
     "kind": "quota",
     "subscription": {
@@ -168,16 +227,17 @@
     "resetMinutes": 119.7
    },
    "en": {
-    "text": "Codex 5h 42% · out ~1m · resets in 2h00",
-    "short": "Codex 5h 42% · out ~1m"
+    "text": "Codex 5h 42% · est. out in 1m · resets in 2h00",
+    "short": "Codex 5h 42% · est. 1m · resets 2h00"
    },
    "zh": {
-    "text": "Codex 5小时 42% · 约1m用完 · 2h00 后重置",
-    "short": "Codex 5小时 42% · 约1m用完"
+    "text": "Codex 5小时 42% · 预估 1m 用完 · 2h00 后重置",
+    "short": "Codex 5小时 42% · 预估1m · 2h00后重置"
    }
   },
   {
    "name": "whole days",
+   "form": "quota",
    "input": {
     "kind": "quota",
     "subscription": {
@@ -194,15 +254,16 @@
    },
    "en": {
     "text": "GLM Monthly 12% · resets in 5d3h",
-    "short": "GLM Monthly 12%"
+    "short": "GLM Monthly 12% · resets 5d3h"
    },
    "zh": {
     "text": "GLM 每月 12% · 5d3h 后重置",
-    "short": "GLM 每月 12%"
+    "short": "GLM 每月 12% · 5d3h后重置"
    }
   },
   {
    "name": "unreadable, not signed in",
+   "form": "unreadable",
    "input": {
     "kind": "unreadable",
     "subscription": {
@@ -221,7 +282,50 @@
    }
   },
   {
+   "name": "unreadable, Antigravity not running (G3-218)",
+   "form": "unreadable",
+   "input": {
+    "kind": "unreadable",
+    "subscription": {
+     "en": "Antigravity",
+     "zh": "Antigravity"
+    },
+    "cause": "runtime_missing",
+    "tool": "antigravity"
+   },
+   "en": {
+    "text": "Antigravity no reading · not running",
+    "short": "Antigravity no reading"
+   },
+   "zh": {
+    "text": "Antigravity 读不到 · 未运行",
+    "short": "Antigravity 读不到"
+   }
+  },
+  {
+   "name": "unreadable, runtime missing for another tool keeps not installed",
+   "form": "unreadable",
+   "input": {
+    "kind": "unreadable",
+    "subscription": {
+     "en": "Codex",
+     "zh": "Codex"
+    },
+    "cause": "runtime_missing",
+    "tool": "codex"
+   },
+   "en": {
+    "text": "Codex no reading · not installed",
+    "short": "Codex no reading"
+   },
+   "zh": {
+    "text": "Codex 读不到 · 未安装",
+    "short": "Codex 读不到"
+   }
+  },
+  {
    "name": "unreadable, sign-in expired",
+   "form": "unreadable",
    "input": {
     "kind": "unreadable",
     "subscription": {
@@ -241,6 +345,7 @@
   },
   {
    "name": "unreadable, Keychain",
+   "form": "unreadable",
    "input": {
     "kind": "unreadable",
     "subscription": {
@@ -260,6 +365,7 @@
   },
   {
    "name": "unreadable, permission",
+   "form": "unreadable",
    "input": {
     "kind": "unreadable",
     "subscription": {
@@ -279,6 +385,7 @@
   },
   {
    "name": "unreadable, not installed",
+   "form": "unreadable",
    "input": {
     "kind": "unreadable",
     "subscription": {
@@ -298,6 +405,7 @@
   },
   {
    "name": "unreadable, update needed",
+   "form": "unreadable",
    "input": {
     "kind": "unreadable",
     "subscription": {
@@ -317,6 +425,7 @@
   },
   {
    "name": "unreadable, network",
+   "form": "unreadable",
    "input": {
     "kind": "unreadable",
     "subscription": {
@@ -336,6 +445,7 @@
   },
   {
    "name": "unreadable, a cause with no short phrase",
+   "form": "unreadable",
    "input": {
     "kind": "unreadable",
     "subscription": {
@@ -355,6 +465,7 @@
   },
   {
    "name": "three or more unreadable merge into one line",
+   "form": "unreadableMany",
    "input": {
     "kind": "unreadableMany",
     "count": 3

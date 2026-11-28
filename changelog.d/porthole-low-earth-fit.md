@@ -1,0 +1,1 @@
+Cockpit porthole: re-baked night plates with a softened Earth glow (Codex bake, no-earth halos), the scene fitted to the owner's grey window (drop .15 to .064, 3 px right) and the expand key moved to match.

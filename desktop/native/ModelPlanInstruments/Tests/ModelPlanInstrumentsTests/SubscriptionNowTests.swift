@@ -46,7 +46,7 @@ final class SubscriptionNowTests:XCTestCase {
     }
     func testConfiguredThresholdReachesTheActualSubscriptionSnapshot() {
         let input = SubFixture.input(windows: [.init(id: "q", period: .fiveHours, remaining: 20)])
-        for (threshold, expected) in [(16.0, QuotaLevel.amber), (25.0, .critical)] {
+        for (threshold, expected) in [(16.0, QuotaLevel.healthy), (25.0, .critical)] { // D474 decision 2: no 50 % amber
             let snapshot = SubscriptionNowSnapshot(inputs: [input], scope: .subscription("a"), now: SubFixture.now,
                 language: .english, calendar: Fixtures.calendar(), redBelow: threshold)
             XCTAssertEqual(SubFixture.row(snapshot, "window.q").level, expected)

@@ -14,7 +14,7 @@ export interface BridgeSource { readonly origin:string; readonly isMainFrame:boo
 export interface Appearance { readonly theme:'day'|'night'; readonly locale:'en'|'zh-CN'; readonly reduceMotion:boolean; readonly reduceTransparency:boolean; readonly showProjectNames:boolean }
 export type LiveAppearance = Appearance;
 /** CKP-SHELL-50: `range` is the app's time range, sent with every shell (absent only from an older host: 7d). */
-export interface ShellState { readonly profile:'open'|'closed'; readonly attached:boolean; readonly forcedClosed:boolean; readonly tier:'tall'|'compact'; readonly scope:string; readonly range?:CockpitRange; readonly refreshing?:boolean }
+export interface ShellState { readonly profile:'open'|'closed'; readonly attached:boolean; readonly forcedClosed:boolean; readonly tier:'tall'; readonly scope:string; readonly range?:CockpitRange; readonly refreshing?:boolean }
 export type PageAction = 'chooseSetup'|'openSettings'|'openSettingsSubscriptions'|'openHistory'|'close'|'detach'|'putBack'|'shutterToggle'|'scopeSelect'|'rangeSelect'|'openField'|'openWebsite'|'refreshMember';
 export interface Header extends Context { readonly version:2; readonly pageId:string; readonly requestId:string; readonly sequence:string }
 export type HostMessage = Header & (
@@ -33,7 +33,13 @@ export type HostMessage = Header & (
   /** Plugin columns: a reading the host sampled for a running plugin. */
   {readonly type:'pluginData'; readonly id:string; readonly data:unknown} |
   /** Plugin columns: open this plugin's big screen (a native action such as the widget card's "Cockpit screen ›"). */
-  {readonly type:'pluginScreen'; readonly id:string});
+  {readonly type:'pluginScreen'; readonly id:string} |
+  /** D466 (#1289): the app's shared news clock, `newsUntil` per announcement (null = no longer news). */
+  {readonly type:'news'; readonly items:readonly NewsItem[]} |
+  /** D474 decision 3 (#1289): the subscription keys that have had a good reading on this Mac (seen-subscriptions.json). */
+  {readonly type:'seen'; readonly ids:readonly string[]});
+/** D466: one announcement's news clock as the host keeps it (`DockNewsClock`, key eventID#status). */
+export interface NewsItem {readonly id:string;readonly status:'announced'|'confirmed';readonly untilUnixMs:string|null}
 export interface CockpitView {
   /** G3-56: caution identities the host remembered as acknowledged; sent before `configure`. */
   restoreAcked?(ids:string[]):void;
@@ -60,6 +66,10 @@ export interface CockpitView {
   /** Host plugin state; false when it does not fit this page's registry rules. */
   plugins?(state:PluginState):boolean;
   pluginData?(id:string,data:unknown):boolean;
+  /** D466: the host's shared news clock answers. */
+  news?(items:readonly {readonly id:string;readonly status:'announced'|'confirmed';readonly until:number|null}[]):void;
+  /** D474 decision 3: the host's seen subscriptions; columns appear only for these or a good reading now. */
+  seen?(ids:readonly string[]):void;
   /** Opens an enabled plugin's big screen (CKP-PLG-53); false when it is not enabled or the page cannot show it. */
   openPluginScreen?(id:string):boolean;
   dispose():void;
@@ -107,7 +117,7 @@ function message(raw:string,quarantined?:(data:unknown)=>boolean,refused?:(data:
   const validScope=(v:unknown):boolean=>{if(typeof v!=='string')return false;if(v==='all'||/^[a-f0-9]{16}$/.test(v))return true;const parts=v.split('#');let last=parts.pop()??'';if(/^\d+$/.test(last)){if(!/^[1-9]\d*$/.test(last)||Number(last)>1024)return false;last=parts.pop()??'';}return identity(parts.join('#'))&&['saved_login_api','runtime_rpc','local_log','api_key_api','local_sqlite','status_line','browser_session','manual','unknown'].includes(last);};
   // D244: the saved member order is member keys only, at most 256, no repeats.
   const validOrder=(v:unknown):boolean=>Array.isArray(v)&&v.length>0&&v.length<=256&&v.every(k=>k!=='all'&&validScope(k))&&new Set(v).size===v.length;
-  const validShell=(v:unknown):boolean=>exact(v,['profile','attached','forcedClosed','tier','scope',...(record(v)&&Object.hasOwn(v,'range')?['range']:[]),...(record(v)&&Object.hasOwn(v,'refreshing')?['refreshing']:[])])&&(!record(v)||v.range===undefined||isCockpitRange(v.range))&&(!record(v)||v.refreshing===undefined||typeof v.refreshing==='boolean')&&['open','closed'].includes(v.profile as string)&&typeof v.attached==='boolean'&&typeof v.forcedClosed==='boolean'&&['tall','compact'].includes(v.tier as string)&&validScope(v.scope);
+  const validShell=(v:unknown):boolean=>exact(v,['profile','attached','forcedClosed','tier','scope',...(record(v)&&Object.hasOwn(v,'range')?['range']:[]),...(record(v)&&Object.hasOwn(v,'refreshing')?['refreshing']:[])])&&(!record(v)||v.range===undefined||isCockpitRange(v.range))&&(!record(v)||v.refreshing===undefined||typeof v.refreshing==='boolean')&&['open','closed'].includes(v.profile as string)&&typeof v.attached==='boolean'&&typeof v.forcedClosed==='boolean'&&v.tier==='tall'&&validScope(v.scope);
   switch(m.type) {
     case 'load': if(!keys(['appearance','shell'],['redBelow','showUsedPercent','showAllModels','ackedCautions','pinnedModels','memberOrder','hiddenMembers'])||(m.hiddenMembers!==undefined&&!validOrder(m.hiddenMembers))||(m.memberOrder!==undefined&&!validOrder(m.memberOrder))||(m.showUsedPercent!==undefined&&typeof m.showUsedPercent!=='boolean')||(m.showAllModels!==undefined&&typeof m.showAllModels!=='boolean')||!validAppearance(m.appearance)||!validShell(m.shell)||(m.ackedCautions!==undefined&&!validAcked(m.ackedCautions))||(m.pinnedModels!==undefined&&!validAcked(m.pinnedModels))) return no('load.keys'); break;
     case 'appearance': if(!keys(['theme','locale','reduceMotion','reduceTransparency','showProjectNames'],['redBelow','showUsedPercent','showAllModels','memberOrder','hiddenMembers'])||(m.hiddenMembers!==undefined&&!validOrder(m.hiddenMembers))||(m.memberOrder!==undefined&&!validOrder(m.memberOrder))||(m.showUsedPercent!==undefined&&typeof m.showUsedPercent!=='boolean')||(m.showAllModels!==undefined&&typeof m.showAllModels!=='boolean')||typeof m.showProjectNames!=='boolean'||!['day','night'].includes(m.theme as string)||!['en','zh-CN'].includes(m.locale as string)||typeof m.reduceMotion!=='boolean'||typeof m.reduceTransparency!=='boolean') return no('appearance.fields'); break;
@@ -122,6 +132,9 @@ function message(raw:string,quarantined?:(data:unknown)=>boolean,refused?:(data:
     case 'plugins': if(!keys(['plugins'])||!parsePluginState(m.plugins)) return no('plugins.fields'); break;
     case 'pluginData': if(!keys(['id','data'])||typeof m.id!=='string'||!PLUGIN_ID.test(m.id)) return no('pluginData.fields'); break;
     case 'pluginScreen': if(!keys(['id'])||typeof m.id!=='string'||!PLUGIN_ID.test(m.id)) return no('pluginScreen.fields'); break;
+    case 'news': if(!keys(['items'])||!Array.isArray(m.items)||m.items.length>64||!m.items.every(x=>exact(x,['id','status','untilUnixMs'])&&identity(x.id)&&(x.status==='announced'||x.status==='confirmed')&&(x.untilUnixMs===null||timestamp(x.untilUnixMs)))) return no('news.fields'); break;
+    // D474 decision 3: at most 64 member keys, no repeats (tests/shared/seen-subscriptions.json pins the contract).
+    case 'seen': if(!keys(['ids'])||!Array.isArray(m.ids)||m.ids.length>64||!m.ids.every(k=>k!=='all'&&validScope(k))||new Set(m.ids).size!==m.ids.length) return no('seen.fields'); break;
     default:return no('msg.type');
   }
   return m as unknown as HostMessage;
@@ -287,6 +300,18 @@ export class CockpitBridge {
         // Only for a host that negotiated plugins; presentation only, so a screen the page cannot open is refused, never an unload.
         if(!this.pluginsNegotiated||!this.view.openPluginScreen?.(m.id))return this.no('pluginScreen.refused');
         this.sequence=BigInt(m.sequence);return true;
+      case 'news':
+        // D466: a host that sends the shared news clock also takes the page's first looks (newsLook).
+        {const first=!this.newsNegotiated;this.newsNegotiated=true;this.view.news?.(m.items.map(x=>({id:x.id,status:x.status,until:x.untilUnixMs===null?null:Number(x.untilUnixMs)})));
+        // The looks made before this first answer: one newsLook each, with its own time, for those the host still reports
+        // live; then the deadline the replayed looks may have moved.
+        if(first&&this.pendingLooks.length){const now=this.clock(),live=new Set(m.items.filter(x=>x.untilUnixMs!==null&&Number(x.untilUnixMs)>now).map(x=>x.id+'\u0000'+x.status));
+          for(const p of this.pendingLooks)if(live.has(p.id+'\u0000'+p.status))this.emit('action',this.requestId(),{action:'newsLook',events:[{id:p.id,status:p.status,atUnixMs:String(p.at)}]});
+          this.deadlineChanged();}
+        this.pendingLooks=[];}
+        this.sequence=BigInt(m.sequence);this.reportDeadline(m.requestId);return true;
+      case 'seen':
+        this.view.seen?.(m.ids);this.sequence=BigInt(m.sequence);this.reportDeadline(m.requestId);return true;
       default:return this.no('recv.type');
     }
   }
@@ -345,11 +370,33 @@ export class CockpitBridge {
     if(action==='openHistory'?(!tool||!this.historyTools.has(tool)):tool!==undefined) return false;
     this.emit('action',this.requestId(),{action,...(tool?{tool}:{})});return true;
   }
+  /** D466: a look recorded outside a host message (paging, opening the alert list) changed the news deadline. */
+  deadlineChanged():void {if(this.context&&!this.ended)this.reportDeadline(this.requestId());}
+  private newsNegotiated=false;
+  private pendingLooks:{id:string;status:'announced'|'confirmed';at:number}[]=[];
+  /** D466: announcements first looked at in the cockpit (open with them drawn); the host records them in its shared news
+   *  clock (`recordNewsLook`). Posted only to a host that sent a `news` message. */
+  newsLook(events:readonly {readonly id:string;readonly status:'announced'|'confirmed'}[],at?:number):boolean {
+    if(events.length===0||events.length>64||!events.every(e=>identity(e.id)&&(e.status==='announced'||e.status==='confirmed')))return false;
+    // macrevb-1290-1 (late negotiation): a look made before the host sent `news` is kept, with its time, and replayed once
+    // the host's first answer still reports it live.
+    if(!this.newsNegotiated){
+      if(typeof at==='number'&&Number.isSafeInteger(at)&&at>0)for(const e of events)if(!this.pendingLooks.some(p=>p.id===e.id&&p.status===e.status)&&this.pendingLooks.length<64)this.pendingLooks.push({id:e.id,status:e.status,at});
+      return false;
+    }
+    if(!this.isVisible()||!this.context)return false;
+    this.emit('action',this.requestId(),{action:'newsLook',events:events.map(e=>({id:e.id,status:e.status}))});return true;
+  }
   private pluginsNegotiated=false;
   /** Plugin columns: a plugin edit made on the page (right-click Remove or the + menu). Posted only to a host that sent its plugin state. */
   pluginsEdit(state:PluginState):boolean {
     if(!this.pluginsNegotiated||!this.isActive()||!parsePluginState(state))return false;
     this.emit('action',this.requestId(),{action:'pluginsEdit',plugins:state});return true;
+  }
+  /** D376: right-click Remove on a plugin key; the host shows its confirmation and turns the plugin off (the page changes only when the host sends the new state). */
+  pluginClose(id:string):boolean {
+    if(!this.pluginsNegotiated||!this.isActive()||!PLUGIN_ID.test(id))return false;
+    this.emit('action',this.requestId(),{action:'pluginClose',id});return true;
   }
   /** Plugin columns: the plugins now running (open cockpit, column shown); the host samples exactly these. */
   pluginsRunning(ids:string[]):boolean {
@@ -359,6 +406,6 @@ export class CockpitBridge {
   unload():void {
     if(this.ended) return;
     this.view.clear();this.historyTools.clear();this.scopeMembers.clear();this.allScopeMembers.clear();this.hasDisplay=false;this.view.active(false);this.view.dispose();
-    this.pendingAck=null;this.context=null;this.shellState=null;this.loadRequestId=null;this.retiredEpochs.clear();this.retiredSessions.clear();this.ended=true;this.loaded=false;
+    this.pendingAck=null;this.pendingLooks=[];this.context=null;this.shellState=null;this.loadRequestId=null;this.retiredEpochs.clear();this.retiredSessions.clear();this.ended=true;this.loaded=false;
   }
 }

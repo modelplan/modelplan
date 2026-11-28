@@ -50,13 +50,13 @@ test('sampling 11-22: Overview refresh is disabled until the native read complet
  await expect(refresh).toBeEnabled();
 });
 
-test('WP-12 CKP-MFD-58 five alerts show at most four lines, the last one "+N ▸"',async({page})=>{
+test('WP-12 CKP-MFD-58 five alerts show at most two lines (one alert), the last one "+N ▸" (chart keeps 55%, see b6-overview-alert-cap)',async({page})=>{
  await open(page,resets(5));
- await expect(rows(page)).toHaveCount(4);
- await expect(rows(page).last()).toHaveClass(/\bal-more\b/);await expect(rows(page).last()).toHaveText('+2 ▸');
+ await expect(rows(page)).toHaveCount(2);
+ await expect(rows(page).last()).toHaveClass(/\bal-more\b/);await expect(rows(page).last()).toHaveText('+4 ▸');
 });
-test('WP-12 CKP-MFD-58 four alerts fit without "+N"',async({page})=>{
- await open(page,resets(4));await expect(rows(page)).toHaveCount(4);await expect(page.locator('.pg-overview .al-more')).toHaveCount(0);
+test('WP-12 CKP-MFD-58 two alerts fit without "+N"',async({page})=>{
+ await open(page,resets(2));await expect(rows(page)).toHaveCount(2);await expect(page.locator('.pg-overview .al-more')).toHaveCount(0);
 });
 
 test('WP-12 CKP-MFD-59 a record shorter than the range says "since" on the totals row',async({page})=>{
@@ -123,19 +123,6 @@ test('WP-12 CKP-MFD-60 wire cost draws one bar per day, the ≈cost total and th
  await expect(page.locator('.pg-overview .ov-note')).toContainText('has no public price');
 });
 
-test('sampling 11-22: compact overview keeps both chart axis labels above its footer',async({page})=>{
- const data=priced();data.details.resetEvents=resets(1).details.resetEvents;
- await open(page,data,'en','compact');
- const fill=page.locator('.pg-overview .mfd-fill'),labels=page.locator('.pg-overview .ov-chart .ov-ax');
- await expect(labels).toHaveCount(2);
- const bounds=await fill.boundingBox(),footer=await page.locator('.pg-overview .ov-foot').boundingBox();
- const boxes=await labels.evaluateAll(list=>list.map(e=>e.getBoundingClientRect().toJSON()));
- for(const box of boxes){
-  expect(box.top,'axis top').toBeGreaterThanOrEqual(bounds.y-0.5);
-  expect(box.bottom,'axis bottom').toBeLessThanOrEqual(Math.min(bounds.y+bounds.height,footer.y)+0.5);
- }
-});
-
 test('sampling 11-22: a full-height overview keeps the chart at its original height',async({page})=>{
  await open(page,priced(),'en','tall');
  const chart=page.locator('.pg-overview .ov-chart');
@@ -144,18 +131,13 @@ test('sampling 11-22: a full-height overview keeps the chart at its original hei
  expect(h).toBeCloseTo(110,0);
 });
 
-// macrevc-1057-2: the alert budget follows the measured screen, tall and compact, and a change of size.
-test('macrevc-1057-2 the compact screen shows one alert plus "+N ▸"; the tall one four lines; a size change redraws',async({page})=>{
- const {send,receive}=await open(page,resets(5),'en','compact');
- await expect(rows(page)).toHaveCount(2);await expect(rows(page).last()).toHaveClass(/\bal-more\b/);await expect(rows(page).last()).toHaveText('+4 ▸');
- await expect(rows(page)).toHaveCount(2);
-});
+// macrevc-1057-2: the alert budget follows the measured screen and a change of size (D444: one layout).
 test('macrevc-1057-2 a change of the screen size redraws the alert budget',async({page})=>{
  await open(page,resets(5));
- await expect(rows(page)).toHaveCount(4);
- const full=await page.locator('.pg-overview').evaluate(e=>e.clientHeight);
- await page.evaluate(h=>{const e=document.querySelector('.mfd-screen');e.style.setProperty('max-height',h+'px','important');e.style.setProperty('height',h+'px','important');},Math.round(full/2));
  await expect(rows(page)).toHaveCount(2);
+ const full=await page.locator('.pg-overview').evaluate(e=>e.clientHeight);
+ await page.evaluate(h=>{const e=document.querySelector('.mfd-screen');e.style.setProperty('max-height',h+'px','important');e.style.setProperty('height',h+'px','important');},Math.round(full*1.6));
+ await expect(rows(page)).toHaveCount(3);
 });
 
 // macrevc-1057-3: retained readings are not "cannot be read"; three truly unreadable ones merge.
@@ -169,7 +151,8 @@ function quiet(kind){
 }
 test('macrevc-1057-3 three retained readings keep their own lines; three unreadable ones merge',async({page})=>{
  await open(page,quiet('retained'));
- await expect(rows(page)).toHaveCount(3);await expect(page.locator('.pg-overview .mfd-alerts')).not.toContainText('not read');
+ // The budget is two lines here (the chart keeps 55%): the tightest retained reading, then "+2 ▸" for the others.
+ await expect(rows(page)).toHaveCount(2);await expect(rows(page).last()).toHaveText('+2 ▸');await expect(page.locator('.pg-overview .mfd-alerts')).not.toContainText('not read');
  await open(page,quiet('unreadable'));
  await expect(rows(page)).toHaveCount(1);await expect(rows(page).first()).toContainText('3 subscriptions not read');
 });

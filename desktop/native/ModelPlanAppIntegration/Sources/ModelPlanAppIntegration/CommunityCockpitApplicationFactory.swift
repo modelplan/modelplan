@@ -29,6 +29,8 @@ import ModelPlanResources
     /// the editions and runs check-bundle-pins.py, which writes CockpitBundlePins.generated.swift from those exact
     /// bytes. Without that file the App has no pins and admits no cockpit page.
     public static let manifestPins = CockpitBuildPins.manifest
+    /// The widget's "Turn Off <plugin>…" confirmation, answered without the modal alert (true = Turn Off).
+    static var verificationClosePresenter: ((CockpitPluginClosePrompt) -> Bool)?
     #if MODELPLAN_TEST_ONLY_SPI
     public static var verificationPage: ((CockpitWindowController) -> Void)?
     static var verificationPageFactory: EngineCockpitCoordinator.PageFactory?
@@ -161,6 +163,13 @@ import ModelPlanResources
             let bridge = await CockpitPluginBridge.load(directory: directory, coordinator: owner?.coordinator)
             bridge.showCockpit = { [weak application] in application?.showConsole() }
             guard let application else { return }
+            // D376: the cockpit key's right-click Remove asks through the same closer (same NSAlert) as the widget ring, for every
+            // plugin and whether or not resource sampling is installed. The widget ring's "Turn Off <plugin>…" below uses it too.
+            let closer = CockpitPluginCloser(model: bridge.model, language: { [weak application] in
+                application?.composition.latestSettings?.snapshot.preferences.language ?? .fallback
+            })
+            if let presenter = verificationClosePresenter { closer.presenter = presenter }
+            bridge.closer = closer
             application.cockpitPlugins = bridge
             // D371 B4e: a subscription card's footer row ("在驾驶舱查看 <name> ›") opens the cockpit on that subscription:
             // select its scope, then show the cockpit (an already open one only switches).
@@ -191,11 +200,6 @@ import ModelPlanResources
                     guard let id = ResourceDockBridge.pluginID(dockID: dockID) else { application?.showConsole(); return }
                     bridge?.openScreen(id)
                 }
-                // D376: a plugin ring's (and its card's) right-click "Turn Off <plugin>…" asks first, then applies the same
-                // setEnabled(id, false) edit as the Settings switch; the bridge publishes it to the page and the sampler.
-                let closer = CockpitPluginCloser(model: bridge.model, language: { [weak application] in
-                    application?.composition.latestSettings?.snapshot.preferences.language ?? .fallback
-                })
                 dock.pluginCloseTitle = { dockID in ResourceDockBridge.pluginID(dockID: dockID).flatMap { closer.prompt($0)?.menuTitle } }
                 dock.pluginCloseRequested = { dockID in
                     guard let id = ResourceDockBridge.pluginID(dockID: dockID) else { return }
@@ -204,7 +208,7 @@ import ModelPlanResources
                 dock.widgetShownChanged = { [weak host] shown in host?.setWidgetShown(shown) }
                 // macrevb-1096-3: the expanded widget, not the ordered-in auto-hide sliver.
                 host.setWidgetShown(dock.isWidgetShown)
-                application.settingsHost.cockpitPlugins = bridge.model
+                application.settingsHost.attachCockpitPlugins(bridge)
                 application.resourcePlugin = host; application.cockpitPluginModel = bridge.model
             }
             application.cockpitPluginsReady?(bridge)
@@ -360,6 +364,7 @@ enum CockpitBuildPins: CockpitBuildPinSource {}
             shellSession:shell,anchor:{ [weak self] in self?.anchor?() },
             statusScreen:{ [weak self] in self?.statusScreen?() },openPoint:{ [weak self] in self?.openPoint?() },
             systemSignals:systemSignals?())
+        page.keepClearedPageAfterClose = coordinator?.prewarmEnabled == true
         page.ignitionFrame = { [weak self] in self?.ignitionFrame?() }
         page.widgetFrame = { [weak self] in self?.widgetFrame?() }
         // Spec item 4: a detached cockpit gives the app its Dock icon and Cmd-Tab entry, through the one presence.
@@ -624,7 +629,7 @@ struct CockpitConsoleTimer { let cancel: () -> Void }
         case .openWebsite(let link):owner.openWebsite(link.url)
         case .refreshMember(let key):owner.refreshMember?(key)
         case .close:owner.coordinator?.requestClose()
-        case .detach,.putBack,.shutterToggle,.scopeSelect,.rangeSelect,.cautionAck,.pinnedModels,.pluginsRunning,.pluginsEdit:
+        case .detach,.putBack,.shutterToggle,.scopeSelect,.rangeSelect,.cautionAck,.pinnedModels,.pluginsRunning,.pluginsEdit,.pluginClose:
             // The page owns shell controls; the coordinator validates and
             // consumes scope selection. An unexpected escape fails closed.
             hide()

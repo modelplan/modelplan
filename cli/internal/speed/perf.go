@@ -147,7 +147,11 @@ func LoadPerf(cache string) (PerfLedger, bool) {
 	}
 	return l, ok
 }
-func loadPerf(cache string) (l PerfLedger, ok bool) {
+func loadPerf(cache string) (l PerfLedger, ok bool) { return loadPerfUpTo(cache, maxFile) }
+
+// loadPerfUpTo reads perf.json up to limit bytes. Readers use maxFile; the writer uses recoverMax, so a file that grew past the
+// reader limit is read whole and shrunk by the next write instead of staying unreadable for good.
+func loadPerfUpTo(cache string, limit int) (l PerfLedger, ok bool) {
 	b, err := os.ReadFile(PerfPath(cache))
 	if errors.Is(err, os.ErrNotExist) {
 		return PerfLedger{SchemaVersion: 1}, true
@@ -156,7 +160,7 @@ func loadPerf(cache string) (l PerfLedger, ok bool) {
 		idlework.Open()
 		idlework.Read(len(b))
 	}
-	if err != nil || len(b) > maxFile {
+	if err != nil || len(b) > limit {
 		return PerfLedger{}, false
 	}
 	idlework.Decode()
@@ -178,9 +182,13 @@ func observePerf(cache string, now time.Time, in Ingest, f func(*PerfLedger) boo
 		return nil
 	}
 	defer unlock()
-	l, ok := loadPerf(cache)
+	l, ok := loadPerfUpTo(cache, recoverMax)
 	if !ok {
 		return nil // not ours to overwrite
+	}
+	oversize := false
+	if fi, err := os.Stat(PerfPath(cache)); err == nil && fi.Size() > maxFile {
+		oversize = true // written by an older build or grown past the limit: the next write shrinks it
 	}
 	created := l.Since.IsZero()
 	if created {
@@ -203,11 +211,14 @@ func observePerf(cache string, now time.Time, in Ingest, f func(*PerfLedger) boo
 			l.Live[i].ProjectLabel, changed = "", true
 		}
 	}
-	if !f(&l) && !created && !changed {
+	if !f(&l) && !created && !changed && !oversize {
 		return nil
 	}
 	roll := rollup(l.Rows, "") // before pruning, so days perf.json lets go are kept in daily-long.json
 	b := l.prune(now)
+	if b == nil {
+		return nil // nothing fits under the load limit: keep the old file rather than write one the loader would refuse
+	}
 	if err := write(PerfPath(cache), b); err != nil {
 		return err
 	}
@@ -402,8 +413,8 @@ func (l *PerfLedger) row(d, source, parser string, c config) *PerfRow {
 	return &l.Rows[len(l.Rows)-1]
 }
 
-// prune keeps PerfKeep, at most maxRows rows and maxFile bytes (dropping the oldest days first),
-// and returns the file's content.
+// prune keeps PerfKeep, at most maxRows rows and under writeLimit bytes (dropping the oldest days first),
+// and returns the file's content, or nil when it cannot get under maxFile.
 func (l *PerfLedger) prune(now time.Time) []byte {
 	l.pruneLive(now)
 	l.pruneHourly(now)
@@ -460,16 +471,46 @@ func (l *PerfLedger) prune(now time.Time) []byte {
 			delete(l.Stores, k)
 		}
 	}
+	// The encoded file is under writeLimit (maxFile minus a margin) whenever it can be, and never at or above maxFile (nil is
+	// returned instead, and the caller keeps the old file), so the loader never refuses what this writes.
+	// Shed order: whole oldest hourly days, the oldest rows and sessions, the hourly rows that are left (a derived view), then
+	// counted requests. Cursors are not shed, see below.
 	for {
 		b, _ := json.Marshal(l)
-		if len(b) < maxFile || (len(l.Rows) == 0 && len(l.Sessions) == 0) {
+		if len(b) < writeLimit {
 			return append(b, '\n')
 		}
-		l.Rows = l.Rows[len(l.Rows)/10:]
-		l.Sessions = l.Sessions[len(l.Sessions)/10:]
-		if len(l.Rows) < 10 && len(l.Sessions) < 10 {
-			l.Rows, l.Sessions = nil, nil
+		if h, ok := dropOldestHourlyDay(l.Hourly, now); ok {
+			l.Hourly = h
+			continue
 		}
+		if len(l.Rows) > 0 || len(l.Sessions) > 0 {
+			l.Rows = l.Rows[len(l.Rows)/10:]
+			l.Sessions = l.Sessions[len(l.Sessions)/10:]
+			if len(l.Rows) < 10 && len(l.Sessions) < 10 {
+				l.Rows, l.Sessions = nil, nil
+			}
+			continue
+		}
+		if len(l.Hourly) > 0 { // hourly is a derived view, so it can go down to none
+			i := 1
+			for i < len(l.Hourly) && l.Hourly[i].Hour == l.Hourly[0].Hour {
+				i++
+			}
+			l.Hourly = l.Hourly[i:]
+			continue
+		}
+		if len(l.Counted) > 0 {
+			l.Counted = l.Counted[len(l.Counted)/10+1:]
+			continue
+		}
+		// Cursors are never shed here: a cursor whose log can still be read again vouches for rows already counted, and losing it
+		// would count that log twice. (The day pruning above already drops cursors older than every retained row.) Over writeLimit
+		// but under maxFile the file is still written; at or over maxFile prune returns nil and the caller keeps the old file.
+		if len(b) >= maxFile {
+			return nil
+		}
+		return append(b, '\n')
 	}
 }
 

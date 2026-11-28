@@ -44,14 +44,14 @@ test('native scope load and shell updates do not emit selection actions',async({
  expect(await page.evaluate(()=>window.__messages.filter(m=>m.type==='action'))).toEqual([]);
 });
 
-test('native compact forced closure and later tall layout preserve action gates',async({page})=>{
+test('native forced closure and a later open shell preserve action gates (D444: one layout throughout)',async({page})=>{
  await page.addInitScript(()=>{window.__messages=[];window.webkit={messageHandlers:{cockpit:{postMessage(raw){window.__messages.push(JSON.parse(raw));}}}};});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
- const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw),closed={...shell,profile:'closed',forcedClosed:true,tier:'compact'};
+ const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw),closed={...shell,profile:'closed',forcedClosed:true,tier:'tall'};
  expect(await receive(send('load',{appearance,shell:closed,redBelow:25}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('display',{data:currentSample()}))).toBe(true);
- await expect(page.locator('#cockpit')).toHaveAttribute('data-layout','640');await expect(page.locator('#cockpit')).toHaveAttribute('data-shell','closed');
+ await expect(page.locator('#cockpit')).toHaveAttribute('data-layout','890');await expect(page.locator('#cockpit')).toHaveAttribute('data-shell','closed');
  await expect(page.locator('[data-shutter]')).toBeDisabled();await expect(page.locator('#s6-closed-reason')).toContainText('Not enough window height');
  expect(await receive(send('shell',{...shell,tier:'tall'}))).toBe(true);
  await expect(page.locator('#cockpit')).toHaveAttribute('data-layout','890');await expect(page.locator('#cockpit')).toHaveAttribute('data-shell','open');

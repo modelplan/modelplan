@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: MIT
 // ALR-50 (WP-11, V1-FINAL §0, §8.1, §11): the one sentence an alert has. The ALERT tooltip, the column wash, the
 // overview line, the alert list, the menu line and the widget-card footer all show this sentence and no other wording:
-// "Claude 每周 42% · 约1d20h用完", plus "· 2d10h 后重置" when the reset is known and fits (`text`; `short` without it).
+// D474 §3.2, three forms, each keeping the reset time when it is known:
+//   long (`text`)  "Codex 每周 53% · 预估 2d16h 用完 · 4d14h 后重置"  alert-list line 1, widget card footer, lamp tooltip
+//   short          "Codex 每周 53% · 预估2d16h · 4d14h后重置"          总览 alert block, menu line (single line, 85 % zoom)
+//   usedUp         "Codex 5小时 已用完 · 3h18 后重置"                   every surface (DOCK-3.3-13); text and short agree
+// If a form does not fit, the subscription name fades first (CSS); the time is never cut.
 // The words are in strings/common.js (alert.*). The native table (ModelPlanSettings AlertSentence.swift) builds the same
 // words; tests/shared/alert-sentences.json holds both to the same cases. Pure: no clock, no current-language state.
 import {tables} from './i18n.js';
@@ -38,21 +42,32 @@ const CAUSES = {
   network: 'causeNetwork', timeout: 'causeNetwork', http_5xx: 'causeNetwork', http_429: 'causeNetwork', http_403: 'causeNetwork',
 };
 const NOT_UNREADABLE = new Set(['ok', 'estimated', 'not_read_yet', 'reader_busy', 'usage_not_reported', 'no_usage_windows', 'stale_reading', 'catalogue_off', 'readers_off', 'no_dock_rows', 'not_admitted', 'cleanup_pending']);
-export function unreadableCause(code) { return Object.hasOwn(CAUSES, code) ? both(CAUSES[code]) : null; }
+// G3-218: Antigravity's reader reads the running app (no install step, no Node.js), so its runtime_missing means the
+// app is not running. The tool id comes from the producer row; other tools keep the shared phrase.
+const TOOL_CAUSES = {antigravity: {runtime_missing: 'causeNotRunning'}};
+export function unreadableCause(code, tool = null) {
+  const id = typeof tool === 'string' ? tool.toLowerCase() : '';  // Swift lowercases the tool id the same way
+  const own = id && Object.hasOwn(TOOL_CAUSES, id) && Object.hasOwn(TOOL_CAUSES[id], code) ? TOOL_CAUSES[id][code] : null;
+  return own ? both(own) : Object.hasOwn(CAUSES, code) ? both(CAUSES[code]) : null;
+}
 /** A failure that means the subscription cannot be read (grey), not one still being read or with nothing to read. */
 export const isUnreadable = code => !!code && !NOT_UNREADABLE.has(code);
 
 export function alertSentence(input) {
-  if (input.kind === 'unreadableMany') { const s = both('unreadMany', () => ({n: String(input.count)})); return {text: s, short: s}; }
+  if (input.kind === 'unreadableMany') { const s = both('unreadMany', () => ({n: String(input.count)})); return {form: 'unreadableMany', text: s, short: s}; }
   if (input.kind === 'unreadable') {
-    const head = both('unread', lang => ({s: name(input.subscription, lang)})), cause = input.cause === null ? null : unreadableCause(input.cause);
-    return {text: join(head, cause), short: head};
+    const head = both('unread', lang => ({s: name(input.subscription, lang)})), cause = input.cause === null ? null : unreadableCause(input.cause, input.tool ?? null);
+    return {form: 'unreadable', text: join(head, cause), short: head};
   }
   const usedUp = input.remaining <= 0, who = lang => ({s: name(input.subscription, lang), w: name(input.window, lang), r: String(Math.round(input.remaining))});
   const head = both(usedUp ? 'usedUp' : 'quota', who);
-  const out = !usedUp && input.runOutMinutes !== null && Number.isFinite(input.runOutMinutes) ? both('out', () => ({t: alertDuration(input.runOutMinutes)})) : null;
-  const reset = input.resetMinutes !== null && Number.isFinite(input.resetMinutes) && input.resetMinutes > 0 ? both('resets', () => ({t: alertDuration(input.resetMinutes)})) : null;
-  return {text: join(head, out, reset), short: join(head, out)};
+  const hasOut = !usedUp && input.runOutMinutes != null && Number.isFinite(input.runOutMinutes);
+  const hasReset = input.resetMinutes != null && Number.isFinite(input.resetMinutes) && input.resetMinutes > 0;
+  const part = (key, m) => both(key, () => ({t: alertDuration(m)}));
+  if (usedUp) { const s = join(head, hasReset ? part('resets', input.resetMinutes) : null); return {form: 'usedUp', text: s, short: s}; }
+  return {form: 'quota',
+    text: join(head, hasOut ? part('out', input.runOutMinutes) : null, hasReset ? part('resets', input.resetMinutes) : null),
+    short: join(head, hasOut ? part('outShort', input.runOutMinutes) : null, hasReset ? part('resetsShort', input.resetMinutes) : null)};
 }
 /** The alert list's second line. */
 export const openSettingsAction = () => both('openSettings');
