@@ -104,3 +104,37 @@ test('decision 3: with the host seen set a never-read subscription has no column
  await expect(page.locator('.eng-cols > .ec[data-col]')).toHaveCount(3);
  await expect(cell(page,2,'first').locator('.qvalue')).toHaveText('--');
 });
+
+// macrevb-1290-6, through the page bridge: seen state, a privacy clear (`clear`), then the same member unread in the next
+// display before any fresh seen state: no column. Fresh seen state then brings it back.
+test('macrevb-1290-6 a privacy clear drops the seen set before the next display',async({page})=>{
+ const {data,account,sync}=fixture(3);
+ Object.assign(account(2),{valueState:'none',observedAt:null,windows:[],lastFailure:{at:iso(-1),code:'not_signed_in'}});sync();
+ const all=[0,1,2].map(i=>account(i).subscriptionRef);
+ const {send,receive}=await open(page,data,'en',[['seen',{ids:all}]]);
+ await expect(page.locator('.eng-cols > .ec[data-col]')).toHaveCount(3);
+ expect(await receive(send('clear',{viewRevision:'4'}))).toBe(true);
+ expect(await receive(send('display',{viewRevision:'4',data}))).toBe(true);
+ await expect(page.locator('.eng-cols > .ec[data-col]')).toHaveCount(2);
+ expect(await receive(send('seen',{viewRevision:'4',ids:all}))).toBe(true);
+ await expect(page.locator('.eng-cols > .ec[data-col]')).toHaveCount(3);
+});
+
+// macrevb-1290-7, through the page: a confirmed direct reset stays news while the weekly cycle began before the
+// confirmation (four minutes earlier); once the reading shows a cycle that began after it, the key dot and the list row
+// retire together.
+test('macrevb-1290-7 a direct reset retires only when the window restarted after the confirmation',async({page})=>{
+ const {data,account,sync}=fixture(2);
+ const row=data.projection.rows[0],week=account(0).windows[1];
+ const confirmedAt=NOW-10*60000,cycle=start=>{Object.assign(week,{durationSeconds:604800,resetsAt:new Date(start+7*864e5).toISOString()});sync();};
+ data.details.resetEvents=[{version:1,id:'direct-1127',provider:'openai',rowId:row.id,kind:'direct_reset',status:'confirmed',publishedAt:new Date(confirmedAt-36e5).toISOString(),confirmedAt:new Date(confirmedAt).toISOString(),expiresAt:iso(7*1440),source:{kind:'publication',publicationId:'0123456789abcdef01234567'}}];
+ cycle(confirmedAt-4*60000);
+ const {send,receive}=await open(page,data,'en');
+ const dot=page.locator('.eng-keys .ek[data-sub]').first().locator('.ek-news');
+ await expect(dot).toHaveCount(1);
+ await expect(page.locator('.pg-overview .mfd-alerts li.al-blue')).toHaveCount(1);
+ cycle(confirmedAt+60000);
+ expect(await receive(send('display',{data}))).toBe(true);
+ await expect(dot).toHaveCount(0);
+ await expect(page.locator('.pg-overview .mfd-alerts li.al-blue')).toHaveCount(0);
+});

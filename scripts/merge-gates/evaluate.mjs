@@ -12,7 +12,8 @@ import { readFileSync, appendFileSync } from "node:fs";
 import { client } from "./github.mjs";
 import * as G from "./git.mjs";
 import { HOSTED_WORKFLOWS } from "./hosted.mjs";
-import { CONTEXT, FAILURE, dataSyncRunId, parseFallbackUntil, parseGlmTiers, cancelledRunSuperseded, description, evaluateGroup, evaluatePr, queueRunScope, feed, isTrain, parseDesignConf, supersededPrs, TIER_TABLE, tiersFrom, trainMembers } from "./rules.mjs";
+import { ABSENT_TITLE, MAP_PATH, RECORD_TITLE, parseMap } from "./gui-map.mjs";
+import { CONTEXT, PR_GUI_TITLE, prGuiRunScope, DESKTOP_WORKFLOW, FAILURE, dataSyncRunId, parseFallbackUntil, parseGlmTiers, cancelledRunSuperseded, description, evaluateGroup, evaluatePr, queueRunScope, feed, isTrain, parseDesignConf, supersededPrs, TIER_TABLE, tiersFrom, trainMembers } from "./rules.mjs";
 
 const env = process.env;
 const argv = process.argv.slice(2);
@@ -108,6 +109,36 @@ async function readJobs(runs) {
   }));
 }
 
+// D481: main's GUI test map (merge-gates.yml checks out desktop/native/tools/ci) plus the head's map: the same union the
+// PR GUI leg selects with, so its hashed records compare (rules.mjs prGuiState). An unreadable or invalid map throws:
+// the evaluation fails and posts nothing, so the gate never passes without it. A head without the map (404) adds nothing.
+let mainGuiMap = null;
+async function guiMaps(pr, files) {
+  mainGuiMap ??= parseMap(readFileSync(new URL(`../../${MAP_PATH}`, import.meta.url), "utf8"), `main:${MAP_PATH}`);
+  let blob;
+  try { blob = await gh.get(`/contents/${MAP_PATH}?ref=${pr.head.sha}`); }
+  catch (e) { if (/HTTP 404/.test(String(e))) return [mainGuiMap]; throw e; }
+  return [mainGuiMap, parseMap(Buffer.from(blob.content ?? "", "base64").toString("utf8"), `${pr.head.sha.slice(0, 8)}:${MAP_PATH}`)];
+}
+
+// D481: the jobs of the newest PR GUI run bound to this head (rules.mjs prGuiState needs them to see that its GUI leg ran)
+// and the class set its gui-scope job recorded (a notice annotation titled RECORD_TITLE; check-run id = job id). An
+// unreadable list or record leaves it unset, which never passes.
+async function readPrGuiJobs(pr, runs) {
+  const r = runs.filter(prGuiRunScope(pr)).sort((a, b) => b.id - a.id)[0];
+  if (!r || r.status !== "completed" || r.conclusion !== "success") return;
+  try {
+    r.jobs = await gh.all(`/actions/runs/${r.id}/jobs?filter=latest`, "jobs", 500);
+    const scope = r.jobs.find((j) => j.name === "gui-scope" && j.conclusion === "success");
+    if (!scope) return;
+    const all = await gh.all(`/check-runs/${scope.id}/annotations`, null, 100);
+    const one = (title) => { const n = all.filter((a) => a.title === title && a.annotation_level === "notice"); return n.length === 1 ? n[0].message : undefined; };
+    r.guiRecord = one(RECORD_TITLE);
+    r.guiAbsent = one(ABSENT_TITLE);
+    log({ run: r.id, guiRecord: String(r.guiRecord).slice(0, 200), guiAbsent: String(r.guiAbsent).slice(0, 200) });
+  } catch (e) { log({ run: r.id, jobs: `unreadable: ${String(e).slice(0, 120)}` }); }
+}
+
 async function prResult(number) {
   const pr = await gh.get(`/pulls/${number}`);
   const head = pr.head.sha;
@@ -120,11 +151,13 @@ async function prResult(number) {
     readTrainMembers(pr),
   ]);
   await readJobs(runs.filter((r) => !(r.status === "completed" && ["success", "skipped", "neutral"].includes(r.conclusion))));
+  await readPrGuiJobs(pr, runs);
+  const maps = await guiMaps(pr, files);
   // REVIEW_GLM_TIERS (repository variable, default empty): the tiers the (ghglm) workflow lane may decide.
   // GLM-out fallback window (repository variable GLM_FALLBACK_UNTIL, the GLM reset time); unset = closed.
   const now = Date.now();
   const glmFallbackUntil = parseFallbackUntil(env.GLM_FALLBACK_UNTIL || "", now);
-  const result = evaluatePr({ pr, items: feed(comments, reviews), files, runs, statuses: combined.statuses ?? [], verifiedEdge, proveMainMerges, conf, members, tiers, sync: await readDataSync(pr), glmFallbackUntil, now, glmTiers: parseGlmTiers(env.REVIEW_GLM_TIERS) });
+  const result = evaluatePr({ pr, items: feed(comments, reviews), files, runs, statuses: combined.statuses ?? [], verifiedEdge, proveMainMerges, conf, members, tiers, sync: await readDataSync(pr), glmFallbackUntil, now, glmTiers: parseGlmTiers(env.REVIEW_GLM_TIERS), guiMaps: maps });
   return { pr, result };
 }
 
@@ -189,6 +222,14 @@ async function fromRun(wr) {
   if (wr.event === "merge_group") {
     if (!String(wr.head_branch).startsWith("gh-readonly-queue/main/")) return log({ skipped: `queue branch ${wr.head_branch}` });
     return evaluateGroupAndPost(wr.head_sha);
+  }
+  // D481: a PR GUI run (desktop dispatch titled "desktop PR GUI #<n> @ <sha>") re-evaluates the PR its title names; the
+  // rules re-check that the run is bound to that PR's current head.
+  if (wr.event === "workflow_dispatch") {
+    const m = PR_GUI_TITLE.exec(wr.display_title ?? "");
+    if (!m || String(wr.path ?? "").split("@")[0] !== DESKTOP_WORKFLOW || wr.head_repository?.full_name !== repo || m[2] !== wr.head_sha)
+      return log({ skipped: `dispatch run ${wr.id} is not a PR GUI run` });
+    return evaluatePrAndPost(Number(m[1]));
   }
   if (wr.event !== "pull_request" && wr.event !== "pull_request_review") return log({ skipped: `run event ${wr.event}` });
   let numbers = (wr.pull_requests ?? []).map((p) => p.number);

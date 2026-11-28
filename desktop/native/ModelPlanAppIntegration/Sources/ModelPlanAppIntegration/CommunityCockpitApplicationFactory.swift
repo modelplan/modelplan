@@ -29,6 +29,8 @@ import ModelPlanResources
     /// the editions and runs check-bundle-pins.py, which writes CockpitBundlePins.generated.swift from those exact
     /// bytes. Without that file the App has no pins and admits no cockpit page.
     public static let manifestPins = CockpitBuildPins.manifest
+    /// The widget's "Turn Off <plugin>…" confirmation, answered without the modal alert (true = Turn Off).
+    static var verificationClosePresenter: ((CockpitPluginClosePrompt) -> Bool)?
     #if MODELPLAN_TEST_ONLY_SPI
     public static var verificationPage: ((CockpitWindowController) -> Void)?
     static var verificationPageFactory: EngineCockpitCoordinator.PageFactory?
@@ -174,6 +176,7 @@ import ModelPlanResources
             let closer = CockpitPluginCloser(model: bridge.model, language: { [weak application] in
                 application?.composition.latestSettings?.snapshot.preferences.language ?? .fallback
             })
+            if let presenter = verificationClosePresenter { closer.presenter = presenter }
             bridge.closer = closer
             application.cockpitPlugins = bridge
             // D371 B4e: a subscription card's footer row ("在驾驶舱查看 <name> ›") opens the cockpit on that subscription:
@@ -213,7 +216,7 @@ import ModelPlanResources
                 dock.widgetShownChanged = { [weak host] shown in host?.setWidgetShown(shown) }
                 // macrevb-1096-3: the expanded widget, not the ordered-in auto-hide sliver.
                 host.setWidgetShown(dock.isWidgetShown)
-                application.settingsHost.cockpitPlugins = bridge.model
+                application.settingsHost.attachCockpitPlugins(bridge)
                 application.resourcePlugin = host; application.cockpitPluginModel = bridge.model
             }
             application.cockpitPluginsReady?(bridge)
