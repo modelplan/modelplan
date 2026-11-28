@@ -70,15 +70,15 @@ test('macrevb-1052-1 an unaliased long name and "1000B 100%" are bounded on the 
  for(const line of cardText(u.card))assert.ok(chars(line)<=CARD_LINE,`"${line}"`);
 });
 
-test('macrevb-1052-2 the lamp reads the full verified session set; an unbound running session borrows no subscription colour',()=>{
+test('macrevb-1052-2 the lamp reads the full verified session set; a running session lights the lamp whatever its subscription (teal, D467)',()=>{
  setLanguage('en');
  const idle=n=>Array.from({length:n},()=>({sub:'a',active:false}));
  const seven=channel(fader({sessions:idle(6),lamps:[...idle(6),{sub:'a',active:true}]}));
- assert.equal(seven.session,'live');assert.equal(seven.lampColour,'#6aa8ff');
+ assert.equal(seven.session,'live');assert.equal(seven.running,1,'D467: the title counts the running sessions');
  const unbound=channel(fader({sessions:[{sub:'',active:true}],lamps:[{sub:'',active:true}]}));
- assert.equal(unbound.session,'live');assert.equal(unbound.lampColour,null,'not the first subscription colour');
+ assert.equal(unbound.session,'live');assert.equal(unbound.running,1);
  const mixed=channel(fader({lamps:[{sub:'',active:true},{sub:'a',active:true}]}));
- assert.equal(mixed.lampColour,'#6aa8ff');
+ assert.equal(mixed.running,2,'bound and unbound running sessions both count');
 });
 
 test('CKP-FAD-53 current effort: most tokens in the last 15 minutes, with hysteresis; a notable other effort gets a dot',()=>{

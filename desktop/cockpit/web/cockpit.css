@@ -78,7 +78,8 @@ html[data-reduce-motion="true"] #cockpit .mfd-alerts li.al-mark.al-flash{animati
 .ck-tape .t-me .t-badge{color:var(--lcd-muted);opacity:.7;font-size:9px}
 /* CKP-STRIP-50: the overflow line is a button to the where page; with no session one grey line says so. */
 .ck-tape button.t-overflow{display:block;background:none;border:0;margin:0;cursor:pointer;font:inherit;text-align:left}
-.ck-tape .t-none{display:block;padding-left:10px;color:var(--lcd-muted)}
+.ck-tape .t-none,.ck-tape .t-head{display:block;padding-left:10px;color:var(--lcd-muted)}
+.ck-tape .t-observed[data-state="idle"]{color:var(--lcd-muted)}/* D467: idle rows are ink-3 */
 /* CKP-STRIP-17: a model the producer could not name is dim text, not a name. */
 .ck-tape .t-model.t-unknown{color:var(--lcd-muted);opacity:.7}
 .ck-tape .t-observed[data-state="idle"] .t-live{color:var(--lcd-muted)}

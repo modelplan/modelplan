@@ -64,7 +64,7 @@
 .dk-fad .fd-indicator{display:grid;place-items:center;width:12px;height:12px;color:var(--fd-unlit)}
 .dk-fad .fd-indicator:not(.fast)::before{content:"";width:5px;height:5px;border-radius:50%;background:currentColor;box-shadow:0 0 4px currentColor}
 /* CKP-FAD-55: lit in the subscription colour = a session runs; dim = used in this range; off = none. */
-.dk-fad .fd-indicator.live{color:var(--lamp,var(--lcd-ink))}
+.dk-fad .fd-indicator.live{color:#4fd1a5}/* D467/C10: the live lamp is teal, whatever the subscription */
 .dk-fad .fd-indicator.used{color:color-mix(in srgb,var(--lcd-muted) 55%,transparent)}
 .dk-fad .fd-indicator.used::before{box-shadow:none}
 /* owner 11-12: fast mode = a symbol-only bolt beside the lamp (white real, solid blue trial on, blue outline trial off) */

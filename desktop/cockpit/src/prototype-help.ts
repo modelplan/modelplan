@@ -18,6 +18,7 @@ const notes:ReadonlyArray<readonly [string,string]>=[
  ['.lb-second','host.helpNote11'],
  ['.lb-other','host.helpNote12'],
  ['.dk-fad','host.helpNote13'],
+ ['.fd-indicator','host.helpNote17'],
  ['.mfd-pk','host.helpNote14'],
  ['.ck-tape','host.helpNote15'],
  ['.ck-base .bz-line','host.helpNote16']

@@ -61,7 +61,7 @@ const solSession=(n,effort,rate,state='running',minutesAgo=1)=>({sessionRef:Stri
 const row=(page,level)=>page.locator(`.sc-l[data-level="${level}"]`).first().evaluate(e=>{const r=e.getBoundingClientRect();return r.top+r.height/2;});
 const centre=l=>l.evaluate(e=>{const r=e.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2};});
 
-test('CKP-FAD-50/55 cards: use large (tokens until ≈cost exists), share bar in the subscription colour, "212M 17%", effort line; one session lamp under "Sessions"',async({page})=>{
+test('CKP-FAD-50/55 cards: use large (tokens until ≈cost exists), share bar in the subscription colour, "212M 17%", effort line; one session lamp, no heading (D467)',async({page})=>{
  await open(page);
  const sol=card(page,'Sol 6.1');
  await expect(sol.locator('.fd-strip')).toHaveAttribute('data-card','normal');
@@ -73,8 +73,8 @@ test('CKP-FAD-50/55 cards: use large (tokens until ≈cost exists), share bar in
  // Opus current XHigh, ★ Med: "XHigh ★Med" is 10 characters → "XHigh".
  expect((await lines(card(page,'GLM-5.3')))[1]).toBe('96M');
  expect((await lines(card(page,'Opus 5.5'))).at(-1)).toBe('XHigh');
- // Lamps: Sol and Opus run (lit, in the subscription colour), GLM is idle but used (dim). The row label reads Sessions.
- await expect(page.locator('.fd-scale .sc-led')).toHaveText('Sessions');
+ // Lamps: Sol and Opus run (lit, in the subscription colour), GLM is idle but used (dim). The row has no label (D467).
+ await expect(page.locator('.fd-scale .sc-led')).toHaveText('');
  await expect(sol.locator('.fd-indicator')).toHaveAttribute('data-state','live');
  await expect(card(page,'GLM-5.3').locator('.fd-indicator')).toHaveAttribute('data-state','used');
  // No card line overflows its card (CKP-FAD-57: lines tighten, never overlap; D444: one layout).
@@ -102,9 +102,32 @@ test('CKP-FAD-55 the lamp reads every verified session: a running session at pos
  await open(page,{sol:many});
  const lamp=card(page,'Sol 6.1').locator('.fd-indicator');
  await expect(lamp).toHaveAttribute('data-state','live');
- expect(await lamp.evaluate(e=>e.style.getPropertyValue('--lamp'))).toMatch(/^#/); // bound to the one subscription here; the unbound case is in model-card.test.mjs
+ expect(await lamp.evaluate(e=>getComputedStyle(e).color),'D467/C10: the live lamp is teal #4fd1a5, not the subscription colour').toBe('rgb(79, 209, 165)');
  await open(page,{sol:[solSession(1,'high',null,'idle')]});
  await expect(card(page,'Sol 6.1').locator('.fd-indicator')).toHaveAttribute('data-state','used');
+});
+
+for(const [locale,one,two,off] of [['zh-CN','1 个会话在跑','2 个会话在跑','没有会话在跑'],['en','1 session running','2 sessions running','no session running']])
+test('D467 (G3-164) the session row has no label, and each lamp is named and has a tooltip ('+locale+')',async({page})=>{
+ await open(page,{locale,sol:[solSession(1,'high',null,'running')]});
+ await expect(page.locator('.fd-scale .sc-led')).toHaveText('');
+ await expect(page.locator('.fd-scale')).not.toContainText(/会话|Sessions/);
+ const sol=card(page,'Sol 6.1').locator('.fd-indicator'),glm=card(page,'GLM-5.3').locator('.fd-indicator');
+ await expect(sol).toHaveAttribute('title','Sol 6.1 · '+one);
+ expect(await sol.getAttribute('aria-label')).toMatch(new RegExp('^Sol 6\\.1 · '+one));
+ await expect(glm).toHaveAttribute('title','GLM-5.3 · '+off);
+ expect(await glm.getAttribute('aria-label')).toMatch(new RegExp('^GLM-5\\.3 · '+off));
+ // The count follows every running session, two here.
+ await open(page,{locale,sol:[solSession(1,'high',null,'running'),solSession(2,'high',null,'running',2),solSession(3,'high',null,'idle',3)]});
+ await expect(card(page,'Sol 6.1').locator('.fd-indicator')).toHaveAttribute('title','Sol 6.1 · '+two);
+});
+
+for(const [locale,caption] of [['en','Lamp = a session is running'],['zh-CN','灯 = 有会话在跑']])
+test('D467 / CKP-STRIP-07 the Option help map names the lamp ('+locale+')',async({page})=>{
+ await open(page,{locale,sol:[solSession(1,'high',null,'running')]});
+ await page.keyboard.down('Alt');
+ await expect(page.locator('#help-map [data-target=".fd-indicator"]')).toContainText(caption);
+ await page.keyboard.up('Alt');
 });
 
 test('CKP-FAD-53 a refused render leaves the held current effort where it was committed, inside the 1.5x band (macrevb-1052-3)',async({page})=>{
@@ -134,7 +157,7 @@ test('CKP-FAD-51 unused and zh: dimmed card "未使用 / ★Med", dashed lever',
  await expect(opus.locator('.fd-cap')).toHaveClass(/\bunused\b/);
  await expect(opus.locator('.fd-indicator')).toHaveAttribute('data-state','off');
  expect((await lines(card(page,'Sol 6.1')))[1]).toBe('212M');
- await expect(page.locator('.fd-scale .sc-led')).toHaveText('会话');
+ await expect(page.locator('.fd-scale .sc-led')).toHaveText('');
 });
 
 test('CKP-FAD-54 the five steps, with their timings',async({page})=>{
@@ -294,10 +317,10 @@ test('a new model inherits its bound provider colour and running session light',
  expect(await page.evaluate(raw=>window.modelPlanCockpit.receive(raw),send('display',{data}))).toBe(true);
  const future=card(page,'Future'),known=card(page,'Sol 6.1');
  await expect(future.locator('.fd-indicator')).toHaveAttribute('data-state','live');
- const lamp=await future.locator('.fd-indicator').evaluate(e=>e.style.getPropertyValue('--lamp'));
- expect(lamp).toMatch(/^#/);
- expect(lamp).toBe(await known.locator('.fd-indicator').evaluate(e=>e.style.getPropertyValue('--lamp')));
- expect(await future.locator('.st-vend b').first().evaluate(e=>e.style.getPropertyValue('--v'))).toBe(lamp);
+ const teal=e=>getComputedStyle(e).color;
+ expect(await future.locator('.fd-indicator').evaluate(teal)).toBe('rgb(79, 209, 165)');
+ expect(await known.locator('.fd-indicator').evaluate(teal)).toBe('rgb(79, 209, 165)');
+ expect(await future.locator('.st-vend b').first().evaluate(e=>e.style.getPropertyValue('--v')),'the card strip still carries the provider colour').toMatch(/^#/);
 });
 
 test('unlisted session gets segments only from explicitly verified bindings across account changes',async({page})=>{

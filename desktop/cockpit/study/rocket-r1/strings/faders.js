@@ -3,12 +3,10 @@ import {register} from '../i18n.js';
 
 register('fad', {
   // silkscreen
-  // CKP-FAD-55: the row label over the session lamps.
-  status: ['silk', '会话', 'Sessions'],
-  indicatorAria: ['aria', '{m}：{s}；{fast}', '{m}: {s}; {fast}'],
-  sessionLive: ['aria', '有会话在跑', 'a session is running'],
+  sessionLive: ['aria', '{n} 个会话在跑', '{n} session running'],
+  sessionLiveMany: ['aria', '{n} 个会话在跑', '{n} sessions running'],
   sessionUsed: ['aria', '这段时间用过', 'used in this range'],
-  sessionNone: ['aria', '没有会话', 'no sessions'],
+  sessionNone: ['aria', '没有会话在跑', 'no session running'],
   // Model card lines (V1-FINAL §7, CKP-FAD-50…52): each line is at most 9 characters in both languages.
   cardUnused: ['lcd', '未使用', 'Unused'],
   cardUnlisted: ['lcd', '未收录', 'Unlisted'],
