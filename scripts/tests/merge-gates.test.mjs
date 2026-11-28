@@ -131,7 +131,7 @@ test("tier gates: tier 1 needs a GPT merge, tier 2 needs a Sol lane, macrev is a
   assert.equal(evalPr({ comments: [comment(v("merge", H, "macrev2"))] }).state, R.SUCCESS, "tier 1 Sol");
 });
 
-test("R13: a PR with a Ledger: G3-nn line is at least tier 2, so Terra alone cannot land it", () => {
+test("R13/D482: a PR with a Ledger: G3-nn line is IMPORTANT (at least tier 1), so only a Sol lane lands it", () => {
   const body = "Ledger: G3-65\nScenarios: V-01";
   const ledger = pr({ body });
   assert.ok(R.ledgerPr(ledger));
@@ -143,10 +143,15 @@ test("R13: a PR with a Ledger: G3-nn line is at least tier 2, so Terra alone can
   const e = (comments, p) => evalPr({ p, files: [file("scripts/tool.mjs")], comments: [...comments, glm, av] });
   assert.equal(R.pathTier(["scripts/tool.mjs"]), 1, "the files alone are tier 1");
   assert.equal(e([comment(v("merge", H, "macrevc"))], ledger).state, R.PENDING, "Terra alone is not enough");
-  assert.equal(e([comment(v("merge", H, "macrevc"))], ledger).tier, 2);
+  assert.equal(e([comment(v("merge", H, "macrevc"))], ledger).tier, 1, "D482: no tier-2 floor; the class carries R13");
+  assert.equal(e([comment(v("merge", H, "macrevc"))], ledger).review, R.IMPORTANT);
+  assert.equal(e([comment(v("merge", H, "ghglm"))], ledger).state, R.PENDING, "D482: GLM alone is not enough either");
+  assert.equal(R.evaluatePr({ pr: ledger, items: R.feed([comment(v("merge", H, "ghglm")), glm, av]), files: [file("scripts/tool.mjs")], runs: greenCi, statuses: [compileOk], verifiedEdge: () => false, conf, glmTiers: [1, 2] }).state, R.PENDING, "D482: REVIEW_GLM_TIERS does not widen it");
+  const docsLedger = R.evaluatePr({ pr: ledger, items: R.feed([glm, av]), files: [file("docs/a.md")], runs: greenCi, statuses: [compileOk], verifiedEdge: () => false, conf });
+  assert.equal(docsLedger.tier, 1, "a docs-only ledger PR is tier 1 (ledgerMinTier)"); assert.equal(docsLedger.state, R.PENDING);
   assert.equal(e([comment(v("merge", H, "macrev2"))], ledger).state, R.SUCCESS, "Sol lands it");
   assert.equal(e([comment(v("merge", H, "macrevb"))], ledger).state, R.SUCCESS);
-  assert.equal(e([comment("REVIEW-TIER: 0"), comment(v("merge", H, "macrevc"))], ledger).state, R.PENDING, "an override cannot lower it below 2");
+  assert.equal(e([comment("REVIEW-TIER: 0"), comment(v("merge", H, "macrevc"))], ledger).state, R.PENDING, "an override cannot lower it below tier 1 or make it normal");
   assert.equal(e([comment(v("merge", H, "macrevc"))], pr({ body: "Scenarios: none" })).state, R.SUCCESS, "a non-ledger PR stays tier 1");
 });
 
@@ -1474,8 +1479,8 @@ test("gh lanes: shadow lanes never admit data-sync; ghglm counts only on its con
   assert.ok(!R.eligibleLanes(1).includes("(ghglm)") && R.eligibleLanes(1, [1]).includes("(ghglm)") && !R.eligibleLanes(2, [1]).includes("(ghglm)") && R.eligibleLanes(2, [2]).includes("(ghglm)"));
   const docs = [file("docs/a.md")];
   assert.equal(evalPr({ files: docs, comments: [comment(v("block", H, "ghglm"))] }).state, R.SUCCESS, "a tier-0 ghglm block is advice");
-  // an IMPORTANT tier-1 PR (D395: a timing path); on a NORMAL PR the GLM verdict counts (see the D395 tests)
-  assert.equal(evalPr({ files: [file("scripts/refresh-tool.mjs")], comments: [comment(v("block", H, "ghglm"))] }).state, R.PENDING, "a ghglm block never vetoes an important PR by default");
+  // an IMPORTANT tier-1 PR (D482: a credentials/token path); on a NORMAL PR the GLM verdict counts (see the D395 tests)
+  assert.equal(evalPr({ files: [file("cli/internal/setup/oauth_flow.go")], comments: [comment(v("block", H, "ghglm"))] }).state, R.PENDING, "a ghglm block never vetoes an important PR by default");
   assert.ok(R.isShadowLane("(ghsolshadow)") && R.isShadowLane("gh-terra-shadow") && !R.isShadowLane("(ghsol)"));
 });
 
@@ -1510,7 +1515,7 @@ test("review:gpt: GLM is advisory and a REVIEWER: ghglm assignment pins nothing 
 // PR IMPORTANT. The workflow no longer writes the marker and the gate ignores it, marked or not, labelled or not.
 test("review:gpt / IMPORTANT: a GLM fallback verdict (marked or not) is advisory; only an exact-head Sol merge lands the PR", () => {
   const labelled = pr({ labels: [{ name: "review:gpt" }] });
-  const files = [file("cli/internal/quota/x.go")];
+  const files = [file("cli/internal/keychain/x.go")];   // tier 2 and IMPORTANT (credentials)
   const ev = (p, comments) => R.evaluatePr({ pr: p, items: R.feed(comments), files, runs: greenCi, statuses: [], verifiedEdge: () => false, conf });   // REVIEW_GLM_TIERS empty
   const M = R.GPT_FALLBACK_MARKER;
   assert.equal(R.gptFallbackVerdict(R.feed([comment(`x\n${M}\nVERDICT: merge @ ${H} (ghglm)`)]), H), null);
@@ -1522,7 +1527,8 @@ test("review:gpt / IMPORTANT: a GLM fallback verdict (marked or not) is advisory
     assert.equal(ev(p, [marked("merge"), comment(v("merge", H, "ghsol"))]).state, R.SUCCESS, "an exact-head Sol merge satisfies it");
     assert.equal(ev(p, [marked("merge"), comment(v("block", H, "ghsol"))]).state, R.FAILURE, "a Sol block still blocks");
   }
-  assert.equal(R.evaluatePr({ pr: pr(), items: R.feed([comment(v("merge", H, "ghglm"))]), files, runs: greenCi, statuses: [], verifiedEdge: () => false, conf, glmTiers: [2] }).state, R.SUCCESS, "D366 REVIEW_GLM_TIERS fallback unchanged");
+  assert.equal(R.evaluatePr({ pr: pr(), items: R.feed([comment(v("merge", H, "ghglm"))]), files, runs: greenCi, statuses: [], verifiedEdge: () => false, conf, glmTiers: [2] }).state, R.PENDING, "D482: REVIEW_GLM_TIERS never widens an IMPORTANT PR");
+  assert.equal(R.evaluatePr({ pr: pr(), items: R.feed([comment(v("merge", H, "ghglm"))]), files: [file("cli/internal/quota/x.go")], runs: greenCi, statuses: [], verifiedEdge: () => false, conf }).state, R.SUCCESS, "D482: a tier-2 NORMAL PR lands on the GLM verdict");
 });
 
 test("D374: a native head cannot merge without a mac-compile success status at its head", () => {
@@ -1545,45 +1551,94 @@ test("D374: a native head cannot merge without a mac-compile success status at i
 });
 
 // ---- D395/D396 review routing (owner 2026-11-24) ----
-test("D395 routing: Sol's real consent, wire and timing paths are IMPORTANT; ordinary paths are NORMAL", () => {
-  const cls = (paths, extra = {}) => R.reviewClass({ paths, tier: R.pathTier(paths), ...extra }).cls;
+test("D482 routing: privacy/consent/credentials/security, gates/CI/release and ledger PRs are IMPORTANT; the rest is NORMAL", () => {
+  const cls = (paths, extra = {}) => R.reviewClass({ paths, ...extra }).cls;
   for (const p of [
-    "cli/cmd/modelplan/consent_scopes.go", "desktop/native/Sources/ModelPlanCore/Wire.swift",
-    "desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/HostDeadlineFence.swift",
-    "cli/internal/keychain/security.go", "cli/internal/readers/transport.go", "cli/internal/appserver/server.go",
-    "desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/EngineLifecycleController.swift",
-    "desktop/native/Sources/ModelPlanCore/CLITransport.swift", "cli/internal/cliupdate/update.go", "claude-code/cli-pin.json",
-    "desktop/native/credential-agent-artifact-pin.json", ".github/workflows/pr-review-sol.yml", "scripts/merge-gates/rules.mjs",
-    "cli/internal/speed/lock_unix.go", "cli/internal/localusage/codex.go", "desktop/native/ModelPlanShell/MainThreadHangWatchdog.swift",
+    "cli/cmd/modelplan/consent_scopes.go", "cli/internal/keychain/security.go", "cli/internal/diagnostics/bundle.go",
+    "cli/internal/cliupdate/update.go", "claude-code/cli-pin.json", "desktop/native/credential-agent-artifact-pin.json",
+    ".github/workflows/pr-review-sol.yml", ".github/workflows/trusted-mac.yml", ".github/workflows/merge-gates.yml", ".github/workflows/mac-compile.yml",
+    ".github/workflows/cli-release.yml", ".github/actions/build/action.yml", "scripts/merge-gates/rules.mjs", "cli/go.sum",
+    "desktop/native/ModelPlanApp/ModelPlan.entitlements", "cli/internal/setup/oauth_flow.go", "cli/internal/zai/api_key.go",
   ]) assert.equal(cls([p]), R.IMPORTANT, p);
+  // D482: wire, the Swift<->Go seam, readers, timing/lifecycle and path tier 2 alone are NORMAL now
   for (const p of [
+    "desktop/native/Sources/ModelPlanCore/Wire.swift", "desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/HostDeadlineFence.swift",
+    "cli/internal/readers/transport.go", "cli/internal/appserver/server.go", "cli/internal/quota/x.go",
+    "desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/EngineLifecycleController.swift",
+    "desktop/native/Sources/ModelPlanCore/CLITransport.swift", "cli/internal/speed/lock_unix.go", "cli/internal/localusage/codex.go",
+    "desktop/native/ModelPlanShell/MainThreadHangWatchdog.swift", "desktop/cockpit/src/bridge/host.ts",
     "desktop/native/ModelPlanDock/Sources/ModelPlanDock/DockRevealMotion.swift", "cli/internal/render/quota.go",
     "desktop/cockpit/src/screens/today.ts", "scripts/tool.mjs", "cli/internal/advise/advise.go", "desktop/tests/cockpit/a.spec.mjs",
-    "desktop/tests/cockpit/browser/deadline-refresh.spec.mjs", "desktop/official-visuals/cockpit/throttle/throttle.css", ".github/workflows/ci.yml",
-    "desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/EngineDockMenuComposition.swift",
+    "desktop/tests/cockpit/browser/deadline-refresh.spec.mjs", "desktop/official-visuals/cockpit/throttle/throttle.css",
+    ".github/workflows/desktop.yml", ".github/workflows/dock-journeys.yml", ".github/workflows/u11-native.yml", ".github/workflows/e2e-journey.yml",
   ]) assert.equal(cls([p]), R.NORMAL, p);
+  assert.equal(R.pathTier(["cli/internal/quota/x.go"]), 2, "a tier-2 path ...");
+  assert.equal(cls(["cli/internal/quota/x.go"]), R.NORMAL, "... is no longer IMPORTANT by itself");
+  // spanning native Swift and cockpit web is NORMAL
+  assert.equal(cls(["desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/StatusItemAnchor.swift", "desktop/cockpit/src/screens/today.ts"]), R.NORMAL);
   // mixed: one important path makes the whole PR important
   assert.equal(cls(["scripts/tool.mjs", "desktop/cockpit/src/screens/today.ts", "cli/cmd/modelplan/consent_scopes.go"]), R.IMPORTANT);
   assert.match(R.reviewClass({ paths: ["scripts/tool.mjs", "cli/cmd/modelplan/consent_scopes.go"] }).why, /^consent: cli\/cmd\/modelplan\/consent_scopes\.go$/);
-  // labels, tier 2, an empty or long file list
+  // labels, the ledger line, a trusted REVIEW-TIER: 2, an empty or long file list
   assert.equal(cls(["scripts/tool.mjs"], { labels: [{ name: "review:codex" }] }), R.IMPORTANT);
   assert.equal(cls(["scripts/tool.mjs"], { labels: ["review:gpt"] }), R.IMPORTANT);
-  assert.equal(cls(["scripts/tool.mjs"], { tier: 2 }), R.IMPORTANT);
+  assert.equal(cls(["scripts/tool.mjs"], { ledger: true }), R.IMPORTANT);
+  assert.equal(cls(["scripts/tool.mjs"], { override: 2 }), R.IMPORTANT);
+  assert.equal(cls(["scripts/tool.mjs"], { override: 1 }), R.NORMAL, "a lower override never makes a PR important");
+  assert.equal(cls(["cli/cmd/modelplan/consent_scopes.go"], { override: 1 }), R.IMPORTANT, "... nor normal");
   assert.equal(cls([]), R.IMPORTANT);
   assert.equal(cls(["scripts/tool.mjs"], { fileCount: R.REVIEW_ROUTING.maxFiles }), R.IMPORTANT);
   // the table is valid for Python too (the coordinator reads it): no lookbehind, no named groups, no flags inside
   for (const a of R.REVIEW_ROUTING.areas) assert.doesNotMatch(a.re, /\(\?[<=!:P]/, a.area);
+  assert.doesNotMatch(R.REVIEW_ROUTING.ledger, /\(\?[<=!:P]/);
+});
+
+test("macrevb-1311-1: an IMPORTANT PR is at least tier 1 (prReview); a NORMAL tier-0 PR needs no verdict", () => {
+  assert.deepEqual(R.prReview({ paths: [".github/workflows/trusted-mac.yml"] }), { tier: 1, cls: R.IMPORTANT, why: "gates-ci: .github/workflows/trusted-mac.yml" });
+  assert.deepEqual(R.prReview({ paths: [".github/workflows/ci.yml"] }), { tier: 1, cls: R.IMPORTANT, why: "gates-ci: .github/workflows/ci.yml" }, "ci is a required gate input");
+  assert.equal(R.prReview({ paths: [".github/workflows/repo-checks.yml"] }).cls, R.IMPORTANT, "repo checks is a required gate input");
+  assert.deepEqual(R.prReview({ paths: [".github/workflows/desktop.yml"] }), { tier: 0, cls: R.NORMAL, why: "no important path" }, "a desktop.yml test leg is NORMAL");
+  assert.equal(R.prReview({ paths: ["docs/a.md"], labels: ["review:gpt"] }).tier, 1);
+  assert.equal(R.prReview({ paths: ["docs/a.md"], renamed: true }).tier, 1);
+  assert.equal(R.prReview({ paths: ["docs/a.md"], override: 0, ledger: true }).tier, 1);
+  assert.deepEqual(R.prReview({ paths: ["docs/a.md"] }), { tier: 0, cls: R.NORMAL, why: "no important path" });
+  // macrevb-1311-4: every workflow that triggers, labels, dispatches or posts reviews or gate inputs is IMPORTANT
+  for (const w of R.prPaths([file(".github/workflows/review-label.yml"), file(".github/workflows/pr-review.yml"), file(".github/workflows/pr-review-sol.yml"),
+    file(".github/workflows/merge-gates.yml"), file(".github/workflows/merge-gates-probe.yml"), file(".github/workflows/mac-compile.yml"),
+    file(".github/workflows/mac-compile-trigger.yml"), file(".github/workflows/mac-compile-sweep.yml"), file(".github/workflows/trusted-mac.yml"),
+    file(".github/workflows/data-sync.yml"), file(".github/workflows/post-merge-hosted.yml"), file(".github/workflows/ci.yml"), file(".github/workflows/repo-checks.yml"), file(".github/workflows/release.yml"),
+    file(".github/workflows/macos-distribution.yml"), file(".github/workflows/u10-candidate.yml")]))
+    assert.equal(R.prReview({ paths: [w] }).cls, R.IMPORTANT, w);
+  const rl = evalPr({ files: [file(".github/workflows/review-label.yml")], comments: [comment(v("merge", H, "ghglm"))] });
+  assert.deepEqual([rl.state, rl.tier, rl.review], [R.PENDING, 1, R.IMPORTANT], "a review-label-only PR waits for Sol");
+  assert.equal(evalPr({ files: [file(".github/workflows/review-label.yml")], comments: [comment(v("merge", H, "ghsol"))] }).state, R.SUCCESS);
+  const wf = evalPr({ files: [file(".github/workflows/trusted-mac.yml")] });
+  assert.deepEqual([wf.state, wf.tier, wf.review], [R.PENDING, 1, R.IMPORTANT], wf.why);
+  assert.equal(evalPr({ files: [file(".github/workflows/trusted-mac.yml")], comments: [comment(v("merge", H, "macrevb"))] }).state, R.SUCCESS);
+  assert.equal(evalPr({ files: [file(".github/workflows/desktop.yml"), file("desktop/native/ModelPlanDock/Sources/ModelPlanDock/DockRevealMotion.swift")], comments: [comment(v("merge", H, "ghglm"))] }).review, R.NORMAL, "a feature PR with a desktop.yml test leg is NORMAL");
+  assert.equal(evalPr({ files: [file("docs/a.md")] }).state, R.SUCCESS, "normal tier 0: no review");
+});
+
+// The shared vectors: decide.py review_class (the coordinator) runs the same "examples" of review-routing.json.
+test("D482 shared examples: reviewClass answers every example of review-routing.json", () => {
+  assert.equal(R.REVIEW_ROUTING.version, 2);
+  assert.ok(R.REVIEW_ROUTING.examples.length >= 20);
+  for (const x of R.REVIEW_ROUTING.examples) {
+    const r = R.reviewClass({ paths: x.paths, labels: x.labels ?? [], override: x.override ?? null, ledger: R.ledgerPr({ body: x.body ?? "" }), renamed: x.renamed ?? false });
+    assert.equal(r.cls, x.cls, JSON.stringify(x));
+    if (x.why) assert.ok(r.why.startsWith(x.why) || r.why.includes(x.why), `${JSON.stringify(x)} -> ${r.why}`);
+  }
 });
 
 test("D395 gate: a NORMAL PR lands on the GLM verdict; an IMPORTANT one still needs a GPT lane", () => {
   const normal = [file("scripts/tool.mjs")], important = [file("cli/cmd/modelplan/consent_scopes.go")];
-  const mixed = [file("scripts/tool.mjs"), file("desktop/native/Sources/ModelPlanCore/Wire.swift")];
+  const mixed = [file("scripts/tool.mjs"), file("cli/internal/setup/oauth_flow.go")];
   // normal: the exact-head (ghglm) merge is enough; its block blocks; a stale-head GLM verdict is not enough
   const n = evalPr({ files: normal, comments: [comment(v("merge", H, "ghglm"))] });
-  assert.equal(n.state, R.SUCCESS); assert.equal(n.review, R.NORMAL); assert.match(n.why, /D395 normal/);
+  assert.equal(n.state, R.SUCCESS); assert.equal(n.review, R.NORMAL); assert.match(n.why, /D482 normal/);
   assert.equal(evalPr({ files: normal, comments: [comment(v("block", H, "ghglm"))] }).state, R.FAILURE);
   assert.equal(evalPr({ files: normal, comments: [comment(v("merge", "b".repeat(40), "ghglm"))] }).state, R.PENDING);
-  // important (tier 2 here) and mixed (tier 1 + one wire path): GLM is advice, a GPT lane decides
+  // important (tier 2 here) and mixed (tier 1 + one token path): GLM is advice, a GPT lane decides
   for (const files of [important, mixed]) {
     const r = evalPr({ files, comments: [comment(v("merge", H, "ghglm"))] });
     assert.equal(r.state, R.PENDING); assert.equal(r.review, R.IMPORTANT);
@@ -1606,17 +1661,18 @@ test("D395 fallback: a NORMAL PR also lands on a Codex verdict, and a GLM verdic
   // on an IMPORTANT PR any Sol lane lands it too (D395 stateless), but never Terra or GLM outside a D366 fallback
   const imp = [file("cli/cmd/modelplan/consent_scopes.go")];
   assert.equal(evalPr({ files: imp, comments: [comment("REVIEWER: macrevb"), comment(v("merge", H, "ghsol"))] }).state, R.SUCCESS);
-  assert.equal(evalPr({ files: [file("cli/internal/advise/lock_unix.go")], comments: [comment(v("merge", H, "macrevc"))] }).state, R.PENDING, "important tier 1: Terra does not admit");
+  assert.equal(evalPr({ files: [file("cli/internal/setup/oauth_flow.go")], comments: [comment(v("merge", H, "macrevc"))] }).state, R.PENDING, "important tier 1: Terra does not admit");
+  assert.equal(evalPr({ files: [file("cli/internal/quota/x.go")], comments: [comment(v("merge", H, "macrevc"))] }).state, R.PENDING, "D482: normal tier 2: Terra does not admit (D149)");
 });
 
 test("D396 sticky ghsol: the workflow pair accepts the GLM quota-fallback verdict wherever GLM may decide", () => {
   const pin = comment("REVIEWER: ghsol");
   // normal PR: counts
   assert.equal(evalPr({ files: [file("scripts/tool.mjs")], comments: [pin, comment(v("merge", H, "ghglm"))] }).state, R.SUCCESS);
-  // important PR inside a D366 fallback (REVIEW_GLM_TIERS=1,2): counts too
+  // D482: an important PR never lands on GLM, REVIEW_GLM_TIERS=1,2 (D366/D469) included
   const imp = [file("cli/cmd/modelplan/consent_scopes.go")];
   const ev = (glmTiers) => R.evaluatePr({ pr: pr(), items: R.feed([pin, comment(v("merge", H, "ghglm"))]), files: imp, runs: greenCi, statuses: [compileOk], verifiedEdge: () => false, conf, glmTiers });
-  assert.equal(ev([1, 2]).state, R.SUCCESS);
+  assert.equal(ev([1, 2]).state, R.PENDING);
   // important PR outside a fallback: GLM is advice
   assert.equal(ev([]).state, R.PENDING);
   assert.deepEqual(R.stickyLanes("(ghsol)", R.eligibleLanes(1, [], R.NORMAL)), ["(ghsol)", "(ghglm)"]);

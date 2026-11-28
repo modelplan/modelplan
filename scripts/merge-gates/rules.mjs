@@ -84,12 +84,21 @@ export function pathTier(paths) {
   return 0;
 }
 
-// R13 (2026-11-12): a ledger PR (its body has a "Ledger: ... G3-nn" line) is at least tier 2 whatever it touches, so it
-// needs a Sol verdict (macrev2/macrevb). Before this, tier-1 files let Terra alone land #785 #788 #848 #863 #865 #870
-// #884 #887. A REVIEW-TIER override can raise it but never lower it below 2.
+// R13 (2026-11-12): a ledger PR (its body has a "Ledger: ... G3-nn" line) needs a Sol verdict whatever it touches. Before
+// R13, tier-1 files let Terra alone land #785 #788 #848 #863 #865 #870 #884 #887. D482 (owner 2026-11-28): R13 lives in the
+// review class (reviewClass: a ledger PR is IMPORTANT, so only a Sol lane admits it), and its tier floor is
+// review-routing.json "ledgerMinTier" (1: a docs- or assets-only ledger PR still needs that verdict, and no override lowers it
+// to tier 0) instead of 2, so the gate and the coordinator compute the same tier (decide.py tier). The pattern is
+// review-routing.json "ledger" (multi-line, case-insensitive), which the coordinator reads too.
+const LEDGER_RE = new RegExp(reviewRouting.ledger, "im");
 export function ledgerPr(pr) {
-  return /^[ \t>*-]*Ledger:.*\bG3-[0-9]+/im.test(pr?.body ?? "");
+  return LEDGER_RE.test(pr?.body ?? "");
 }
+// The one tier rule both gates use: the trusted override, else the path tier; a ledger PR at least ledgerMinTier.
+export const prTier = (paths, override = null, ledger = false) => {
+  const t = override ?? pathTier(paths);
+  return ledger ? Math.max(reviewRouting.ledgerMinTier, t) : t;
+};
 
 // The paths mac-compile-trigger.yml starts the Mac compile for ("desktop/native/**"); the sol test keeps them in step.
 // A PR that changes (or renames away) a file there cannot merge without a mac-compile success status at its head.
@@ -206,43 +215,65 @@ export function parseGlmTiers(value) {
   if (!/^[12](\s*,\s*[12])*$/.test(v)) return [...DEFAULT_GLM_TIERS];
   return [...new Set(v.split(",").map((x) => Number(x.trim())))].sort();
 }
-// ---- Review routing (owner D395/D396/D404, 2026-11-24) ----
-// Most PRs are reviewed by the GitHub GLM reviewer and its exact-head (ghglm) verdict counts; only an IMPORTANT PR (consent,
-// privacy, credentials, readers, wire, the Swift<->Go seam, timing/lifecycle, release, pins, security, the gate itself: the
-// table review-routing.json) still needs a GPT (Codex) lane verdict. One important path makes the whole PR important, and so
-// do path tier 2, a review:codex or review:gpt label, and a file list of maxFiles or more (it may be cut, so fail closed).
-// The coordinator classifies with the same file from main (decide.py review_class), so the two gates agree.
+// ---- Review routing (owner D395/D396/D404, 2026-11-24; narrowed by D482, 2026-11-28) ----
+// Most PRs are reviewed by the GitHub GLM reviewer and its exact-head (ghglm) verdict counts. D482: only an IMPORTANT PR needs
+// a Sol-tier GPT lane verdict: (a) privacy, consent, credentials, tokens, security; (b) merge gates, CI workflows, release,
+// signing (the areas of review-routing.json); (c) an owner-reported fix PR (ledgerPr, R13). A review:codex or review:gpt label,
+// a trusted "REVIEW-TIER: 2" comment, a file list of maxFiles or more (it may be cut), none at all, or a rename (fail closed)
+// make a PR important too. Path tier 2, spanning native Swift and cockpit web, and design-touching no longer do by themselves.
+// The coordinator classifies with the same file from main (decide.py review_class) and tests the same "examples", so the two
+// gates agree.
 export const REVIEW_ROUTING = reviewRouting;
 const ROUTING_AREAS = reviewRouting.areas.map((a) => ({ area: a.area, re: new RegExp(a.re, "i") }));
 export const NORMAL = "normal";
 export const IMPORTANT = "important";
-// paths: prPaths(files); labels: REST label objects or names; tier: the PR's path tier (an override too); fileCount: files.length;
+// paths: prPaths(files); labels: REST label objects or names; override: tierOverride(items) (only review-routing.json
+// overrideTier raises; a lower override never lowers); ledger: ledgerPr(pr); fileCount: files.length;
 // renamed: a file of the PR is a rename (the coordinator's GraphQL file list has no old path, so any rename is IMPORTANT on both
-// sides: the two gates classify alike). Returns { cls: "normal" | "important", why }.
+// sides: the two gates classify alike). Returns { cls: "normal" | "important", why }. The tier does not take part (D482).
 export const hasRename = (files) => (files ?? []).some((f) => f?.status === "renamed" || f?.previous_filename);
-export function reviewClass({ paths = [], labels = [], tier = 1, fileCount = paths.length, renamed = false } = {}) {
+export function reviewClass({ paths = [], labels = [], override = null, ledger = false, fileCount = paths.length, renamed = false } = {}) {
   const names = (labels ?? []).map((l) => (typeof l === "string" ? l : l?.name));
   const lab = reviewRouting.labels.find((l) => names.includes(l));
   if (lab) return { cls: IMPORTANT, why: `label ${lab}` };
-  if (Number(tier) === 2) return { cls: IMPORTANT, why: "tier 2" };
+  if (ledger) return { cls: IMPORTANT, why: "ledger PR (R13)" };
+  if (override !== null && override !== undefined && Number(override) === reviewRouting.overrideTier) return { cls: IMPORTANT, why: `REVIEW-TIER: ${reviewRouting.overrideTier}` };
   if (!paths.length) return { cls: IMPORTANT, why: "no file list" };
   if (renamed) return { cls: IMPORTANT, why: "renamed file" };
   if (fileCount >= reviewRouting.maxFiles || paths.length >= reviewRouting.maxFiles) return { cls: IMPORTANT, why: `${reviewRouting.maxFiles}+ files` };
   for (const p of paths.filter((x) => !TEST_RE.test(x))) for (const a of ROUTING_AREAS) if (a.re.test(p)) return { cls: IMPORTANT, why: `${a.area}: ${p}` };
   return { cls: NORMAL, why: "no important path" };
 }
-// The GPT/GLM lanes whose verdict decides a head of this tier: Sol always; Terra on tier 1; (ghglm) on glmTiers (the D366
-// fallback) and, by D395, on every tier-1/2 head of a NORMAL PR (cls).
-export function eligibleLanes(tier, glmTiers = DEFAULT_GLM_TIERS, cls = IMPORTANT) {
+// D482 (macrevb-1311-1): the PR's review tier and class together, the one entry point of the gate, the workflow reviewer and the
+// coordinator (decide.py review_tier). An IMPORTANT PR is at least importantMinTier (1): a workflow-only or docs-only IMPORTANT PR
+// (path tier 0) still needs an exact-head Sol verdict. A NORMAL tier-0 PR keeps needing none.
+export function prReview({ paths = [], labels = [], override = null, ledger = false, fileCount = paths.length, renamed = false } = {}) {
+  const route = reviewClass({ paths, labels, override, ledger, fileCount, renamed });
+  const base = prTier(paths, override, ledger);
+  return { tier: route.cls === IMPORTANT ? Math.max(reviewRouting.importantMinTier, base) : base, cls: route.cls, why: route.why };
+}
+// The GPT/GLM lanes whose verdict decides a head of this tier: Sol always; Terra on tier 1 (never on an IMPORTANT PR,
+// macrevb-1311-2); (ghglm), by D395, on every
+// tier-1/2 head of a NORMAL PR (cls) and never on an IMPORTANT one (D482: a Sol verdict is required there, whatever
+// REVIEW_GLM_TIERS says). Without a class (cls null: a caller that has none) glmTiers (D366/D469) decides as before.
+export function eligibleLanes(tier, glmTiers = DEFAULT_GLM_TIERS, cls = null) {
   // (ghglm) decides only tiers 1 and 2: tier 0 needs no verdict, so a GLM verdict never counts there.
-  const glm = (tier === 1 || tier === 2) && (glmTiers.includes(tier) || cls === NORMAL);
-  return [...SOL_LANES, ...(tier === 2 ? [] : TERRA_LANES), ...(glm ? [GLM_LANE] : [])];
+  const glm = (tier === 1 || tier === 2) && (cls === NORMAL || (cls !== IMPORTANT && glmTiers.includes(tier)));
+  return [...SOL_LANES, ...(tier === 2 || cls === IMPORTANT ? [] : TERRA_LANES), ...(glm ? [GLM_LANE] : [])];
 }
 // The workflow reviewer pair: "REVIEWER: ghsol" or "REVIEWER: ghglm" assigns the Actions workflow, whichever provider answers
 // (D396: GPT in the Zhipu peak, GLM otherwise, each the other's quota fallback). So a sticky (ghsol) also accepts the (ghglm)
 // verdict, and the reverse, wherever (ghglm) may decide; any other sticky lane stays the only one.
 export const stickyLanes = (sticky, eligible) =>
   !sticky ? null : ["(ghsol)", GLM_LANE].includes(sticky) ? ["(ghsol)", GLM_LANE].filter((l) => eligible.includes(l)) : [sticky];
+// D482: "REVIEWER: ghglm" names the workflow pair (D396-1). Where (ghglm) may not decide (an IMPORTANT PR) the pair's Sol
+// provider (ghsol) is that assignment, so an assignment made before the PR became IMPORTANT never stalls the workflow review.
+// macrevb-1311-2: on an IMPORTANT PR any other assignment that cannot decide it (a stale Terra one) is dropped, so the workflow's
+// Sol reviewer takes the head (landing is stateless: assignments are dispatch hints only).
+export const pairLane = (assigned, eligible, cls = null) => {
+  const a = assigned === GLM_LANE && !eligible.includes(GLM_LANE) && eligible.includes("(ghsol)") ? "(ghsol)" : assigned;
+  return cls === IMPORTANT && a && !eligible.includes(a) ? null : a;
+};
 // Every lane that could be eligible on some tier (an assignment to anything else is never valid).
 // A shadow lane (any lane name ending in "shadow": (ghsolshadow), (gh-terra-shadow)) is advisory and counts nowhere.
 export const isShadowLane = (lane) => /shadow\)?$/i.test(String(lane));
@@ -741,9 +772,11 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   const design = designTouch(files, conf);
   const paths = prPaths(files);
   const override = tierOverride(items);
-  const tier = ledgerPr(pr) ? Math.max(2, override ?? pathTier(paths)) : (override ?? pathTier(paths));
-  // D395: on a NORMAL PR the (ghglm) verdict decides tiers 1 and 2 like a GPT lane (review:gpt makes a PR important).
-  const route = reviewClass({ paths, labels: pr.labels, tier, fileCount: files.length, renamed: hasRename(files) });
+  // D482: the tier is the trusted override or the path tier; a ledger PR (R13) at least ledgerMinTier (1) and IMPORTANT; an
+  // IMPORTANT PR at least importantMinTier (1). On a NORMAL PR the (ghglm) verdict decides tiers 1 and 2 like a GPT lane; on an
+  // IMPORTANT one only Sol does.
+  const rv = prReview({ paths, labels: pr.labels, override, ledger: ledgerPr(pr), fileCount: files.length, renamed: hasRename(files) });
+  const tier = rv.tier, route = { cls: rv.cls, why: rv.why };
   const chain = carryChain(carryEdges(items), head, verifiedEdge);
   // labelled PR, GPT out of quota: the marked GLM verdict counts, on tiers 1 and 2 only (macrevb-1237-2: tier 0 stays advisory, so a
   // labelled tier-0 GLM block never vetoes)
@@ -764,7 +797,8 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   // verified carried) merge from ANY Sol lane, or (ghglm) inside a D366 fallback (glmTiers) / the review:gpt marked fallback; a NORMAL
   // head on a (ghglm) merge or any GPT (Sol or Terra) merge. A block from ANY of these lanes, Terra included, or an unnamed one blocks.
   const glmCounts = eligibleLanes(tier, glmTiers, route.cls).includes(GLM_LANE) || fbGlm !== null;
-  const eligible = [...SOL_LANES, ...(route.cls === NORMAL ? TERRA_LANES : []), ...(glmCounts ? [GLM_LANE] : [])];
+  // D482: Terra admits only tier 1 of a NORMAL PR (owner D149: Terra is advice on tier 2; coordinator lanes.sh lane_admits).
+  const eligible = [...eligibleLanes(tier, glmTiers, route.cls).filter((l) => l !== GLM_LANE), ...(glmCounts ? [GLM_LANE] : [])];
   const blockers = [...new Set([...SOL_LANES, ...TERRA_LANES, ...(glmCounts ? [GLM_LANE] : []), "(unnamed)"])];
   const assigned = reviewerLane(items, gpt);
   const sticky = assigned && eligible.includes(assigned) ? assigned : null;   // reported only
@@ -772,7 +806,7 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   // Advisory notes, shortest and most useful first, so the 140-character description keeps them.
   const notes = [...allLanes].filter(([l, v]) => v === "block" && !lanes.has(l)).map(([l]) => `${l} block`);
   if (sticky) notes.unshift(`reviewer ${sticky}`);
-  if (tier !== 0) notes.push(route.cls === NORMAL ? "D395 normal: GLM counts" : `D395 important (${route.why.slice(0, 60)})`);
+  if (tier !== 0) notes.push(route.cls === NORMAL ? "D482 normal: GLM counts" : `D482 important (${route.why.slice(0, 60)})`);
   if (tier !== 0 && glmInScope(paths)) {
     const g = glmVerdict(items, head, fb);
     if (g) notes.push(`GLMREV ${g}`);
