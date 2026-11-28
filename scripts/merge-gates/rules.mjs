@@ -922,6 +922,10 @@ export function guiLegState(jobs, { cover = null, groupSha = null, runId = null,
 // this repository on a queue branch, other than this group's run, at a different commit whose history contains this
 // group commit (cover.contains: git merge-base --is-ancestor in evaluate.mjs), with gui-scope green and a GUI leg
 // that actually ran green. Anything missing or unreadable fails.
+// The marker gui-defer.mjs looks for in main's rules.mjs before it defers (merge-gates.yml runs main's evaluator, so a
+// group may only skip its GUI leg once main can verify the cover). Keep the line exactly; change the value only together
+// with gui-defer.mjs COVER_MARKER.
+export const GUI_COVER_MARKER = "D488-v1";
 export const GUI_DEFER_JOB = "gui-defer";
 export const GUI_COVERED_STEP = "GUI covered by a later group";
 export const GUI_COVER_TITLE = "D488 GUI covered by";

@@ -199,6 +199,11 @@ In a `merge_group` run that needs the GUI share, `desktop.yml`'s `gui-defer` job
 (`scripts/merge-gates/gui-defer.mjs`, hosted ubuntu) runs before the GUI jobs and reads the
 merge queue (GraphQL `mergeQueue` entries: position, state, head commit, PR):
 
+- `merge-gates.yml` judges every group with `main`'s evaluator. Before `main`'s
+  `scripts/merge-gates/rules.mjs` carries the line `export const GUI_COVER_MARKER = "D488-v1";`
+  (for example during this change's own rollout, or after a revert), or when that file cannot
+  be read, the job outputs `own=true` at once and the GUI leg runs as before. It checks the
+  marker again before it uses a cover.
 - If this entry is the tail of the building window (no later entry is awaiting checks,
   mergeable or locked), it outputs `own=true` after a 90-second settle, and the GUI leg runs
   in this run as before. Any doubt has the same result: a branch that is not a queue branch,

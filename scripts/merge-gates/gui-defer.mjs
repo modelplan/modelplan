@@ -10,6 +10,9 @@
 //   this group commit (compare API: ahead, behind_by 0) has a green GUI leg -> own=false, record it as a notice
 //   annotation (GUI_COVER_TITLE, "run=<id> sha=<head>"); modelplan-gates re-verifies that run itself (rules.mjs
 //   guiCoverState) -, or this entry becomes the tail (later entries removed) -> own=true;
+// - main's evaluator cannot verify a cover yet (merge-gates.yml checks out main; its rules.mjs lacks COVER_MARKER, or
+//   it is unreadable) -> own=true without waiting, and again before any cover is used, so a group never skips its GUI
+//   leg while the gate that judges it would read the skip as missing (rollout, or a revert of D488 on main);
 // - no cover and still not the tail after GUI_DEFER_DEADLINE_MINUTES, or the entry left the queue without a cover ->
 //   exit 1. Nothing here can make a group pass: the gate checks the covering run, and a failed defer fails the group.
 //
@@ -17,7 +20,16 @@
 import { appendFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { client } from "./github.mjs";
-import { DESKTOP_WORKFLOW, GUI_COVER_TITLE, SUCCESS, coverCandidate, coverGuiState, queuePrOf } from "./rules.mjs";
+import { DESKTOP_WORKFLOW, GUI_COVER_MARKER, GUI_COVER_TITLE, SUCCESS, coverCandidate, coverGuiState, queuePrOf } from "./rules.mjs";
+
+// The exact line main's rules.mjs must carry before any group defers (rules.mjs GUI_COVER_MARKER).
+export const COVER_MARKER = `export const GUI_COVER_MARKER = "${GUI_COVER_MARKER}";`;
+export const RULES_PATH = "scripts/merge-gates/rules.mjs";
+export async function mainSupportsCover(gh) {
+  const blob = await gh.get(`/contents/${RULES_PATH}?ref=main`);
+  const text = Buffer.from(String(blob?.content ?? ""), "base64").toString("utf8");
+  return text.split("\n").includes(COVER_MARKER);
+}
 
 // Entries whose group is built or being merged; QUEUED ones (outside the build window) and UNMERGEABLE ones do not
 // cover anything.
@@ -65,9 +77,12 @@ export async function findCover({ gh, repo, sha, runId, sinceMs, contained = new
 }
 
 // -> { own: true } run the GUI leg here; { own: false, cover } covered; { fail: true } neither.
-export async function defer({ gh, repo, sha, runId, ref, now = Date.now, sleep, deadlineMs = 70 * 60000, intervalMs = 60000, settleMs = 90000, log = () => {} }) {
+export async function defer({ gh, repo, sha, runId, ref, supportsCover = () => mainSupportsCover(gh), now = Date.now, sleep, deadlineMs = 70 * 60000, intervalMs = 60000, settleMs = 90000, log = () => {} }) {
   const pr = queuePrOf(ref);
   if (pr == null) return { own: true, why: `not a queue branch (${ref}): own GUI leg` };
+  const notYet = { own: true, why: "main's merge gate cannot verify a GUI cover yet (no D488 marker in its rules.mjs): own GUI leg" };
+  const gate = async () => { try { return (await supportsCover()) === true; } catch { return false; } };
+  if (!(await gate())) return notYet;
   const start = now();
   const contained = new Map();
   let queueFails = 0, missing = 0;
@@ -75,6 +90,7 @@ export async function defer({ gh, repo, sha, runId, ref, now = Date.now, sleep, 
     let cover = null;
     try { cover = await findCover({ gh, repo, sha, runId, sinceMs: start - 15 * 60000, contained, log }); }
     catch (e) { log(`runs list: ${String(e).slice(0, 120)}`); }
+    if (cover && !(await gate())) return notYet;
     if (cover) return { own: false, cover, why: `covered by #${queuePrOf(cover.head_branch)} merge_group run ${cover.id}` };
     let pos = null;
     try { pos = queuePosition(await readQueue(gh, repo), { pr, sha }); queueFails = 0; }

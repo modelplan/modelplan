@@ -1932,7 +1932,11 @@ test("D488 gate: a deferred GUI leg passes only with a verified covering run", (
 });
 
 // A stub GitHub: a scripted queue per poll (last one repeats), merge_group runs, jobs per run id, compare per head.
-function stubGh({ queues, runs = () => [], jobs = {}, compare = {}, graphqlFail = 0 }) {
+// mainRules: the text of main's scripts/merge-gates/rules.mjs the defer reads (default: this checkout's, which carries
+// the D488 marker); a function gets the call count; null = unreadable.
+const NEW_RULES = readFileSync(join(root, "scripts/merge-gates/rules.mjs"), "utf8");
+function stubGh({ queues, runs = () => [], jobs = {}, compare = {}, graphqlFail = 0, mainRules = NEW_RULES }) {
+  let rulesReads = 0;
   let poll = 0, gfails = 0;
   const calls = [];
   return {
@@ -1952,6 +1956,11 @@ function stubGh({ queues, runs = () => [], jobs = {}, compare = {}, graphqlFail 
     },
     get: async (path) => {
       calls.push(path);
+      if (path === "/contents/scripts/merge-gates/rules.mjs?ref=main") {
+        const text = typeof mainRules === "function" ? mainRules(rulesReads++) : mainRules;
+        if (text == null) throw new Error("HTTP 404");
+        return { content: Buffer.from(text, "utf8").toString("base64"), encoding: "base64" };
+      }
       const m = /\/compare\/([0-9a-f]{40})\.\.\.([0-9a-f]{40})$/.exec(path);
       if (m && compare[m[2]]) return compare[m[2]];
       throw new Error(`404 ${path}`);
@@ -2033,4 +2042,38 @@ test("D488 defer: when the later entries leave, the entry becomes the tail and r
   const merged = await runDefer(stubGh({ queues: [[entry(1302, 1), entry(1306, 2)], []], runs: (poll) => (poll >= 2 ? [coverRun()] : []),
     compare: { [SHA3]: { status: "ahead", ahead_by: 1, behind_by: 0 } }, jobs: { 902: coverJobs } }));
   assert.equal(merged.own, false, merged.why);
+});
+
+// macrevb-1317-1: merge-gates.yml judges a group with main's evaluator. Before main's rules.mjs can verify a cover
+// (rollout of D488 itself, or a revert), a group must keep its own GUI leg, even when a verified cover exists.
+test("D488 rollout: no deferral until main's evaluator carries the cover marker", async () => {
+  assert.ok(NEW_RULES.split("\n").includes(D.COVER_MARKER), "this rules.mjs carries the marker gui-defer looks for");
+  assert.equal(typeof R.guiCoverState, "function", "and the verifier the marker promises");
+  // main before D488: the real rules.mjs at the merge base with origin/main (no marker; old guiLegState).
+  const base = execFileSync("git", ["merge-base", "HEAD", "origin/main"], { cwd: root, encoding: "utf8" }).trim();
+  const oldRules = execFileSync("git", ["show", `${base}:scripts/merge-gates/rules.mjs`], { cwd: root, encoding: "utf8" });
+  const preD488 = oldRules.split("\n").includes(D.COVER_MARKER) ? oldRules.replace(D.COVER_MARKER, "") : oldRules;
+  const covered = (mainRules) => stubGh({ queues: [[entry(1302, 1), entry(1306, 2)]], runs: () => [coverRun()],
+    compare: { [SHA3]: { status: "ahead", ahead_by: 1, behind_by: 0 } }, jobs: { 902: coverJobs }, mainRules });
+  // Mixed revision: new workflow and script, old main evaluator -> own GUI leg, decided at once (no wait).
+  const old = await runDefer(covered(preD488));
+  assert.equal(old.own, true, old.why);
+  assert.match(old.why, /cannot verify a GUI cover yet/);
+  assert.equal(old.polls, 0);
+  // The old evaluator really would fail a deferred group: the reason this guard exists (the skip reads as missing).
+  assert.equal(R.guiLegState(deferred, { cover: null }).state, R.FAILURE);
+  // Unreadable main rules: own GUI leg.
+  assert.equal((await runDefer(covered(null))).own, true);
+  // Both components active: the same group is covered, and the gate passes it only with the authenticated run.
+  const both = await runDefer(covered(NEW_RULES));
+  assert.equal(both.own, false, both.why);
+  assert.equal(both.cover.id, 902);
+  const cover = { record: { runId: 902, sha: SHA3 }, run: both.cover, jobs: coverJobs, contains: true };
+  assert.equal(R.guiLegState(deferred, { cover, groupSha: SHA1, runId: 901 }).state, R.SUCCESS);
+  assert.equal(R.guiLegState(deferred, { cover: { ...cover, contains: false }, groupSha: SHA1, runId: 901 }).state, R.FAILURE);
+  // main loses the marker (revert) while the entry waits: re-checked before the cover is used -> own GUI leg.
+  const reverted = await runDefer(covered((n) => (n === 0 ? NEW_RULES : preD488)));
+  assert.equal(reverted.own, true, reverted.why);
+  // A marker line with another value does not count.
+  assert.equal((await runDefer(covered(NEW_RULES.replace(D.COVER_MARKER, 'export const GUI_COVER_MARKER = "D488-v0";')))).own, true);
 });
