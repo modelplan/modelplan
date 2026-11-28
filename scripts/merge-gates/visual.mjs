@@ -166,6 +166,13 @@ export function bindPr(head, decl, expectedBase) {
 export const VISUAL_PATHS = "^(desktop/cockpit/|desktop/tests/cockpit/|desktop/official-visuals/|desktop/third-party/fonts/|schema/app-cli/|source-policy\\.json$|scripts/check-source-policy\\.mjs$|scripts/check-visual-pack\\.mjs$|\\.github/workflows/u11-cockpit\\.yml$)";
 const VISUAL_PATHS_RE = new RegExp(VISUAL_PATHS);
 export const visualPathsChanged = (paths) => !Array.isArray(paths) || paths.some((p) => VISUAL_PATHS_RE.test(p));
+// Whether base..head changes a watched path, from `git diff -z --name-only` (NUL-delimited, so a non-ASCII or quoted name
+// is read verbatim, as the workflow's grep -z reads it). git(args) returns stdout or null on error; an error counts as
+// changed (fail closed).
+export function visualRequiredFromDiff(git, base, head) {
+  const out = git(["diff", "--no-renames", "-z", "--name-only", base, head]);
+  return out === null ? true : visualPathsChanged(out.split("\0").filter(Boolean));
+}
 
 // The merge_group.base_sha of a queue run: GitHub names the queue branch gh-readonly-queue/main/pr-<n>-<base sha>.
 const QUEUE_BRANCH = /^gh-readonly-queue\/main\/pr-[0-9]+-([0-9a-f]{40})$/;

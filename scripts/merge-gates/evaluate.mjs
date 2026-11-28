@@ -12,7 +12,7 @@ import { readFileSync, appendFileSync } from "node:fs";
 import { client } from "./github.mjs";
 import * as G from "./git.mjs";
 import { HOSTED_WORKFLOWS } from "./hosted.mjs";
-import { VISUAL_JOB, queueBase, visualPathsChanged, visualRun } from "./visual.mjs";
+import { VISUAL_JOB, queueBase, visualRequiredFromDiff, visualRun } from "./visual.mjs";
 import { ABSENT_TITLE, MAP_PATH, RECORD_TITLE, parseMap } from "./gui-map.mjs";
 import { CONTEXT, GUI_COVER_TITLE, GUI_DEFER_JOB, parseCoverRecord, PR_GUI_TITLE, prGuiRunScope, DESKTOP_WORKFLOW, FAILURE, dataSyncRunId, parseFallbackUntil, parseGlmTiers, cancelledRunSuperseded, description, prRunScope, evaluateGroup, evaluatePr, queueRunScope, feed, isTrain, parseDesignConf, supersededPrs, TIER_TABLE, tiersFrom, trainMembers } from "./rules.mjs";
 
@@ -252,8 +252,7 @@ async function evaluateGroupAndPost(groupSha) {
   let visualRequired = true;
   const qBase = queueBase(visual.run ?? queueRuns.filter(queueRunScope(repo))[0]);
   if (qBase && G.ensure(cwd, qBase)) {
-    const names = G.git(cwd, ["diff", "--no-renames", "--name-only", qBase, groupSha], { allowFail: true });
-    visualRequired = visualPathsChanged(names === null ? null : names.split("\n").filter(Boolean));
+    visualRequired = visualRequiredFromDiff((args) => G.git(cwd, args, { allowFail: true }), qBase, groupSha);
   }
   log({ group: groupSha, queueBase: qBase, visualRequired });
   const result = evaluateGroup({ steps, queueRuns, queueStatuses: combined.statuses ?? [], queueCheckRuns, desktopJobs, guiCover, groupSha, desktopRunId: desktop?.id ?? null, repo, visual, visualRequired });

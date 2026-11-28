@@ -272,3 +272,23 @@ test("gate replay: a group that changes cockpit paths since its base needs a rep
   assert.equal(group({ run: vrun, job, annotations: [meta({ base: A }), ...pixels.slice(1)] }).state, R.FAILURE, "a report for A never binds the group");
   assert.ok(V.visualPathsChanged(["desktop/cockpit/web/cockpit.css"]) && !V.visualPathsChanged(["README.md"]) && V.visualPathsChanged(null));
 });
+
+test("macrevb-1320-4: the gate's base..group diff is NUL-delimited; a non-ASCII watched name counts; a git error fails closed", () => {
+  const dir = mkdtempSync(join(tmpdir(), "visual-diff-names-"));
+  const env = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.invalid", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.invalid" };
+  const g = (...args) => execFileSync("git", args, { cwd: dir, encoding: "utf8", env }).trim();
+  const git = (args) => { try { return execFileSync("git", args, { cwd: dir, encoding: "utf8", env, stdio: ["ignore", "pipe", "ignore"] }); } catch { return null; } };
+  try {
+    g("init", "-q", "-b", "main");
+    writeFileSync(join(dir, "README.md"), "a\n"); g("add", "-A"); g("commit", "-qm", "base"); const base = g("rev-parse", "HEAD");
+    mkdirSync(join(dir, "desktop/cockpit/web"), { recursive: true });
+    writeFileSync(join(dir, "desktop/cockpit/web/thème-é.css"), ".grip{color:#f00}\n"); g("add", "-A"); g("commit", "-qm", "non-ASCII cockpit file");
+    const head = g("rev-parse", "HEAD");
+    assert.match(g("diff", "--name-only", base, head), /^"desktop\/cockpit\/web\/th\\303/, "newline output quotes the name, which the path list misses");
+    assert.equal(V.visualRequiredFromDiff(git, base, head), true, "NUL output keeps the name verbatim");
+    writeFileSync(join(dir, "README.md"), "b\n"); g("commit", "-qam", "docs"); const docs = g("rev-parse", "HEAD");
+    assert.equal(V.visualRequiredFromDiff(git, head, docs), false, "docs only");
+    assert.equal(V.visualRequiredFromDiff(git, "f".repeat(40), docs), true, "unknown base: git errors, fail closed");
+    assert.equal(V.visualRequiredFromDiff(() => null, base, head), true);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
