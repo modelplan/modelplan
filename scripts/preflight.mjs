@@ -3,7 +3,7 @@
 // and on success writes <git-common-dir>/preflight/<HEAD sha>.ok for the push guard.
 //   node scripts/preflight.mjs
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -15,14 +15,20 @@ const stem = (p) => basename(p).replace(/\.(test\.)?[^.]+$/, "");
 // Relative module paths a test file mentions: import/export-from, dynamic import and new URL('...', import.meta.url).
 export function importedPaths(testPath, text) {
   const found = new Set();
-  const re = /(?:from\s*|import\s*\(\s*|new\s+URL\(\s*)['"`](\.{1,2}\/[^'"`]+)['"`]/g;
-  for (const m of text.matchAll(re)) found.add(posix.normalize(posix.join(posix.dirname(testPath), m[1])));
+  const re = /(?:from\s*|import\s*\(?\s*|new\s+URL\(\s*)['"`](\.{1,2}\/[^'"`]+)['"`]/g;
+  for (const m of text.matchAll(re)) {
+    const p = posix.normalize(posix.join(posix.dirname(testPath), m[1]));
+    found.add(p);
+    // The cockpit compiles to <cockpit>/.tmp/compiled/<src path>.js (tsconfig rootDir "."): map back to the TypeScript source.
+    const c = p.match(/^(.*?)\/\.tmp\/compiled\/(.+)\.js$/);
+    if (c) found.add(`${c[1]}/${c[2]}.ts`);
+  }
   return [...found];
 }
 
 // Pure selection. input: changed (repo-relative paths), cockpitTests {path: [imported paths]},
 // scriptTests {path: file text}, goAvailable. Returns [{name, kind: "run"|"note", cmd?, args?, cwd?, note?}].
-export function selectChecks({ changed, cockpitTests = {}, scriptTests = {}, goAvailable = false }) {
+export function selectChecks({ changed, cockpitTests = {}, scriptTests = {}, goAvailable = false, cockpitDepsInstalled = true, goExistingDirs = null, goImporters = {} }) {
   const checks = [
     { name: "source policy", kind: "run", cmd: "node", args: ["scripts/check-source-policy.mjs"] },
     { name: "changelog fragments", kind: "run", cmd: "node", args: ["scripts/changelog.mjs", "--check"] },
@@ -31,6 +37,13 @@ export function selectChecks({ changed, cockpitTests = {}, scriptTests = {}, goA
   const nodeTest = (name, files) => files.length && checks.push({ name, kind: "run", cmd: "node", args: ["--test", ...files] });
 
   if (changed.some((f) => f.startsWith("desktop/cockpit/") || f.startsWith(COCKPIT_UNIT))) {
+    // Unit tests import the compiled output; rebuild it from this commit's TypeScript (what `npm test` does) so a missing
+    // build cannot fail and a stale ignored build cannot pass.
+    const cockpit = "desktop/cockpit";
+    if (!cockpitDepsInstalled) checks.push({ name: "cockpit dependencies", kind: "run", cmd: "npm", args: ["ci", "--ignore-scripts"], cwd: cockpit });
+    checks.push({ name: "cockpit wire check", kind: "run", cmd: "node", args: ["generate-wire.mjs", "--check"], cwd: cockpit });
+    checks.push({ name: "cockpit livery check", kind: "run", cmd: "node", args: ["sync-livery.mjs", "--check"], cwd: cockpit });
+    checks.push({ name: "cockpit compile", kind: "run", cmd: "node", args: ["node_modules/typescript/bin/tsc"], cwd: cockpit, clean: `${cockpit}/.tmp/compiled` });
     checks.push({ name: "cockpit language audit", kind: "run", cmd: "node", args: ["--test", LANGUAGE_AUDIT] });
     const related = Object.keys(cockpitTests)
       .filter((t) => t !== LANGUAGE_AUDIT)
@@ -52,9 +65,17 @@ export function selectChecks({ changed, cockpitTests = {}, scriptTests = {}, goA
   const goFiles = changed.filter((f) => f.startsWith("cli/") && f.endsWith(".go"));
   if (goFiles.length) {
     if (goAvailable) {
-      const pkgs = [...new Set(goFiles.map((f) => `./${posix.relative("cli", posix.dirname(f)) || "."}`))].sort();
-      checks.push({ name: "go vet (changed packages)", kind: "run", cmd: "go", args: ["vet", ...pkgs], cwd: "cli" });
-      checks.push({ name: "go test (changed packages)", kind: "run", cmd: "go", args: ["test", ...pkgs], cwd: "cli" });
+      const dirOf = (f) => posix.relative("cli", posix.dirname(f)) || ".";
+      const changedDirs = new Set(goFiles.map(dirOf));
+      const exists = (d) => (goExistingDirs ? goExistingDirs.has(d) : true);
+      const gone = [...changedDirs].filter((d) => !exists(d));
+      // Surviving packages that import a deleted package must still build.
+      const importers = Object.entries(goImporters).filter(([d, imps]) => exists(d) && imps.some((i) => gone.includes(i))).map(([d]) => d);
+      const pkgs = [...new Set([...changedDirs].filter(exists).concat(importers))].sort().map((d) => (d === "." ? "." : `./${d}`));
+      if (pkgs.length) {
+        checks.push({ name: "go vet (changed packages)", kind: "run", cmd: "go", args: ["vet", ...pkgs], cwd: "cli" });
+        checks.push({ name: "go test (changed packages)", kind: "run", cmd: "go", args: ["test", ...pkgs], cwd: "cli" });
+      } else checks.push({ name: "go", kind: "note", note: "only deleted Go packages changed and nothing imports them" });
     } else checks.push({ name: "go", kind: "note", note: "cli/** Go files changed; Go tests run in CI (go is not on PATH)" });
   }
   checks.push({ name: "swift", kind: "note", note: "Swift is never checked here (not available on Linux); it runs in Mac CI" });
@@ -62,6 +83,23 @@ export function selectChecks({ changed, cockpitTests = {}, scriptTests = {}, goA
 }
 
 const git = (args, cwd) => execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+
+// Go directories (relative to cli/) present in the tree, and for each the cli packages it imports.
+function goInfo(root) {
+  const files = git(["ls-files", "cli"], root).split("\n").filter((f) => f.endsWith(".go"));
+  const mod = (readFileSync(resolve(root, "cli/go.mod"), "utf8").match(/^module\s+(\S+)/m) || [])[1];
+  const goExistingDirs = new Set();
+  const goImporters = {};
+  for (const f of files) {
+    const d = posix.relative("cli", posix.dirname(f)) || ".";
+    goExistingDirs.add(d);
+    if (!mod) continue;
+    const text = readFileSync(resolve(root, f), "utf8");
+    const set = (goImporters[d] ??= []);
+    for (const m of text.matchAll(new RegExp(`"${mod.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:/([^"]+))?"`, "g"))) set.push(m[1] ?? ".");
+  }
+  return { goExistingDirs, goImporters };
+}
 
 function main() {
   const root = git(["rev-parse", "--show-toplevel"], process.cwd());
@@ -80,12 +118,15 @@ function main() {
     [...list("scripts/tests/", (f) => f.endsWith(".test.mjs")), ...list("scripts/", (f) => f.endsWith(".test.mjs"))].map((t) => [t, readFileSync(resolve(root, t), "utf8")]),
   );
   const goAvailable = spawnSync("go", ["version"], { stdio: "ignore" }).status === 0;
-  const checks = selectChecks({ changed, cockpitTests, scriptTests, goAvailable });
+  const cockpitDepsInstalled = existsSync(resolve(root, "desktop/cockpit/node_modules/typescript"));
+  const { goExistingDirs, goImporters } = goInfo(root);
+  const checks = selectChecks({ changed, cockpitTests, scriptTests, goAvailable, cockpitDepsInstalled, goExistingDirs, goImporters });
   console.log(`preflight: ${changed.length} changed file(s) vs ${base.slice(0, 9)} (merge-base with origin/main), HEAD ${head.slice(0, 9)}`);
   const ran = [];
   let failed = 0;
   for (const c of checks) {
     if (c.kind === "note") { console.log(`NOTE  ${c.name}: ${c.note}`); continue; }
+    if (c.clean) rmSync(resolve(root, c.clean), { recursive: true, force: true });
     const label = `${c.name}: ${[c.cmd, ...c.args].join(" ")}`;
     const r = spawnSync(c.cmd, c.args, { cwd: resolve(root, c.cwd ?? "."), encoding: "utf8" });
     if (r.status === 0) { console.log(`PASS  ${label}`); ran.push(label); }
@@ -94,6 +135,11 @@ function main() {
       console.log(`FAIL  ${label}`);
       process.stdout.write(`${r.stdout ?? ""}${r.stderr ?? ""}${r.error ? `${r.error.message}\n` : ""}`.split("\n").slice(-40).join("\n"));
     }
+  }
+  // The checks read the live worktree: the receipt is only valid if it still is the commit and clean tree we started with.
+  if (git(["rev-parse", "HEAD"], root) !== head || git(["status", "--porcelain"], root)) {
+    console.error("preflight: HEAD or the working tree changed while checks ran; no stamp written. Run it again.");
+    return 1;
   }
   if (failed) { console.error(`preflight: ${failed} check(s) failed; no stamp written`); return 1; }
   const dir = resolve(root, git(["rev-parse", "--git-common-dir"], root), "preflight");
