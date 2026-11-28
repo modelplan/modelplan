@@ -3,7 +3,7 @@
 // and on success writes <git-common-dir>/preflight/<HEAD sha>.ok for the push guard.
 //   node scripts/preflight.mjs
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -101,6 +101,22 @@ function goInfo(root) {
   return { goExistingDirs, goImporters };
 }
 
+// Runs fn(snapshotDir) inside a temporary detached worktree of exactly `sha`, and always removes it. Checks read this
+// snapshot, never the user's worktree, so the user can switch branches mid-run and the receipt still describes `sha`.
+export function withSnapshot(root, sha, fn) {
+  const common = resolve(root, git(["rev-parse", "--git-common-dir"], root));
+  const snap = resolve(common, "preflight", `snap-${sha.slice(0, 12)}-${process.pid}`);
+  mkdirSync(dirname(snap), { recursive: true });
+  git(["worktree", "add", "--detach", "--force", snap, sha], root);
+  try {
+    return fn(snap);
+  } finally {
+    try { git(["worktree", "remove", "--force", snap], root); } catch { /* fall through */ }
+    rmSync(snap, { recursive: true, force: true });
+    try { git(["worktree", "prune"], root); } catch { /* best effort */ }
+  }
+}
+
 function main() {
   const root = git(["rev-parse", "--show-toplevel"], process.cwd());
   if (git(["status", "--porcelain"], root)) {
@@ -108,42 +124,44 @@ function main() {
     return 2;
   }
   const head = git(["rev-parse", "HEAD"], root);
-  const base = git(["merge-base", "origin/main", "HEAD"], root);
-  const changed = git(["diff", "--name-only", `${base}..HEAD`], root).split("\n").filter(Boolean);
-  const list = (dir, ok) => (existsSync(resolve(root, dir)) ? readdirSync(resolve(root, dir)).filter(ok).map((f) => `${dir}${f}`) : []);
-  const cockpitTests = Object.fromEntries(
-    list(COCKPIT_UNIT, (f) => f.endsWith(".test.mjs")).map((t) => [t, importedPaths(t, readFileSync(resolve(root, t), "utf8"))]),
-  );
-  const scriptTests = Object.fromEntries(
-    [...list("scripts/tests/", (f) => f.endsWith(".test.mjs")), ...list("scripts/", (f) => f.endsWith(".test.mjs"))].map((t) => [t, readFileSync(resolve(root, t), "utf8")]),
-  );
+  const base = git(["merge-base", "origin/main", head], root);
+  const changed = git(["diff", "--name-only", `${base}..${head}`], root).split("\n").filter(Boolean);
   const goAvailable = spawnSync("go", ["version"], { stdio: "ignore" }).status === 0;
-  const cockpitDepsInstalled = existsSync(resolve(root, "desktop/cockpit/node_modules/typescript"));
-  const { goExistingDirs, goImporters } = goInfo(root);
-  const checks = selectChecks({ changed, cockpitTests, scriptTests, goAvailable, cockpitDepsInstalled, goExistingDirs, goImporters });
-  console.log(`preflight: ${changed.length} changed file(s) vs ${base.slice(0, 9)} (merge-base with origin/main), HEAD ${head.slice(0, 9)}`);
+  const userModules = resolve(root, "desktop/cockpit/node_modules");
+  const common = resolve(root, git(["rev-parse", "--git-common-dir"], root));
   const ran = [];
   let failed = 0;
-  for (const c of checks) {
-    if (c.kind === "note") { console.log(`NOTE  ${c.name}: ${c.note}`); continue; }
-    if (c.clean) rmSync(resolve(root, c.clean), { recursive: true, force: true });
-    const label = `${c.name}: ${[c.cmd, ...c.args].join(" ")}`;
-    const args = c.args[0] === "--test" ? ["--test", "--test-concurrency=1", ...c.args.slice(1)] : c.args; // never parallel
-    const r = spawnSync(c.cmd, args, { cwd: resolve(root, c.cwd ?? "."), encoding: "utf8" });
-    if (r.status === 0) { console.log(`PASS  ${label}`); ran.push(label); }
-    else {
-      failed++;
-      console.log(`FAIL  ${label}`);
-      process.stdout.write(`${r.stdout ?? ""}${r.stderr ?? ""}${r.error ? `${r.error.message}\n` : ""}`.split("\n").slice(-40).join("\n"));
+  withSnapshot(root, head, (snap) => {
+    // Reuse the user's installed cockpit dependencies read-only through a symlink; never mutate the user's tree.
+    const snapModules = resolve(snap, "desktop/cockpit/node_modules");
+    if (existsSync(resolve(userModules, "typescript")) && !existsSync(snapModules)) symlinkSync(userModules, snapModules);
+    const list = (dir, ok) => (existsSync(resolve(snap, dir)) ? readdirSync(resolve(snap, dir)).filter(ok).map((f) => `${dir}${f}`) : []);
+    const cockpitTests = Object.fromEntries(
+      list(COCKPIT_UNIT, (f) => f.endsWith(".test.mjs")).map((t) => [t, importedPaths(t, readFileSync(resolve(snap, t), "utf8"))]),
+    );
+    const scriptTests = Object.fromEntries(
+      [...list("scripts/tests/", (f) => f.endsWith(".test.mjs")), ...list("scripts/", (f) => f.endsWith(".test.mjs"))].map((t) => [t, readFileSync(resolve(snap, t), "utf8")]),
+    );
+    const cockpitDepsInstalled = existsSync(resolve(snapModules, "typescript"));
+    const { goExistingDirs, goImporters } = goInfo(snap);
+    const checks = selectChecks({ changed, cockpitTests, scriptTests, goAvailable, cockpitDepsInstalled, goExistingDirs, goImporters });
+    console.log(`preflight: ${changed.length} changed file(s) vs ${base.slice(0, 9)} (merge-base with origin/main), HEAD ${head.slice(0, 9)}, checked in a detached snapshot of that commit`);
+    for (const c of checks) {
+      if (c.kind === "note") { console.log(`NOTE  ${c.name}: ${c.note}`); continue; }
+      if (c.clean) rmSync(resolve(snap, c.clean), { recursive: true, force: true });
+      const label = `${c.name}: ${[c.cmd, ...c.args].join(" ")}`;
+      const args = c.args[0] === "--test" ? ["--test", "--test-concurrency=1", ...c.args.slice(1)] : c.args; // never parallel
+      const r = spawnSync(c.cmd, args, { cwd: resolve(snap, c.cwd ?? "."), encoding: "utf8" });
+      if (r.status === 0) { console.log(`PASS  ${label}`); ran.push(label); }
+      else {
+        failed++;
+        console.log(`FAIL  ${label}`);
+        process.stdout.write(`${r.stdout ?? ""}${r.stderr ?? ""}${r.error ? `${r.error.message}\n` : ""}`.split("\n").slice(-40).join("\n"));
+      }
     }
-  }
-  // The checks read the live worktree: the receipt is only valid if it still is the commit and clean tree we started with.
-  if (git(["rev-parse", "HEAD"], root) !== head || git(["status", "--porcelain"], root)) {
-    console.error("preflight: HEAD or the working tree changed while checks ran; no stamp written. Run it again.");
-    return 1;
-  }
+  });
   if (failed) { console.error(`preflight: ${failed} check(s) failed; no stamp written`); return 1; }
-  const dir = resolve(root, git(["rev-parse", "--git-common-dir"], root), "preflight");
+  const dir = resolve(common, "preflight");
   mkdirSync(dir, { recursive: true });
   writeFileSync(resolve(dir, `${head}.ok`), `${STAMP_HEADER}\n${ran.join("\n")}\n`);
   console.log(`preflight: all ${ran.length} check(s) passed; stamp ${resolve(dir, `${head}.ok`)}`);

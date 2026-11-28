@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: MIT
 import assert from "node:assert/strict";
 import test from "node:test";
-import { importedPaths, selectChecks } from "../preflight.mjs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { importedPaths, selectChecks, withSnapshot } from "../preflight.mjs";
 
 const names = (c) => c.map((x) => x.name);
 const A = "desktop/tests/cockpit/unit/host-strings.test.mjs";
@@ -85,4 +89,42 @@ test("a deleted Go package is skipped; surviving importers of it are checked", (
   assert.deepEqual(c.find((x) => x.name.startsWith("go vet")).args, ["vet", "./internal/dep", "./internal/other", "./internal/user"]);
   const only = selectChecks({ changed: ["cli/internal/old/a.go"], goAvailable: true, goExistingDirs: new Set(), goImporters: {} });
   assert.equal(only.find((x) => x.name === "go").kind, "note");
+});
+
+function tmpRepo() {
+  const dir = mkdtempSync(join(tmpdir(), "preflight-snap-"));
+  const g = (...a) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.invalid", ...a], { cwd: dir, encoding: "utf8" }).trim();
+  g("init", "-q", "-b", "main");
+  const commit = (v) => { writeFileSync(join(dir, "v.txt"), v); g("add", "."); g("commit", "-qm", v); return g("rev-parse", "HEAD"); };
+  return { dir, g, commit };
+}
+
+test("checks read an immutable snapshot of the tested commit even if the checkout moves away and back", () => {
+  const { dir, g, commit } = tmpRepo();
+  try {
+    const a = commit("A"), b = commit("B");
+    let snapDir;
+    const seen = withSnapshot(dir, a, (snap) => {
+      snapDir = snap;
+      g("checkout", "-q", b); // the user switches to another clean commit mid-run
+      const during = readFileSync(join(snap, "v.txt"), "utf8");
+      g("checkout", "-q", a); // ...and back (ABA): the old end-of-run check would pass here
+      g("checkout", "-q", b);
+      return [during, readFileSync(join(snap, "v.txt"), "utf8"), g("-C", snap, "rev-parse", "HEAD")];
+    });
+    assert.deepEqual(seen, ["A", "A", a]);
+    assert.equal(existsSync(snapDir), false);
+    assert.ok(!g("worktree", "list").includes("/preflight/snap-"));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("the snapshot is removed when a check throws", () => {
+  const { dir, g, commit } = tmpRepo();
+  try {
+    const a = commit("A");
+    let snapDir;
+    assert.throws(() => withSnapshot(dir, a, (snap) => { snapDir = snap; throw new Error("boom"); }), /boom/);
+    assert.equal(existsSync(snapDir), false);
+    assert.ok(!g("worktree", "list").includes("/preflight/snap-"));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
