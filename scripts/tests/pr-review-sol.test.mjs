@@ -1111,7 +1111,8 @@ test("macrevb-1311-1: tier-0 IMPORTANT PRs (review:gpt docs, renamed docs, workf
   const conf = { include: [], exclude: [], pinonly: [] };
   const ci = [{ path: ".github/workflows/ci.yml", status: "completed", conclusion: "success", head_sha: H, head_repository: { full_name: "modelplan/modelplan" }, head_branch: "feature/x", event: "pull_request", pull_requests: [{ number: 7 }] }];
   const gate = (p, files, cs) => R.evaluatePr({ pr: p, items: R.feed(cs), files, runs: ci, statuses: [], verifiedEdge: () => false, conf, glmTiers: [1, 2] });
-  for (const [p, files, name] of [[labelled, docs, "review:gpt docs"], [pr(), moved, "renamed docs"], [pr(), wf, "workflow-only"]]) {
+  const rl = [{ filename: ".github/workflows/review-label.yml" }];   // macrevb-1311-4: the review:gpt label source of pr-review-sol.yml
+  for (const [p, files, name] of [[labelled, docs, "review:gpt docs"], [pr(), moved, "renamed docs"], [pr(), wf, "workflow-only"], [pr(), rl, "review-label-only"]]) {
     assert.equal(R.pathTier(R.prPaths(files)) === 0 || name === "renamed docs", true, name);
     const none = gate(p, files, []);
     assert.deepEqual([none.state, none.tier, none.review], [R.PENDING, 1, R.IMPORTANT], `${name}: ${none.why}`);

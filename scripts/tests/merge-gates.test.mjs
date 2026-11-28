@@ -1600,6 +1600,16 @@ test("macrevb-1311-1: an IMPORTANT PR is at least tier 1 (prReview); a NORMAL ti
   assert.equal(R.prReview({ paths: ["docs/a.md"], renamed: true }).tier, 1);
   assert.equal(R.prReview({ paths: ["docs/a.md"], override: 0, ledger: true }).tier, 1);
   assert.deepEqual(R.prReview({ paths: ["docs/a.md"] }), { tier: 0, cls: R.NORMAL, why: "no important path" });
+  // macrevb-1311-4: every workflow that triggers, labels, dispatches or posts reviews or gate inputs is IMPORTANT
+  for (const w of R.prPaths([file(".github/workflows/review-label.yml"), file(".github/workflows/pr-review.yml"), file(".github/workflows/pr-review-sol.yml"),
+    file(".github/workflows/merge-gates.yml"), file(".github/workflows/merge-gates-probe.yml"), file(".github/workflows/mac-compile.yml"),
+    file(".github/workflows/mac-compile-trigger.yml"), file(".github/workflows/mac-compile-sweep.yml"), file(".github/workflows/trusted-mac.yml"),
+    file(".github/workflows/data-sync.yml"), file(".github/workflows/post-merge-hosted.yml"), file(".github/workflows/release.yml"),
+    file(".github/workflows/macos-distribution.yml"), file(".github/workflows/u10-candidate.yml")]))
+    assert.equal(R.prReview({ paths: [w] }).cls, R.IMPORTANT, w);
+  const rl = evalPr({ files: [file(".github/workflows/review-label.yml")], comments: [comment(v("merge", H, "ghglm"))] });
+  assert.deepEqual([rl.state, rl.tier, rl.review], [R.PENDING, 1, R.IMPORTANT], "a review-label-only PR waits for Sol");
+  assert.equal(evalPr({ files: [file(".github/workflows/review-label.yml")], comments: [comment(v("merge", H, "ghsol"))] }).state, R.SUCCESS);
   const wf = evalPr({ files: [file(".github/workflows/trusted-mac.yml")] });
   assert.deepEqual([wf.state, wf.tier, wf.review], [R.PENDING, 1, R.IMPORTANT], wf.why);
   assert.equal(evalPr({ files: [file(".github/workflows/trusted-mac.yml")], comments: [comment(v("merge", H, "macrevb"))] }).state, R.SUCCESS);
