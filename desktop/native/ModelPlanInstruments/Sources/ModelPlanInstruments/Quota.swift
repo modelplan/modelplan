@@ -18,9 +18,11 @@ public enum QuotaPeriod: Equatable, Sendable {
 public enum QuotaLevel: Int, Comparable, Sendable {
     case unknown, healthy, amber, critical
     public static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
-    public static func of(_ remaining: Double?, redBelow: Double = 25) -> Self {
+    /// D474 decision 2 (C9): critical at or under the red line (used up included); amber only when the estimate runs out
+    /// before the reset (the quota will be lost); otherwise healthy. There is no 50 % rule.
+    public static func of(_ remaining: Double?, redBelow: Double = 25, runsOutBeforeReset: Bool = false) -> Self {
         guard let remaining = percentage(remaining), redBelow.isFinite, (0...100).contains(redBelow) else { return .unknown }
-        return remaining <= redBelow ? .critical : remaining <= 50 ? .amber : .healthy
+        return remaining <= redBelow ? .critical : runsOutBeforeReset ? .amber : .healthy
     }
 }
 public enum QuotaPublicReset: Equatable, Sendable { case announced(Date?), confirmedAwaitingReading }
@@ -62,13 +64,17 @@ public struct QuotaCell: Sendable {
         id = input.id; period = input.period; scope = input.scope
         let passed = input.resetsAt.map { $0 <= now } ?? false
         remaining = input.readable && !passed ? percentage(input.remaining) : nil
-        level = .of(remaining, redBelow: redBelow)
         litSegments = remaining.map { $0 == 0 ? 0 : max(1, min(10, Int(($0 / 10).rounded()))) }
         resetsAt = input.readable && !passed ? input.resetsAt : nil
         runsOutAt = input.readable && !passed ? input.runsOutAt.flatMap {
             let m = $0.timeIntervalSince(now) / 60
             return m.isFinite && m >= 0 && m < Double(Int.max / 2) ? $0 : nil
         } : nil
+        // Locals, not self: a closure may not capture self before every stored property is set.
+        let out = runsOutAt, reset = resetsAt, left = remaining
+        var before = false
+        if let out { if let reset { before = out < reset } else { before = true } }
+        level = .of(left, redBelow: redBelow, runsOutBeforeReset: left != nil && before)
         publicReset = input.readable ? input.publicReset : nil // Announcement never changes the account reading.
         if input.readable, let reset = input.resetsAt, let duration = known(input.durationMinutes), duration > 0 {
             // Calendar windows need their actual reported duration; never assume a 30-day month.
