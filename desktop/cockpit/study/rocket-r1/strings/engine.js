@@ -20,17 +20,11 @@ register('eng', {
   rowMonth: ['lcd', '每月', 'Monthly'],
   todayBasis: ['aria', '今日输出；今日平均生成速度为可测速输出 token 总量除以生成秒数总量，不是实时速度；按当前来源关联，非历史账户归属', 'Today’s output; today’s average generation speed is summed eligible output tokens divided by summed generation seconds, not live speed; current source binding, not historical account attribution'],
   averageAria: ['aria', '今日平均生成速度 {n} token 每秒', {"one": "Today’s average generation speed {n} token per second", "other": "Today’s average generation speed {n} tokens per second"}],
-  resetAnn: ['line', '预告 {at} 重置', 'Reset {at} announced'],
-  resetAnnShort: ['lcd', '预告 {at}', 'Due {at}'],
-  resetAnnCompact: ['lcd', '预告{at}', 'Due{at}'],
-  resetDone: ['line', '已重置 · 等读数', 'Reset · awaiting reading'],
-  resetDoneShort: ['lcd', '已重置', 'Reset'],
-  resetTba: ['lcd', '预告待定', 'Reset TBA'],
   resetUnknownShort: ['lcd', '未知', '?'],
   resetWordOne: ['lcd', '重置 1 次', '1 reset'],
-  resetCompactOne: ['lcd', '重置1次', '1 reset'],
+  resetCompactOne: ['lcd', '1次', '1 reset'],
   resetsWords: ['lcd', '重置 {n} 次', {"one": "{n} reset", "other": "{n} resets"}],
-  resetsCompact: ['lcd', '重置{n}次', {"one": "{n} reset", "other": "{n} resets"}],
+  resetsCompact: ['lcd', '{n}次', {"one": "{n} reset", "other": "{n} resets"}], // D474 §3.1 narrow: 3次·40h到期
   balance: ['lcd', '余额 {v}', 'Balance {v}'], // G3-109: a money balance in the reserve row
   creditWords: ['lcd', '{n} 点', {"one": "{n} credit", "other": "{n} credits"}],
   other: ['silk', '其他', 'Other'], // a window of unknown kind
@@ -46,21 +40,24 @@ register('eng', {
   all: ['silk', '全部', 'All'],
   caution: ['silk', '注意', 'Alert'],
   // the text under (or beside) each quota bar
-  resetIn: ['lcd', '{t} 后重置', 'resets {t}'],
+  resetIn: ['lcd', '{t} 后重置', 'resets in {t}'],
   resetUnknown: ['lcd', '重置未知', 'reset ?'],
-  runOut: ['lcd', '约 {t} 用完', 'out ~{t}'], // the pace says the window runs out before it resets (amber)
-  runOutShort: ['lcd', '约{t}', '~{t}'], // the same in a narrow column (5–7 subscriptions)
-  runOutC: ['lcd', '约{t}用完', 'out ~{t}'], // CKP-ENG-26 (amended, V1-FINAL §0/§14): the forecast in medium and wide cells
-  resetLine: ['line', '{t} · {at}', '{t} · {at}'], // round D2: the wide cell's one line, 3h18 · 17:23
+  // D474 §3.2 (CKP-ENG-26, LBL-2.2-51): 预估 is our forecast; 约 is only for ≈$ and published approximations.
+  runOut: ['lcd', '预估 {t} 用完', 'est. out in {t}'], // the hover and the timeline: the window runs out before it resets
+  runOutC: ['lcd', '预估 {t} 用完', 'est. out in {t}'],
+  // D474 §3.2: every quota cell has two lines. Line 1 = the real reset (ink-3, never coloured); line 2 = the estimate
+  // (amber or red only when it runs out before the reset), else faint 够用到重置. Narrow cells use the short forms.
+  resetLine: ['lcd', '{t} 后重置', 'resets in {t}'],
+  resetNarrow: ['lcd', '{t}后', 'in {t}'],
+  estLine: ['lcd', '预估 {t} 用完', 'est. out in {t}'],
+  estNarrow: ['lcd', '{t}完', 'out {t}'],
+  lasts: ['lcd', '够用到重置', 'lasts to reset'],
+  lastsNarrow: ['lcd', '够用', 'lasts'],
+  lastTry: ['aria', '上次尝试 {at}', 'Last attempt {at}'], // §3.4 lapse: a lapsed kept reading's hover
   // round D2 cell states
-  drawCell: ['lcd', '扣点中', 'credits'], // used up, credits being drawn (red)
+  drawCell: ['lcd', '扣点中', 'credits'], // used up, credits being drawn (red, line 2)
   drawLine: ['line', '扣点中 · {t}', 'credits · {t}'], // the same in a wide cell, with the time to the reset
   noData: ['lcd', '无数据', 'No data'], // a good reading without a value for this window
-  evAt: ['lcd', '↺~{at}', '↺~{at}'], // a public reset announced for about this time (blue)
-  evMark: ['lcd', '↺', '↺'], // the same in a narrow column
-  evDone: ['lcd', '↺✓', '↺✓'], // a public reset confirmed, the next reading will show it
-  evTitle: ['aria', '官方预告约 {at} 额外重置', 'Public reset announced for about {at}'],
-  evDoneTitle: ['aria', '官方已确认额外重置，等下次读数', 'Public reset confirmed, waiting for the next reading'],
   failed: ['lcd', '读取失败', 'No read'],
   unreadable: ['lcd', '读不到', 'no reading'], // CKP-ENG-50: dim -- with this grey word; the cause is in the card, Settings and the overview
   usedUp: ['lcd', '已用完', 'used up'], // CKP-ENG-50: red 0% with this word; the reset time is in the dots and the alert line
@@ -82,8 +79,14 @@ register('eng', {
   // 储备: banked resets and credits
   cards: ['lcd', '↺{n}', '↺{n}'],
   credits: ['lcd', '{n}点', '{n} cr'],
-  expires: ['lcd', '{t} 后到期', 'expires in {t}'], // CKP-ENG-52: what the reserve's time means
-  expiresShort: ['lcd', '{t}后到期', 'exp {t}'],
+  // D474 §3.1 (CKP-ENG-52, C24, C43): the reserve's amber clause says how many expire and when, within 48 h only.
+  expires: ['lcd', '{n} 次 {t} 后到期', {"one": "{n} expires in {t}", "other": "{n} expire in {t}"}],
+  expiresShort: ['lcd', '{t}到期', '{n} exp. {t}'],
+  expiresNarrowest: ['lcd', '{t}到期', 'reset exp. {t}'],
+  // D466: the reserve's blue "+1" (a banked reset confirmed during its news clock) and the key's one blue news dot.
+  plusAria: ['aria', '新增 {n} 次', {"one": "{n} new", "other": "{n} new"}],
+  newsAnnounced: ['aria', '有重置公告（已预告）', 'Reset news (announced)'],
+  newsConfirmed: ['aria', '有重置公告（已确认）', 'Reset news (confirmed)'],
   points: ['lcd', '点数 {v}', 'Credits {v}'], // CKP-ENG-52: the reserve's credits say what they are
   hours: ['lcd', '{n}h', '{n}h'],
   days: ['lcd', '{n}天', '{n}d'],
@@ -116,6 +119,12 @@ register('extra', {
   'per.day': ['lcd', '日', 'day'],
   'per.week': ['lcd', '周', 'wk'],
   'per.month': ['lcd', '月', 'mo'],
+  // C33: an extra's hover always names its period: "MCP · 每月额度".
+  hover: ['aria', '{n} · {p}', '{n} · {p}'],
+  'quota.5h': ['aria', '5小时额度', '5h quota'],
+  'quota.day': ['aria', '每日额度', 'daily quota'],
+  'quota.week': ['aria', '每周额度', 'weekly quota'],
+  'quota.month': ['aria', '每月额度', 'monthly quota'],
   titleMore: ['aria', '另有 {n} 项专项额度', {"one": "{n} more extra quota", "other": "{n} more extra quotas"}],
 });
 register('xdemo', {

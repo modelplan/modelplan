@@ -3,7 +3,7 @@
 // escaped once before the prototype's trusted HTML renderer; its fmt wrapper
 // does not escape again. All non-text substitutions use closed vocabularies.
 import {ht} from './host-text.js';
-import {accountLabel,updatedCopy,accountState,footerState} from './account-line.js';
+import {accountLabel,updatedCopy,accountState} from './account-line.js';
 import {effectiveRedBelow} from './threshold.js';
 import type {WireCockpitData,WireWindow,WireAccount} from '../generated/wire.js';
 import type {Appearance} from './bridge.js';
@@ -12,9 +12,10 @@ import {cockpitMembers,unavailableZCodeMember} from './members.js';
 import {memberColours} from './session-binding.js';
 import {NEUTRAL} from './livery.js';
 import {cautionItems,cautionLevel,lights} from './caution.js';
-import {prototypeEngineSupplement,currentWindow,displayWindow,runOutMinutes,runOutFields,forecastOf,moneyText} from './prototype-data-adapter.js';
+import {prototypeEngineSupplement,currentWindow,displayWindow,runOutMinutes,runOutFields,forecastOf,forecastLasts,moneyText} from './prototype-data-adapter.js';
 import {engineModel,statusBySub,widthClass} from '../study/rocket-r1/engine-model.js';
 import {pluginHostOf} from './plugin-host.js';
+import {newsLive,newsMark} from './news-clock.js';
 import {pageOfSubscription,type LayoutPage} from './plugin-layout.js';
 import {engineView,rowsTemplate} from '../study/rocket-r1/engine-view.js';
 import {setLanguage} from '../study/rocket-r1/i18n.js';
@@ -48,6 +49,15 @@ function rangeFields(account:WireAccount,data:WireCockpitData,detail:ReturnType<
  const noUsage=readHistory&&tokens===null&&usd===null;
  return {support:tokens!==null||usd!==null?'observed':'quota-only',noUsage,todayAverageGenerationTps:speed,todayTokens:tokens,rangeCost:usd};
 }
+// D474 §3.4: a kept reading whose later attempt failed is 失败·2h (error-lastgood): numbers kept, line 1 says how old.
+// Only a failure newer than the reading counts (CKP-ENG-55 uses the same comparison for the 全部 key).
+const failedAt=(account:WireAccount)=>{const at=account.lastFailure?Date.parse(account.lastFailure.at):NaN;return Number.isFinite(at)?at:null;};
+const attemptAt=(account:WireAccount)=>account.valueState==='retained'?failedAt(account):null;
+function cellState(account:WireAccount,rowState?:Parameters<typeof accountState>[1]){
+ const state=accountState(account,rowState);if(state!=='stale')return state;
+ const failed=failedAt(account),observed=account.observedAt?Date.parse(account.observedAt):NaN;
+ return failed!==null&&(!Number.isFinite(observed)||failed>observed)?'error-lastgood':state;
+}
 const updatedText=(at:number,now:number,locale:Appearance['locale'])=>{const c=updatedCopy(at,now);return ht(locale,c.key,{n:c.n});};
 export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['locale'],root:HTMLElement,priorScope:string,onSelect:(key:string)=>boolean,onAdd:()=>boolean,priorPage=0,initialNow=0,redBelow:()=>number=()=>effectiveRedBelow(undefined),showUsed:()=>boolean=()=>false,onRefresh:(key:string)=>boolean=()=>false,range:()=>CockpitRange=()=>INITIAL_RANGE):{table:HTMLElement;applyScope:(scope:string)=>void;setRange:()=>void;refresh:(now?:number)=>void;setLocale:(value:Appearance['locale'],now:number)=>void;focusIdentity:(element:HTMLElement)=>string|null;fit:()=>void}|null {
  const members=cockpitMembers(data);if(!members.length)return null;
@@ -65,14 +75,17 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
   for(const w of account.windows){const meaning=semantic(w),key=base(w);semantics.set(w,meaning);ids.set(w.id,(ids.get(w.id)??0)+1);bases.set(key,(bases.get(key)??0)+1);meanings.set(meaning,(meanings.get(meaning)??0)+1);}
   const validId=(w:WireWindow)=>{const key=base(w),count=bases.get(key)??0;if(count===1)return w.id===key;const suffix=w.id.startsWith(key+':')?w.id.slice(key.length+1):'';return /^[1-9]\d*$/.test(suffix)&&Number.isSafeInteger(Number(suffix))&&Number(suffix)<=count;};
   const runOut=(w:WireWindow)=>runOutMinutes(data,row.id,account,w,now,true);// CKP-ENG-26: an unknown reset does not hide a forecast run-out
-  const convert=(w:WireWindow)=>({focusIdentity:validId(w)&&ids.get(w.id)===1&&meanings.get(semantics.get(w)!)===1?semantics.get(w)!:null,kind:role(w),remaining:displayWindow(account,w,now)?finite(w.remainingPercent):null,resetIn:displayWindow(account,w,now)&&w.resetsAt&&Number.isFinite(Date.parse(w.resetsAt))?Math.max(0,(Date.parse(w.resetsAt)-now)/60000):null,resetAt:null,resetText:null,elapsed:null,...runOutFields(runOut(w)),durationMinutes:w.durationSeconds===null?null:w.durationSeconds/60});
+  const convert=(w:WireWindow)=>({focusIdentity:validId(w)&&ids.get(w.id)===1&&meanings.get(semantics.get(w)!)===1?semantics.get(w)!:null,kind:role(w),remaining:displayWindow(account,w,now)?finite(w.remainingPercent):null,resetIn:displayWindow(account,w,now)&&w.resetsAt&&Number.isFinite(Date.parse(w.resetsAt))?Math.max(0,(Date.parse(w.resetsAt)-now)/60000):null,resetAt:null,resetText:null,elapsed:null,...runOutFields(runOut(w)),lasts:forecastLasts(data,row.id,account,w,now),resetPassed:!!w.resetsAt&&Number.isFinite(Date.parse(w.resetsAt))&&Date.parse(w.resetsAt)<=now,durationMinutes:w.durationSeconds===null?null:w.durationSeconds/60});
   const windows=account.windows.filter(general).map(convert);
   const extras=account.windows.filter(w=>!general(w)).map(w=>({...convert(w),period:role(w),named:!!w.modelScope||w.limitKey==='mcp',name:esc(locale==='en'?w.label.en:w.label.zh),label:esc(locale==='en'?w.label.en:w.label.zh),scope:{label:esc(locale==='en'?w.label.en:w.label.zh)}}));
-  const notice=data.details?.resetEvents.find(e=>e.rowId===row.id&&Date.parse(e.expiresAt)>now&&(!e.planIds?.length||e.planIds.includes(account.plan.id)));
+  // D466: a reset announcement is news on the key (one blue dot) and, once a banked reset is confirmed, a "+1" in the
+  // reserve, both for its news clock only (DOCK-3.7-05). It never reaches a quota cell.
+  const news=(data.details?.resetEvents??[]).filter(e=>e.rowId===row.id&&(!e.planIds?.length||e.planIds.includes(account.plan.id))&&newsLive(e,data,now));
+  const plus=news.filter(e=>e.status==='confirmed'&&e.kind==='reset_credit').length;
   // G3-109: a money balance (Grok Build) has no credits/points; the reserve row shows it in its reported currency.
   const money=moneyText(account.credits,locale);
   const detail=prototypeEngineSupplement(account,data), cards=detail.resetCards?.map(c=>({count:c.count,expiresAt:c.expiresAt?Date.parse(c.expiresAt):null}))??[];
-  return {id:esc(key),name:esc(label),short:esc(label),alias:esc(name),colour:brand?.colour??NEUTRAL,logo:brand?brand.logo:'../../neutral.png',state:accountState(account,unavailableZCodeMember(row,account)?row.state:undefined),ageMin:(()=>{const at=account.observedAt?Date.parse(account.observedAt):NaN;return Number.isFinite(at)?Math.max(0,Math.floor((now-at)/60000)):null;})(),...rangeFields(account,data,detail,range()),usage7:null,windows,extras,forecast:forecastOf(windows),event:notice?{status:notice.status,at:null}:null,cards,credits:detail.reserveCredits&&['credits','points'].includes(detail.reserveCredits.unit)&&finite(detail.reserveCredits.balance)!==null?{balance:detail.reserveCredits.balance,drawing:false}:money!==null?{balance:account.credits!.balance,drawing:false,money:esc(money)}:null};
+  return {id:esc(key),name:esc(label),short:esc(label),alias:esc(name),colour:brand?.colour??NEUTRAL,logo:brand?brand.logo:'../../neutral.png',state:cellState(account,unavailableZCodeMember(row,account)?row.state:undefined),attemptAt:attemptAt(account),ageMin:(()=>{const at=account.observedAt?Date.parse(account.observedAt):NaN;return Number.isFinite(at)?Math.max(0,Math.floor((now-at)/60000)):null;})(),...rangeFields(account,data,detail,range()),usage7:null,windows,extras,forecast:forecastOf(windows),news:news.some(e=>e.status==='confirmed')?'confirmed':news.length?'announced':null,newsMarks:news.map(newsMark).join(' '),plus,plusMarks:news.filter(e=>e.status==='confirmed'&&e.kind==='reset_credit').map(newsMark).join(' '),cards,credits:detail.reserveCredits&&['credits','points'].includes(detail.reserveCredits.unit)&&finite(detail.reserveCredits.balance)!==null?{balance:detail.reserveCredits.balance,drawing:false}:money!==null?{balance:account.credits!.balance,drawing:false,money:esc(money)}:null};
  });
  // Owner D38: only red (at or below T) and forecast amber conditions wash a column or light the lamp.
  const items=cautionItems(data,now,redBelow());
@@ -86,19 +99,23 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
  const plugins=pluginHostOf(root);
  const pageCount=()=>plugins?plugins.layout(members.length).pages.length:Math.ceil(members.length/6);
  const pageOf=(index:number)=>plugins?pageOfSubscription(plugins.layout(members.length),index):Math.floor(index/6);
- const pagedModel=(source:ReturnType<typeof sourceAt>,ui:{page:number}):{model:any;plugins:LayoutPage|null}=>{
+ const pagedModel=(source:ReturnType<typeof sourceAt>,ui:{page:number;colWidth:number|null}):{model:any;plugins:LayoutPage|null}=>{
   if(!plugins)return {model:engineModel(source,ui),plugins:null};
   const layout=plugins.layout(members.length),p=Math.max(0,Math.min(ui.page,layout.pages.length-1)),shown=layout.pages[p];
   const model=engineModel({...source,accounts:source.accounts.slice(shown.from,shown.to)},{...ui,page:0,few:'c3'});
   const status=statusBySub(source.alerts),grey=new Set(['stale','error','error-lastgood']),rank=(l:string|null)=>l==='red'?2:l==='amber'?1:0;
   model.leds=layout.pages.map((x,i)=>{const list=source.accounts.slice(x.from,x.to),levels=list.map(a=>grey.has(a.state)?null:status.get(a.id)??null);
    return {page:i,current:i===p,accounts:list.map((a,j)=>({name:a.name,status:levels[j]})),level:levels.reduce<string|null>((l,v)=>rank(v)>rank(l)?v:l,null)};});
-  Object.assign(model,{pages:layout.pages.length,page:p,slots:shown.slots,cls:widthClass(shown.slots)});
+  Object.assign(model,{pages:layout.pages.length,page:p,slots:shown.slots,cls:widthClass(shown.slots,ui.colWidth)});
   return {model,plugins:shown};
  };
  let renderedNow=initialNow;
+ // D474 §6.1, one threshold: the width class follows the measured column width ((band − label column) / slots), so a
+ // narrower window or a longer label column changes the cell forms, not the column count. Unmeasured: by slots.
+ let colWidth:number|null=null;
+ const measuredColumn=()=>{const cols=host.querySelector<HTMLElement>('.eng-cols'),n=Number(host.querySelector<HTMLElement>('.eng-keys')?.dataset.slots);return cols&&cols.isConnected&&cols.clientWidth>0&&n>0?cols.clientWidth/n:null;};
  const paint=(time?:number)=>{
-  if(time!==undefined)renderedNow=time;const now=renderedNow,source=sourceAt(now);setLanguage(locale);const ui={few:members.length<=6?'c3':'a',page,scope:scope?esc(scope):null,range:range(),tint:true,pctMode:showUsed()?'used':'left',redAt:redBelow(),ack:null,lang:locale,now};
+  if(time!==undefined)renderedNow=time;const now=renderedNow,source=sourceAt(now);setLanguage(locale);const ui={few:members.length<=6?'c3':'a',page,scope:scope?esc(scope):null,range:range(),tint:true,pctMode:showUsed()?'used':'left',redAt:redBelow(),ack:null,lang:locale,now,colWidth};
   const {model,plugins:pluginPage}=pagedModel(source,ui);page=model.page;host.dataset.cls=model.cls;host.style.setProperty('--n',String(model.slots));// Unknown vendors have no mark: drop the study's neutral placeholder before parsing so nothing is requested.
   plugins?.hold();// D323: a focused drawn plugin control is taken back by its new column
   host.innerHTML=engineView(model,{changed:new Set(),lang:locale,now}).replace(/ style="/g,' data-study-style="').replaceAll('<img class="lamp" src="assets/brands/../../neutral.png" alt="">','');
@@ -127,9 +144,7 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
   for(const b of host.querySelectorAll<HTMLButtonElement>('.ek[data-sub]')){const member=seen.get(b.dataset.sub??'');if(member){b.dataset.scope=member.key;b.dataset.unstable=String(member.unstable);const name=locale==='en'?member.row.name.en:member.row.name.zh;const digit=b.querySelector('.ki')?.textContent??'';const shortcut=ht(locale,'host.shortcutKey',{digit});b.setAttribute('aria-label',`${name} · ${shortcut}`);b.title=`${name} · ${shortcut}`;const label=b.querySelector<HTMLElement>('.ek-name');if(label)label.title=b.title;}}
   const all=host.querySelector<HTMLButtonElement>('.ek[data-all]');if(all){all.dataset.scope='';const shortcut=ht(locale,'host.shortcutKey',{digit:0});all.setAttribute('aria-label',`${ht(locale,'host.allScope')} · ${shortcut}`);all.title=shortcut;}
   root.dataset.scope=scope?'subscription':'all';
-  // D376: no strip under the table (the update line moved to the overview's bottom line). Reads that keep failing
-  // (CKP-ENG-55) stay visible as an amber dot on the 全部 key, whichever MFD page is showing.
-  if(all&&footerState(members.map(m=>m.account)).failing){const dot=document.createElement('i');dot.className='ek-stale';dot.setAttribute('aria-hidden','true');all.append(dot);all.title=ht(locale,'host.staleDot');all.setAttribute('aria-label',`${ht(locale,'host.allScope')} · ${ht(locale,'host.staleDot')}`);}
+  // C27 (D474): the 全部 key carries no stale dot; failing reads say so in their own column (失败·2h) and the grey line.
   fit();
  };
  // G3-109: a cell line that does not fit its column takes the view's shorter forms (data-short, then data-small);
@@ -138,7 +153,9 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
  // The width watch starts once the table is in the page: WebKit reports nothing for a target observed while detached.
  function fit(){
   if(!watch&&host.isConnected&&typeof ResizeObserver!=='undefined'){watch=new ResizeObserver(fit);watch.observe(host);}
-  const entries=[...host.querySelectorAll<HTMLElement>('.qtxt[data-full],.qrv-p[data-full],.ek-name[data-full],.qrv-c[data-full],.pl-fit[data-full]')]
+  const measured=measuredColumn(),slots=Number(host.querySelector<HTMLElement>('.eng-keys')?.dataset.slots);
+  if(measured!==null&&Math.abs(measured-(colWidth??-1))>0.5){colWidth=measured;if(widthClass(slots,measured)!==host.dataset.cls){paint();return;}}
+  const entries=[...host.querySelectorAll<HTMLElement>('.qtxt[data-full],.qrv-p[data-full],.ek-name[data-full],.qrv-c[data-full],.qrv-x[data-full],.pl-fit[data-full]')]
    .filter(e=>e.isConnected&&e.clientWidth>0).map(e=>({e,forms:[e.dataset.full,e.dataset.short,e.dataset.small].filter((v):v is string=>!!v)}));
   // Batch writes and width reads: interleaving them forces a full layout for each label on a page switch.
   const setText=(e:HTMLElement,text:string)=>{if(e.textContent!==text)e.textContent=text;};
@@ -147,6 +164,11 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
    const shorten=entries.filter(({e,forms})=>i<forms.length&&e.scrollWidth>e.clientWidth);
    for(const {e,forms} of shorten)setText(e,forms[i]);
   }
+  // D474 §3.1: a narrow reserve line whose short forms still do not fit drops its count, so the expiry clause stays whole.
+  const reserves=[...host.querySelectorAll<HTMLElement>('.qrow-r')].filter(row=>row.isConnected&&row.clientWidth>0);
+  for(const row of reserves)for(const d of row.querySelectorAll<HTMLElement>('[data-drop]'))d.classList.remove('drop');
+  const tight=reserves.filter(row=>[...row.children].some(c=>c.scrollWidth>c.clientWidth));
+  for(const row of tight)for(const d of row.querySelectorAll<HTMLElement>('[data-drop]'))d.classList.add('drop');
   const hidden=entries.filter(({e})=>e.classList.contains('pl-side')&&e.scrollWidth>e.clientWidth);
   for(const {e} of hidden)setText(e,''); // D371 Q5: an unfit plugin side value is hidden, never cut.
   // CKP-ENG-53 (§14): drop speed first, then tokens; ≈cost always stays.

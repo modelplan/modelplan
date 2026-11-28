@@ -155,15 +155,15 @@ const blue=page=>page.locator('.pg-overview .mfd-alerts li.al-blue');
 test('CKP-MFD-27 a running session on a red quota gets one blue lower-effort line that does not light the lamp more',async({page})=>{
  await open(page,advice());
  await expect(page.locator('.pg-overview .mfd-alerts li').first()).toHaveClass(/\bal-red\b/);
- await expect(blue(page)).toHaveCount(1);await expect(blue(page)).toHaveText('●Synthetic A High→★Med ×0.50 cost, −2.0');
+ await expect(blue(page)).toHaveCount(1);await expect(blue(page)).toHaveText('Synthetic A High→★Med ×0.50 cost, −2.0');
  await expect(page.locator('.pg-overview .mfd-alerts li.al-red')).toHaveCount(1);await expect(page.locator('.pg-overview .mfd-alerts li.al-amber')).toHaveCount(0);
  await expect(page.locator('[data-caution]')).toHaveClass(/\bred\b/);
  // The full list from the lamp carries it too.
- await page.locator('[data-caution]').click();await expect(page.locator('.mfd-alerts.all li.al-blue')).toHaveText('●Synthetic A High→★Med ×0.50 cost, −2.0');
+ await page.locator('[data-caution]').click();await expect(page.locator('.mfd-alerts.all li.al-blue')).toHaveText('Synthetic A High→★Med ×0.50 cost, −2.0');
 });
 test('CKP-MFD-27 Chinese advice line',async({page})=>{
  await open(page,advice(),'zh-CN');
- await expect(blue(page)).toHaveText('●Synthetic A High→★Med 成本×0.50 能力−2.0');
+ await expect(blue(page)).toHaveText('Synthetic A High→★Med 成本×0.50 能力−2.0');
 });
 for(const [name,options] of [['an idle session',{state:'idle'}],['the recommended effort',{effort:'medium'}],['a lower effort',{effort:'low'}],['a quota above the red line',{remaining:40}],['another subscription',{bound:false}]])
  test(`CKP-MFD-27 no advice for ${name}`,async({page})=>{
@@ -183,21 +183,21 @@ function reset(status,schedule,kind){
 }
 const window_=(a,b,precision='window')=>({from:new Date(NOW+a*H).toISOString(),through:new Date(NOW+b*H).toISOString(),precision});
 for(const [name,status,schedule,en,zh,kind] of [
- ['an announced window reads its middle, to the half hour','announced',window_(2,4.2),'●Codex official limit reset · ~in 3h00','●Codex 官方额度重置 · 约 3h00后'],
- ['an approximate time reads that time','announced',window_(5,5,'approximate'),'●Codex official limit reset · ~in 5h00','●Codex 官方额度重置 · 约 5h00后'],
- ['a date-only announcement has no time to show','announced',window_(12,35.9,'date'),'●Codex official limit reset · time TBA','●Codex 官方额度重置 · 待定'],
- ['an announcement without a schedule','announced',null,'●Codex official limit reset · time TBA','●Codex 官方额度重置 · 待定'],
- ['a confirmed reset','confirmed',window_(-2,-1),'●Codex official limit reset confirmed','●Codex 官方额度重置已确认'],
- ['an announced window reads its middle, to the half hour','announced',window_(2,4.2),'●Codex official limit reset · ~in 3h00','●Codex 官方额度重置 · 约 3h00后','direct_reset'],
- ['an approximate time reads that time','announced',window_(5,5,'approximate'),'●Codex official limit reset · ~in 5h00','●Codex 官方额度重置 · 约 5h00后','direct_reset'],
- ['a date-only announcement has no time to show','announced',window_(12,35.9,'date'),'●Codex official limit reset · time TBA','●Codex 官方额度重置 · 待定','direct_reset'],
- ['an announcement without a schedule','announced',null,'●Codex official limit reset · time TBA','●Codex 官方额度重置 · 待定','direct_reset'],
- ['a confirmed reset','confirmed',window_(-2,-1),'●Codex official limit reset confirmed','●Codex 官方额度重置已确认','direct_reset'],
- ['an announced window reads its middle, to the half hour','announced',window_(2,4.2),'●Codex official banked reset · ~in 3h00','●Codex 官方额外重置 · 约 3h00后','reset_credit'],
- ['an approximate time reads that time','announced',window_(5,5,'approximate'),'●Codex official banked reset · ~in 5h00','●Codex 官方额外重置 · 约 5h00后','reset_credit'],
- ['a date-only announcement has no time to show','announced',window_(12,35.9,'date'),'●Codex official banked reset · time TBA','●Codex 官方额外重置 · 待定','reset_credit'],
- ['an announcement without a schedule','announced',null,'●Codex official banked reset · time TBA','●Codex 官方额外重置 · 待定','reset_credit'],
- ['a confirmed reset','confirmed',window_(-2,-1),'●Codex official banked reset confirmed','●Codex 官方额外重置已确认','reset_credit'],
+ ['an announced window reads its middle, to the half hour','announced',window_(2,4.2),'Codex official limit reset · expected in 3h00','Codex 官方额度重置 · 预计 3h00后'],
+ ['an approximate time reads that time','announced',window_(5,5,'approximate'),'Codex official limit reset · expected in 5h00','Codex 官方额度重置 · 预计 5h00后'],
+ ['a date-only announcement has no time to show','announced',window_(12,35.9,'date'),'Codex official limit reset · time TBA','Codex 官方额度重置 · 待定'],
+ ['an announcement without a schedule','announced',null,'Codex official limit reset · time TBA','Codex 官方额度重置 · 待定'],
+ ['a confirmed reset','confirmed',window_(-2,-1),'Codex official limit reset confirmed','Codex 官方额度重置已确认'],
+ ['an announced window reads its middle, to the half hour','announced',window_(2,4.2),'Codex official limit reset · expected in 3h00','Codex 官方额度重置 · 预计 3h00后','direct_reset'],
+ ['an approximate time reads that time','announced',window_(5,5,'approximate'),'Codex official limit reset · expected in 5h00','Codex 官方额度重置 · 预计 5h00后','direct_reset'],
+ ['a date-only announcement has no time to show','announced',window_(12,35.9,'date'),'Codex official limit reset · time TBA','Codex 官方额度重置 · 待定','direct_reset'],
+ ['an announcement without a schedule','announced',null,'Codex official limit reset · time TBA','Codex 官方额度重置 · 待定','direct_reset'],
+ ['a confirmed reset','confirmed',window_(-2,-1),'Codex official limit reset confirmed','Codex 官方额度重置已确认','direct_reset'],
+ ['an announced window reads its middle, to the half hour','announced',window_(2,4.2),'Codex official banked reset · expected in 3h00','Codex 官方额外重置 · 预计 3h00后','reset_credit'],
+ ['an approximate time reads that time','announced',window_(5,5,'approximate'),'Codex official banked reset · expected in 5h00','Codex 官方额外重置 · 预计 5h00后','reset_credit'],
+ ['a date-only announcement has no time to show','announced',window_(12,35.9,'date'),'Codex official banked reset · time TBA','Codex 官方额外重置 · 待定','reset_credit'],
+ ['an announcement without a schedule','announced',null,'Codex official banked reset · time TBA','Codex 官方额外重置 · 待定','reset_credit'],
+ ['a confirmed reset','confirmed',window_(-2,-1),'Codex official banked reset confirmed','Codex 官方额外重置已确认','reset_credit'],
 ])test(`CKP-MFD-28 ${name}${kind?' ('+kind+')':' (legacy, no kind)'}, blue and list-only`,async({page})=>{
  const {send,receive}=await open(page,reset(status,schedule,kind));
  await expect(blue(page)).toHaveText(en);

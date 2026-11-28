@@ -12,6 +12,8 @@ register('host', {
   creditsLabel: ['silk', '点数', 'Credits'],
   alertActive: ['lcd', '告警激活', 'Alert active'],
   alertInactive: ['line', '告警未激活', 'Alert inactive'],
+  // D474 §7.1: the ALERT lamp's tooltip, under the worst quota sentence (long form).
+  lampHint: ['aria', '点一下打开提醒列表（{n} 条提醒）', 'Click to open the alert list (alerts: {n})'],
   shortcutKey0: ['line', '快捷键 0', 'Shortcut key 0'],
   allScope: ['aria', '全部', 'All'],
   helpAria: ['aria', '驾驶舱说明', 'Cockpit help'],
@@ -101,6 +103,7 @@ register('host', {
   relNow: ['lcd', '现在', 'now'],
   relFuture: ['line', '{d}后', 'in {d}'],
   relPast: ['line', '{d}前', '{d} ago'],
+  estimateAround: ['line', '{at} 前后', 'around {at}'],
   durDay: ['lcd', '{n} 天', {one: '{n} day', other: '{n} days'}],
   durHour: ['lcd', '{n} 小时', {one: '{n} hour', other: '{n} hours'}],
   durMinute: ['lcd', '{n} 分', {one: '{n} minute', other: '{n} minutes'}],
@@ -117,7 +120,6 @@ register('host', {
   agoHour: ['line', '{n} 小时前', '{n} h ago'],
   agoDay: ['line', '{n} 天前', '{n} d ago'],
   retryTip: ['aria', '点按重试', 'tap to retry'],
-  staleDot: ['aria', '有订阅读不到新数据', 'A subscription has no new data'],
   refresh: ['silk', '刷新', 'Refresh'],
   noNewData: ['line', '读不到新数据', 'no new data'], // CKP-ENG-55: reads keep failing; values are held
   retry: ['silk', '重试', 'Retry'],

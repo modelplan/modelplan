@@ -59,10 +59,10 @@ register('mfd', {
   importedDay: ['lcd', '已导入', 'Imported'],
   importedPart: ['lcd', '含已导入 {v}', 'incl. imported {v}'],
   moreAlerts: ['lcd', '+{n} ▸', '+{n} ▸'],
-  alResetAnn: ['alert', '{s} 官方额度重置 · 约 {at}', '{s} official limit reset · ~{at}'],
+  alResetAnn: ['alert', '{s} 官方额度重置 · 预计 {at}', '{s} official limit reset · expected {at}'], // D474 §3.2: 预计 = an official time (约 only for ≈$)
   alResetSoon: ['alert', '{s} 官方额度重置 · 待定', '{s} official limit reset · time TBA'],
   alResetConf: ['alert', '{s} 官方额度重置已确认', '{s} official limit reset confirmed'],
-  alBankedAnn: ['alert', '{s} 官方额外重置 · 约 {at}', '{s} official banked reset · ~{at}'],
+  alBankedAnn: ['alert', '{s} 官方额外重置 · 预计 {at}', '{s} official banked reset · expected {at}'],
   alBankedSoon: ['alert', '{s} 官方额外重置 · 待定', '{s} official banked reset · time TBA'],
   alBankedConf: ['alert', '{s} 官方额外重置已确认', '{s} official banked reset confirmed'],
   alertsTitle: ['silk', '告警', 'Alerts'],
@@ -76,7 +76,7 @@ register('mfd', {
   ageNow: ['lcd', '刚刚', 'just now'],
   ageMin: ['lcd', '{m} 分钟前', '{m} min ago'],
   resetUnknown: ['lcd', '重置未知', 'reset ?'],
-  runOut: ['lcd', '约 {t} 用完', 'out ~{t}'],
+  runOut: ['lcd', '预估 {t} 用完', 'est. out in {t}'], // D474 §3.2 (CKP-ENG-26): 预估 for our forecast
   cards: ["silk", "重置次数", "Resets"],
   cardsN: ["lcd", "可用 {n} 次", "{n} ready"],
   cardExp: ["line", "{d}到期", "Expires {d}"],

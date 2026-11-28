@@ -47,7 +47,7 @@
 .ck-eng .qnum{display:inline-flex;align-items:baseline;flex:none;font:600 20px/22px var(--f-lcd);font-variant-numeric:tabular-nums;color:var(--qn,var(--lcd-ink));white-space:nowrap}
 .ck-eng .qnum small{font:400 10px/1 var(--f-lcd);opacity:.55;margin-left:1px}
 .ck-eng .qtxt{display:block;min-width:0;max-width:100%;font:400 11px/13px var(--f-lcd);color:var(--lcd-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}
-.ck-eng .qtxt.warn{color:var(--st-mid)}.ck-eng .qtxt.crit{color:var(--st-low)}.ck-eng .qtxt.qev{color:var(--trial)}
+.ck-eng .qtxt.warn{color:var(--st-mid)}.ck-eng .qtxt.crit{color:var(--st-low)}
 .ck-eng .qmeter{display:grid;row-gap:3px;min-width:0}
 .ck-eng .qbar{display:flex;gap:1.5px;height:5px;min-width:0}
 .ck-eng .qbar i{flex:1;min-width:0;border-radius:1px;background:var(--lcd-ghost)}
@@ -78,12 +78,11 @@
 .ck-eng .eng-pk.lv-amber{color:#f2b84b}.ck-eng .eng-pk.lv-red{color:var(--st-low)}
 .ck-eng .eng-pk[aria-disabled=true]{opacity:.35}
 .ck-eng .eng-pgn{flex:1 1 0;min-width:0;height:13px;display:grid;place-items:center;font:700 9.5px/1 var(--f-lcd);color:#e9edf0;border-radius:2.5px}
-.ck-eng .ek-stale{position:absolute;right:4px;top:3px;width:5px;height:5px;border-radius:50%;background:var(--st-mid);box-shadow:0 0 4px var(--st-mid);pointer-events:none}
 
 
 
 
-.cls-narrow .qcell{padding-left:4px;padding-right:4px}.cls-narrow .qnum small{font-size:8px}
+.cls-narrow .qcell{padding-left:4px;padding-right:4px}.cls-narrow .qnum small{font-size:10px}
 .cls-narrow .qline{gap:2px}
 
 
