@@ -539,8 +539,8 @@ actor S4RowsClient: EngineClient {
         let rendered = entry.composition.dock.dockView.presentedReadingsForChecks[input.id]
         try require(rendered?.selectedWindowID == "month" && rendered?.readout == "12%","normal Dock must paint the selected monthly value")
         try require(input.windows.first(where:{$0.id == "month"})?.isGeneral == true,"a plan-wide monthly window must be general")
-        try require(reading.outer?.windowID.hasSuffix("five") == true,"outer must use the shortest general window")
-        try require(reading.inner?.windowID == "weekly","inner must use the remaining weekly window")
+        try require(reading.outer?.windowID == "weekly","D399: outer must use the weekly window")
+        try require(reading.inner?.windowID.hasSuffix("five") == true,"D399: inner must use the shortest general window")
         try require(input.windows.filter{["model","review","unknown"].contains($0.id)}.allSatisfy{!$0.isGeneral},"scoped, special and unknown limits must stay out of general windows")
         try require(input.windows.first(where:{$0.id.hasSuffix("month")})?.period == .month,"monthly role must survive")
         guard let card=try entry.composition.dock.cardContent(for:input.id) else { throw Failure(description:"normal card missing") }
@@ -562,7 +562,7 @@ actor S4RowsClient: EngineClient {
             guard let preferences=entry.composition.dock.currentMenuBarPreferences else { throw Failure(description:"normal Dock lost Settings") }
             let pinned=try DockInstrumentProjection.evaluate(preferences.applying(to:input),now:Date())
             try require(pinned.remainingPercent == expected,"member-keyed window pin must select its semantic role")
-            try require(pinned.outer?.windowID == "five" && pinned.inner?.windowID == "weekly","pin must not swap ring roles")
+            try require(pinned.outer?.windowID == "weekly" && pinned.inner?.windowID == "five","pin must not swap ring roles")
         }
         guard let synthetic=entry.composition.client as? S4RowsClient else { throw Failure(description:"synthetic rows client missing") }
         var generalFive=window("general-five","session",63,18000);generalFive["limitKey"]="five_hour"
@@ -577,7 +577,7 @@ actor S4RowsClient: EngineClient {
             try await synthetic.replaceRows(snapshot)
             guard let next=entry.composition.presentedContent.snapshot.inputs.first else { throw Failure(description:"member disappeared on refresh") }
             let reading=try DockInstrumentProjection.evaluate(next,now:Date())
-            try require(reading.remainingPercent == 24 && reading.outer?.windowID == "general-five" && reading.inner?.windowID == "general-week","general role selection must not depend on order or include model, named or future pools")
+            try require(reading.remainingPercent == 24 && reading.outer?.windowID == "general-week" && reading.inner?.windowID == "general-five","general role selection must not depend on order or include model, named or future pools")
         }
         account["windows"]=[scopedFive,namedPool,future];row["accounts"]=[account];projection["rows"]=[row];root["projection"]=projection
         let restrictedOnly=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:root))

@@ -62,7 +62,7 @@ type nativeReadError struct{ code, message string }
 func (e nativeReadError) Error() string    { return e.message }
 func codeError(code, message string) error { return nativeReadError{ReaderErrorCode(code), message} }
 func errorCode(err error) string {
-	if errors.Is(err, toolcli.ErrRuntimeMissing) {
+	if errors.Is(err, toolcli.ErrRuntimeMissing) || errors.Is(err, toolcli.ErrInsideAppBundle) {
 		return "runtime_missing"
 	}
 	var coded nativeReadError

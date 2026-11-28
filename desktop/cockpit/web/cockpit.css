@@ -65,7 +65,7 @@ html[data-reduce-motion="true"] #cockpit .mfd-alerts li.al-mark.al-flash{animati
 @media(prefers-reduced-motion:reduce){#cockpit[data-active][data-shell] .caution.flash{animation:none!important}}
 
 /* D277 (CKP-STRIP-16): chip · tool · project · model + effort · elapsed · tokens · right end ("● 58 t/s" or "6m ago"). */
-.ck-tape .t-observed{grid-template-columns:6px 58px minmax(0,104px) minmax(0,1fr) 38px 40px 74px}
+.ck-tape .t-observed{grid-template-columns:6px 58px minmax(0,104px) minmax(0,1fr) 38px 40px 74px;grid-template-rows:16px}
 .ck-tape .t-elapsed,.ck-tape .t-tok{text-align:right;color:var(--lcd-muted)}
 .ck-tape .t-me .t-eff{color:var(--lcd-muted)}
 /* G3-134: an unlisted model reads by its prettified raw name with a dim "not listed" badge. */
@@ -191,7 +191,7 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
 .ck-afterglow{display:none}
 /* G3-47 review: a key's vendor mark sits beside its name, both centred on the key (layout measured on the study:
    flex row, centred, 5 px gap, 3 px from the key top). */
-.ck-eng .ek .ek-identity{position:absolute;left:50%;top:3px;transform:translateX(-50%);display:flex;align-items:center;gap:5px;width:max-content;max-width:calc(100% - 8px)}
+.ck-eng .ek .ek-identity{position:absolute;left:50%;top:3px;height:16px;transform:translateX(-50%);display:flex;align-items:center;gap:5px;width:max-content;max-width:calc(100% - 8px)}
 .ck-eng .ek .ek-identity .lamp{position:static;transform:none;flex:none}
 /* Hull walls (owner build 13), as the opus-r7 study composes them (canopy-h1 + canopy-c01 + strip-hull-unify): narrow
    at the top, wide at the bottom. Below the c01 canopy (the crown) an upper wall stands 8 px inside the 636 px hull,
@@ -508,6 +508,9 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .cal-wk .wk-hints i.down{bottom:1px;color:var(--silk)}
 /* Owner badcase 11-21 (B1): a control the pointer pressed (view.ts pointerKeepsFocus) shows no keyboard ring while it keeps
    that focus; keyboard focus (Tab, arrows) keeps every ring below. */
+/* G3-165: no ring at all unless the last input was a navigation key (view.ts sets #cockpit[data-kbd-nav]). */
+#cockpit:not([data-kbd-nav]) :focus-visible{outline:none}
+#cockpit:not([data-kbd-nav]) .ck-head .rk:focus-visible::before{content:none}
 #cockpit [data-pointer-focus]:focus-visible,body [data-pointer-focus]:focus-visible{outline:none}
 .ck-head .rk[data-pointer-focus]:focus-visible::before{content:none}
 
@@ -518,6 +521,13 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .ck-eng .pl-cell.pl-cal .pl-meter{min-height:0;overflow:hidden}
 .ck-eng .pl-cell.pl-cal .qline{justify-content:space-between}
 
+/* G3-201: the waiting and cleared lines stay transparent for a 0.7 s grace counted from the show (view.ts sets data-wait-shown then, which restarts the animation; the page owns no timers); a display that lands sooner replaces them unseen. Reduce Motion (app setting or system) keeps the grace and drops the fade. */
+[data-engine-wait]:not([data-engine-wait=""]) .ck-eng .ec-empty{opacity:0}
+[data-wait-shown="true"] .ck-eng .ec-empty{animation:ec-wait-in .15s .7s forwards}
+[data-wait-shown="now"][data-engine-wait]:not([data-engine-wait=""]) .ck-eng .ec-empty{opacity:1}
+html[data-reduce-motion="true"] [data-wait-shown="true"] .ck-eng .ec-empty{animation-duration:1ms}
+@media(prefers-reduced-motion:reduce){[data-wait-shown="true"] .ck-eng .ec-empty{animation-duration:1ms}}
+@keyframes ec-wait-in{from{opacity:0}to{opacity:1}}
 /* Give the six-column label room while keeping the vendor mark alongside it. */
 .ck-eng .eng-keys[data-slots="6"] .ek .ek-identity{gap:2px;max-width:calc(100% - 4px)}
 .ck-eng .eng-keys[data-slots="6"] .ek .ek-identity .lamp{width:12px;height:12px}
@@ -548,3 +558,8 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .cal-wk .wk-adr.chip.pending span{border-style:dashed;background:transparent;color:var(--c)}
 /* Owner window pack: the title-edge decoration exists only for the official night skin (hull.css shows it); it is never a flex item here. */
 .ck-head>.mp-title-edge{display:none}
+
+/* D411 nitpick 8: the subscription key row ends where the panels below end (632 px), not 2 px short. */
+.ck-eng .eng-keys{right:var(--eng-pr)}
+/* D411 nitpick 10: opaque rules in the engine panel, so crossing lines do not stack into a brighter dot. */
+:root[data-theme="night"] .ck-eng{--lcd-rule:#181b20}
