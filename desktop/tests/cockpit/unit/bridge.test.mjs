@@ -139,6 +139,8 @@ test('v2 readiness, strict live appearance and native shell state',()=>{
   assert.equal(f.bridge.receive(f.send('shell',{profile:'closed',attached:true,forcedClosed:true,tier:'tall',scope:'all'}),source),true);
   assert.equal(f.bridge.receive(f.send('shell',{profile:'closed',attached:true,forcedClosed:true,tier:'tall',scope:'all',extra:1}),source),false);
   assert.equal(f.bridge.receive(f.send('shell',{profile:'compact',attached:true,forcedClosed:false,tier:'tall',scope:'all'}),source),false);
+  // D444: one layout; the retired compact tier is refused like any unknown value.
+  assert.equal(f.bridge.receive(f.send('shell',{profile:'open',attached:true,forcedClosed:false,tier:'compact',scope:'all'}),source),false);
 });
 test('shell actions are gated by native state and visibility',()=>{
   const f=fixture();
@@ -146,7 +148,7 @@ test('shell actions are gated by native state and visibility',()=>{
   assert.equal(f.bridge.receive(f.send('shell',{profile:'open',attached:true,forcedClosed:false,tier:'tall',scope:'all'}),source),true);
   assert.equal(f.bridge.action('detach'),true);assert.equal(f.bridge.action('putBack'),false);
   assert.equal(f.bridge.action('close'),true);assert.equal(f.bridge.action('shutterToggle'),true);
-  assert.equal(f.bridge.receive(f.send('shell',{profile:'closed',attached:false,forcedClosed:true,tier:'compact',scope:'all'}),source),true);
+  assert.equal(f.bridge.receive(f.send('shell',{profile:'closed',attached:false,forcedClosed:true,tier:'tall',scope:'all'}),source),true);
   assert.equal(f.bridge.action('detach'),false);assert.equal(f.bridge.action('putBack'),true);assert.equal(f.bridge.action('shutterToggle'),false);
   assert.equal(f.bridge.action('close','extra'),false);
   assert.equal(f.bridge.receive(f.send('visibility',{visible:false,occluded:false,key:true}),source),true);
@@ -170,9 +172,9 @@ test('frozen v2 load requires exact initial appearance and tiered shell before r
   const calls=[],events=[],view={clear(){calls.push('clear');},render(){},configure(x){calls.push(['appearance',x]);},updateAppearance(){},shell(x){calls.push(['shell',x]);},active(){},dispose(){}};
   const b=new CockpitBridge(pageId,source.origin,s=>events.push(JSON.parse(s)),view,()=>pageId),send=commands();
   const a={theme:'night',locale:'en',reduceMotion:true,reduceTransparency:false,showProjectNames:true};
-  const shell={profile:'closed',attached:true,forcedClosed:true,tier:'compact',scope:'all'};
+  const shell={profile:'closed',attached:true,forcedClosed:true,tier:'tall',scope:'all'};
   const base=JSON.parse(send('load',{appearance:a,shell}));base.version=2;
-  for(const bad of [{...base,version:1},{...base,shell:undefined},{...base,shell:{...shell,scope:undefined}},{...base,shell:{...shell,scope:'bad/path'}},{...base,appearance:{...a,profile:'full'}},{...base,shell:{...shell,tier:'full',scope:'all'}},{...base,shell:{...shell,profile:'compact'}},{...base,shell:{...shell,extra:true}}])assert.equal(b.receive(JSON.stringify(bad),source),false);
+  for(const bad of [{...base,version:1},{...base,shell:undefined},{...base,shell:{...shell,scope:undefined}},{...base,shell:{...shell,scope:'bad/path'}},{...base,appearance:{...a,profile:'full'}},{...base,shell:{...shell,tier:'full',scope:'all'}},{...base,shell:{...shell,tier:'compact'}},{...base,shell:{...shell,profile:'compact'}},{...base,shell:{...shell,extra:true}}])assert.equal(b.receive(JSON.stringify(bad),source),false);
   assert.equal(b.receive(JSON.stringify(base),source),true);
   assert.deepEqual(calls.filter(Array.isArray),[['appearance',a],['shell',shell]]);
   b.ready();assert.equal(events[0].version,2);assert.equal(events[0].appearanceVersion,2);
@@ -508,4 +510,30 @@ test('CKP-SHELL-50: the app range arrives in the shell before the first render a
   for(const bad of [undefined,'24h','month','all','7']) assert.equal(f.bridge.action('rangeSelect',bad),false,String(bad));
   assert.equal(f.bridge.receive(f.send('visibility',{visible:true,occluded:true,key:true}),source),true);
   assert.equal(f.bridge.action('rangeSelect','7d'),false,'an inactive page cannot ask');
+});
+test('D466 the shared news clock: strict news message, newsLook only to a host that sent one',()=>{
+  const f=fixture(),got=[];
+  const view=f.bridge['view'];view.news=items=>got.push(items);
+  assert.equal(f.bridge.newsLook([{id:'e1',status:'confirmed'}]),false,'no news host yet: nothing is posted');
+  for(const items of [[{id:'e1',status:'done',untilUnixMs:null}],[{id:'e1',status:'confirmed'}],[{id:'',status:'confirmed',untilUnixMs:null}],[{id:'e1',status:'confirmed',untilUnixMs:'1.5'}],Array.from({length:65},()=>({id:'e',status:'announced',untilUnixMs:null}))])
+    assert.equal(f.bridge.receive(f.send('news',{items}),source),false);
+  assert.equal(got.length,0);
+  assert.equal(f.bridge.receive(f.send('news',{items:[{id:'e1',status:'confirmed',untilUnixMs:'1795770000000'},{id:'e2',status:'announced',untilUnixMs:null}]}),source),true);
+  assert.deepEqual(got.at(-1),[{id:'e1',status:'confirmed',until:1795770000000},{id:'e2',status:'announced',until:null}]);
+  assert.equal(f.bridge.newsLook([{id:'e1',status:'confirmed'}]),true);
+  assert.deepEqual(f.events.at(-1).events,[{id:'e1',status:'confirmed'}]);assert.equal(f.events.at(-1).action,'newsLook');
+  assert.equal(f.bridge.newsLook([{id:'e1',status:'later'}]),false);
+});
+test('macrevb-1290-1 late negotiation: looks before the first news message are replayed once, with their time, if still live',()=>{
+  const f=fixture(),looks=()=>f.events.filter(e=>e.type==='action'&&e.action==='newsLook');
+  const at=Date.now()-60_000;
+  assert.equal(f.bridge.newsLook([{id:'live',status:'confirmed'},{id:'gone',status:'announced'}],at),false);
+  assert.equal(f.bridge.newsLook([{id:'live',status:'confirmed'}],at+5000),false,'a second look at the same news keeps the first time');
+  assert.equal(looks().length,0);
+  const until=String(Date.now()+3_600_000);
+  assert.equal(f.bridge.receive(f.send('news',{items:[{id:'live',status:'confirmed',untilUnixMs:until},{id:'gone',status:'announced',untilUnixMs:null}]}),source),true);
+  assert.deepEqual(looks().map(e=>e.events),[[{id:'live',status:'confirmed',atUnixMs:String(at)}]]);
+  // Replayed once only: a later news message posts nothing more.
+  assert.equal(f.bridge.receive(f.send('news',{items:[{id:'live',status:'confirmed',untilUnixMs:until}]}),source),true);
+  assert.equal(looks().length,1);
 });

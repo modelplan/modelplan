@@ -8,9 +8,9 @@
 // bars and numbers take the status colour (normal / amber from 80 % / red from 90 %, 3 % hysteresis), as the quota rings.
 // The widget ring, its readout switch and the hover card are native (ModelPlanResources ResourceReadout / ResourceCard).
 //
-// The big screen paints its charts through the D323 draw hook (modelplan#1092): memory 10-minute stacked area (used /
-// cached) with a pressure strip, CPU 10-second bars (user / system) with a 70 % dashed line, disk bar with a 90 % notch.
-// The label/value lines stay as the fallback when a draw fails.
+// D407 (owner 11-24, option R1): the column paints the half-circle radar through the D323 draw hook (drawRadar below).
+// D413 (option B): the big screen is a four-card history grid (drawGrid). The cells and the label/value lines stay as the
+// fallback when a draw fails.
 //
 // No import of plugin-registry values needed: plugin-builtins.ts lists this plugin (type imports are erased).
 import type {CockpitPlugin,PluginCell,PluginColumn,PluginContext,PluginDrawContext,PluginScreen,PluginWords} from './plugin-registry.js';
@@ -26,17 +26,38 @@ export interface ResourceSample {
   readonly t:number;readonly cpuUser:number;readonly cpuSystem:number;readonly load:number;
   readonly memTotal:number;readonly memApp:number;readonly memWired:number;readonly memCompressed:number;readonly memCached:number;readonly memFree:number;
   readonly swapUsed:number;readonly pressure:ResourcePressure;readonly diskTotal:number;readonly diskFree:number;
+  /** D407: network bytes per second in and out (all interfaces but loopback), always as a pair; absent when the host has
+   *  no rate yet (its first read) or cannot read it. */
+  readonly netIn?:number;readonly netOut?:number;
 }
-export interface ResourceState {readonly samples:readonly ResourceSample[]}
+/** D413: one host minute (ModelPlanResources ResourceMinute): the mean and the raw peak of every reading in it. */
+export interface ResourceMinute {
+  readonly t:number;readonly cpu:number;readonly cpuPeak:number;readonly memory:number;readonly memoryPeak:number;readonly disk:number;readonly diskPeak:number;
+  readonly netIn?:number;readonly netInPeak?:number;readonly netOut?:number;readonly netOutPeak?:number;
+}
+export interface ResourceState {readonly samples:readonly ResourceSample[];readonly minutes?:readonly ResourceMinute[]}
 const KEYS=['t','cpuUser','cpuSystem','load','memTotal','memApp','memWired','memCompressed','memCached','memFree','swapUsed','pressure','diskTotal','diskFree'] as const;
 const BYTES=['memTotal','memApp','memWired','memCompressed','memCached','memFree','swapUsed','diskTotal','diskFree'] as const;
+const NET=['netIn','netOut'] as const;
+const rate=(v:unknown)=>typeof v==='number'&&Number.isSafeInteger(v)&&v>=0&&v<=1e12;
+const MINUTE_KEYS=['t','cpu','cpuPeak','memory','memoryPeak','disk','diskPeak'] as const,MINUTE_NET=['netIn','netInPeak','netOut','netOutPeak'] as const;
+const MINUTE_MS=60_000,HOUR_MS=60*MINUTE_MS;
+function parseMinute(raw:unknown):ResourceMinute|null {
+  if(raw===null||typeof raw!=='object'||Array.isArray(raw))return null;
+  const o=raw as Record<string,unknown>,keys=Object.keys(o),net='netIn' in o;
+  if(keys.length!==MINUTE_KEYS.length+(net?MINUTE_NET.length:0)||!MINUTE_KEYS.every(k=>k in o)||net&&!MINUTE_NET.every(k=>k in o&&rate(o[k])))return null;
+  if(typeof o.t!=='number'||!Number.isSafeInteger(o.t)||o.t<=0||o.t%MINUTE_MS!==0)return null;
+  if(!['cpu','cpuPeak','memory','memoryPeak','disk','diskPeak'].every(k=>percent(o[k])))return null;
+  const copy:Record<string,unknown>={};for(const k of net?[...MINUTE_KEYS,...MINUTE_NET]:MINUTE_KEYS)copy[k]=o[k];
+  return Object.freeze(copy) as unknown as ResourceMinute;
+}
 const PRESSURES:readonly string[]=['normal','warn','critical'];
 const percent=(v:unknown)=>typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=100;
 const bytes=(v:unknown)=>typeof v==='number'&&Number.isSafeInteger(v)&&v>=0;
 function parseSample(raw:unknown):ResourceSample|null {
   if(raw===null||typeof raw!=='object'||Array.isArray(raw))return null;
-  const o=raw as Record<string,unknown>,keys=Object.keys(o);
-  if(keys.length!==KEYS.length||!KEYS.every(k=>k in o))return null;
+  const o=raw as Record<string,unknown>,keys=Object.keys(o),net='netIn' in o||'netOut' in o;
+  if(keys.length!==KEYS.length+(net?NET.length:0)||!KEYS.every(k=>k in o)||net&&!NET.every(k=>k in o&&rate(o[k])))return null;
   if(typeof o.t!=='number'||!Number.isSafeInteger(o.t)||o.t<=0)return null;
   if(!percent(o.cpuUser)||!percent(o.cpuSystem)||(o.cpuUser as number)+(o.cpuSystem as number)>100.5)return null;
   if(typeof o.load!=='number'||!Number.isFinite(o.load)||o.load<0||o.load>4096)return null;
@@ -44,7 +65,7 @@ function parseSample(raw:unknown):ResourceSample|null {
   const s=o as unknown as ResourceSample;
   if(s.memApp+s.memWired+s.memCompressed+s.memCached>s.memTotal*1.05||s.diskFree>s.diskTotal)return null;
   if(!PRESSURES.includes(o.pressure as string))return null;
-  const copy:Record<string,unknown>={};for(const k of KEYS)copy[k]=o[k];
+  const copy:Record<string,unknown>={};for(const k of net?[...KEYS,...NET]:KEYS)copy[k]=o[k];
   return Object.freeze(copy) as unknown as ResourceSample;
 }
 /** Derived values of one sample. */
@@ -87,86 +108,266 @@ const pressureWords=(c:PluginContext,s:ResourceSample):PluginWords=>{
   const swap=c.words('plugin.resourcesSwap',{gb:gb(s.swapUsed)});
   return {full:`${name.full} · ${swap.full}`,short:name.short};
 };
-/** Chart data (pure, unit-tested): memory fractions per sample, a 60-cell pressure strip and 60 CPU bars of 10 s each
- *  (oldest first, the cell/bar holding the newest sample last), the disk used percentage and the two thresholds. */
-export interface ChartData {
-  readonly memory:readonly {readonly t:number;readonly used:number;readonly cached:number}[];
-  readonly strip:readonly ResourcePressure[];
-  readonly cpu:readonly {readonly user:number;readonly system:number}[];
-  readonly disk:number;readonly cpuLine:number;readonly diskNotch:number;
-}
-const BINS=60,BIN_MS=10_000,RANK:Record<ResourcePressure,number>={normal:0,warn:1,critical:2};
-export function chartData(samples:readonly ResourceSample[]):ChartData {
-  const base={cpuLine:80,diskNotch:90};
-  if(!samples.length)return {memory:[],strip:[],cpu:[],disk:0,...base};
-  const newest=samples[samples.length-1]!;
-  const memory=samples.map(s=>({t:s.t,used:(s.memApp+s.memWired+s.memCompressed)/s.memTotal,cached:Math.min(1-(s.memApp+s.memWired+s.memCompressed)/s.memTotal,s.memCached/s.memTotal)}));
-  const strip:ResourcePressure[]=Array<ResourcePressure>(BINS).fill('normal'),sums=Array.from({length:BINS},()=>({user:0,system:0,n:0}));
-  for(const s of samples){
-    const age=Math.floor((newest.t-s.t)/BIN_MS);if(age>=BINS)continue;const i=BINS-1-age;
-    if(RANK[s.pressure]>RANK[strip[i]!])strip[i]=s.pressure;
-    sums[i]!.user+=s.cpuUser;sums[i]!.system+=s.cpuSystem;sums[i]!.n++;
-  }
-  const cpu=sums.map(b=>b.n?{user:b.user/b.n,system:b.system/b.n}:{user:0,system:0});
-  return {memory,strip,cpu,disk:(newest.diskTotal-newest.diskFree)/newest.diskTotal*100,...base};
-}
+// ---- D407 R1 (owner 11-24): the half-circle radar, in the column and on the big screen.
+// Three concentric half arcs, outer to inner CPU · memory · disk (D347 order), in the status colour of their level. Each
+// arc drops a leader line from its left foot to its own row below the radar: the name under the line, the number, the
+// detail, and a history sparkline when there is history. The arcs are the bars, so the rows draw none. Network has no
+// 100 % so it is never an arc: one text row at the bottom. Radar details (owner): faint range rings, ticks every 10 %,
+// bearing spokes, an amber/red tick at 80/90 %, and a static sweep glow. D397: nothing moves at idle; the host draws
+// again only on a reading, a repaint or a size change, and this code starts no frame loop or timer.
 const SVG='http://www.w3.org/2000/svg';
-/** Paints the charts into the host's clipped area with SVG, cockpit tokens and the orchid ink. */
-function drawCharts(c:PluginDrawContext,state:unknown):void {
-  const samples=statesOf(state);if(!samples.length||c.width<=0||c.height<=0)return;
-  const d=chartData(samples),doc=c.area.ownerDocument,W=Math.max(1,c.width),H=Math.max(1,c.height);
+type Arc='cpu'|'memory'|'disk';
+const ARCS:readonly Arc[]=['cpu','memory','disk'];
+/** Bytes per second as the radar's network row prints it: 999B, 86K, 1.2M, 2.5G. */
+export function formatRate(bps:number):string {
+  const one=(v:number)=>{const r=Math.round(v*10)/10;return r>=10?String(Math.round(v)):String(r);};
+  return bps>=1e9?one(bps/1e9)+'G':bps>=1e6?one(bps/1e6)+'M':bps>=1e3?Math.round(bps/1e3)+'K':Math.round(bps)+'B';
+}
+const networkWords=(s:ResourceSample)=>s.netIn===undefined||s.netOut===undefined?null:`↓${formatRate(s.netIn)} ↑${formatRate(s.netOut)}`;
+/** Geometry of the radar in a `width`×`height` area (pure, unit-tested). D465: the outer radius follows the column WIDTH
+ *  (minus room for the "CPU" label), the arc thickness scales with it, and the five rows (CPU, memory, disk, network,
+ *  pressure) share the height below the radar, so the radar and rows fill the column. Only a short column shrinks it. */
+export interface RadarLayout {
+  readonly cx:number;readonly cy:number;readonly scale:number;readonly r:readonly [number,number,number];readonly bw:number;
+  readonly fs:number;readonly vfs:number;readonly rows:readonly number[];readonly rowH:number;readonly pad:number;readonly top:number;
+}
+const MIN_ROW=15,MAX_ROW=26,ROW_COUNT=5;
+export function radarLayout(width:number,height:number):RadarLayout {
+  const W=Math.max(60,width),H=Math.max(80,height),pad=4,tick=9,fs=W>170?10:9.5;
+  const bw=Math.max(7,Math.min(13,W*0.065)),gap=Math.max(3,bw*0.4);
+  const labelRoom=Math.ceil(textWidth('CPU',fs)+3)+1;// the room left of the outermost foot for the "CPU" label
+  const byHeight=H-pad-tick-bw/2-3-4-ROW_COUNT*MIN_ROW;
+  const r0=Math.max(18,Math.min(W/2-labelRoom,byHeight));
+  const cx=W/2,cy=pad+tick+r0+bw/2,top=cy+bw/2+3;
+  const rowH=Math.min(MAX_ROW,(H-top-4)/ROW_COUNT),vfs=Math.max(9,Math.min(W>170?14:13,rowH*0.55));
+  return {cx,cy,scale:r0+bw/2+2,r:[r0,r0-bw-gap,r0-2*(bw+gap)],bw,fs,vfs,pad,rowH,top,rows:Array.from({length:ROW_COUNT},(_,i)=>top+i*rowH)};
+}
+const polar=(cx:number,cy:number,r:number,v:number)=>{const a=Math.PI-Math.min(100,Math.max(0,v))/100*Math.PI;return [cx+r*Math.cos(a),cy-r*Math.sin(a)] as const;};
+const arcPath=(cx:number,cy:number,r:number,v:number)=>{const [x,y]=polar(cx,cy,r,v);return `M${(cx-r).toFixed(2)},${cy.toFixed(2)}A${r.toFixed(2)},${r.toFixed(2)} 0 0 1 ${x.toFixed(2)},${y.toFixed(2)}`;};
+/** Paints the R1 radar into the host's clipped area with cockpit tokens (column and big screen). */
+function drawRadar(c:PluginDrawContext,state:unknown):void {
+  const samples=statesOf(state),last=samples[samples.length-1];if(!last||c.width<=0||c.height<=0)return;
+  const doc=c.area.ownerDocument,T=c.tokens,W=Math.max(1,c.width),H=Math.max(1,c.height),L=radarLayout(W,H);
   const node=(tag:string,attrs:Record<string,string|number>,parent?:Element)=>{const e=doc.createElementNS(SVG,tag);for(const [k,v] of Object.entries(attrs))e.setAttribute(k,String(v));parent?.append(e);return e;};
-  const svg=node('svg',{class:'pl-draw-chart',width:W,height:H,viewBox:`0 0 ${W} ${H}`,role:'img','aria-label':c.words('plugin.resourcesTitle').full});
-  const T=c.tokens,pad=6,gap=8,innerW=W-2*pad,fs=Math.max(8,Math.min(11,H/16));
-  const label=(text:string,x:number,y:number,anchor='start')=>{const t=node('text',{x,y,fill:T.muted,'font-size':fs,'font-family':T.lcdFont,'text-anchor':anchor},svg);t.textContent=text;};
-  // macrevb-1096-1: the readings sit beside the charts (CPU load, memory breakdown, disk capacity), right-aligned on the
-  // label row and squeezed to the free width when the line is longer than the panel.
-  const w=(key:string,vars?:Readonly<Record<string,string|number>>)=>c.words(key,vars).full,last0=samples[samples.length-1]!,view=resourceView(last0);
-  const value=(text:string,y:number,room:number,anchor:'start'|'end'='end')=>{
-    const t=node('text',{x:anchor==='end'?W-pad:pad,y,fill:T.ink,'font-size':fs,'font-family':T.lcdFont,'text-anchor':anchor,'data-readout':''},svg);t.textContent=text;
-    const need=text.length*fs*0.62;if(need>room){t.setAttribute('textLength',String(room));t.setAttribute('lengthAdjust','spacingAndGlyphs');}};
-  // Order CPU · Memory · Disk (D347, same as the column). Heights come from one budget so the three sections always fit
-  // inside the area: every section is label row + body + gap, and the bodies share what is left.
-  const lab=fs+3,stripH=Math.max(3,Math.min(6,H*0.04)),diskH=Math.max(5,Math.min(10,H*0.05)),fixed=pad*2+4*lab+2*gap+stripH+gap+diskH+4;
-  const free=Math.max(12,H-fixed),cpuH=free*0.4,memH=free*0.6;
-  let y=pad;
-  // CPU: one bar per 10 s, user (ink) under system (lighter), with the 70 % dashed line.
-  label(w('plugin.resourcesCpu'),pad,y+fs);
-  value(`${pct(view.cpu)}% · ${w('plugin.resourcesUserSystem')} ${pct(last0.cpuUser)}% · ${pct(last0.cpuSystem)}% · ${w('plugin.resourcesLoad')} ${Math.round(last0.load*10)/10}`,y+fs,innerW-48);y+=lab;
-  const cw=innerW/60,cTop=y,cBot=y+cpuH,cy=(v:number)=>cBot-Math.min(100,v)/100*(cBot-cTop);
-  const cpu=node('g',{'data-chart':'cpu'},svg);
-  d.cpu.forEach((b,i)=>{const g=node('g',{'data-bar':i,'data-user':b.user.toFixed(1),'data-system':b.system.toFixed(1)},cpu);
-    node('rect',{x:(pad+i*cw).toFixed(2),y:cy(b.user).toFixed(2),width:Math.max(0.5,cw-0.5).toFixed(2),height:(cBot-cy(b.user)).toFixed(2),fill:RESOURCE_INK},g);
-    node('rect',{x:(pad+i*cw).toFixed(2),y:cy(b.user+b.system).toFixed(2),width:Math.max(0.5,cw-0.5).toFixed(2),height:(cy(b.user)-cy(b.user+b.system)).toFixed(2),fill:RESOURCE_INK,'fill-opacity':0.45},g);});
-  node('line',{'data-chart':'cpu-line',x1:pad,x2:W-pad,y1:cy(d.cpuLine),y2:cy(d.cpuLine),stroke:T.mid,'stroke-dasharray':'3 3','stroke-width':1},svg);
-  y=cBot+gap;
-  // Memory: stacked area (used, then cached on top) over the ten minutes, with the pressure strip under it.
-  label(w('plugin.resourcesMemory'),pad,y+fs);
-  value(`${pct(view.memory)}% · ${w('plugin.resourcesGb',{used:gb(view.memoryUsed),total:gb(last0.memTotal)})}`,y+fs,innerW-60);y+=lab;
-  value(`${w('plugin.resourcesKinds')} ${[last0.memWired,last0.memApp,last0.memCompressed].map(gb).join(' · ')} · ${w('plugin.resourcesCachedFree')} ${[last0.memCached,last0.memFree].map(gb).join(' · ')} GB`,y+fs,innerW,'start');y+=lab;
-  const mTop=y,mBot=y+memH,last=d.memory[d.memory.length-1]!,span=RESOURCE_WINDOW_MS,t0=last.t-span;
-  const X=(t:number)=>pad+Math.max(0,t-t0)/span*innerW,Y=(f:number)=>mBot-Math.min(1,Math.max(0,f))*(mBot-mTop);
-  const edge=(f:(p:ChartData['memory'][number])=>number)=>d.memory.map(p=>`${X(p.t).toFixed(1)},${Y(f(p)).toFixed(1)}`);
-  const area=(top:string[],bottom:string[])=>`M${top.join('L')}L${bottom.slice().reverse().join('L')}Z`;
-  const floor=d.memory.map(p=>`${X(p.t).toFixed(1)},${mBot.toFixed(1)}`),usedEdge=edge(p=>p.used),stackEdge=edge(p=>p.used+p.cached);
-  node('path',{'data-chart':'memory-cached',d:area(stackEdge,usedEdge),fill:T.ink,'fill-opacity':0.18},svg);
-  node('path',{'data-chart':'memory-used',d:area(usedEdge,floor),fill:RESOURCE_INK,'fill-opacity':0.85},svg);
-  y=mBot+3;
-  const strip=node('g',{'data-chart':'pressure'},svg);
-  d.strip.forEach((p,i)=>node('rect',{x:(pad+i*cw).toFixed(2),y,width:Math.max(0.5,cw-0.5).toFixed(2),height:stripH,fill:p==='critical'?T.low:p==='warn'?T.mid:T.ghost,'data-pressure':p},strip));
-  y+=stripH+gap;
-  // Disk: one bar with the 90 % notch.
-  label(w('plugin.resourcesDisk'),pad,y+fs);
-  value(`${pct(view.disk)}% · ${w('plugin.resourcesFree',{gb:gb(last0.diskFree)})} · ${gb(last0.diskTotal)} GB`,y+fs,innerW-48);y+=lab;
-  node('rect',{x:pad,y,width:innerW,height:diskH,fill:T.ghost},svg);
-  node('rect',{'data-chart':'disk',x:pad,y,width:(innerW*d.disk/100).toFixed(2),height:diskH,fill:RESOURCE_INK},svg);
-  node('line',{'data-chart':'disk-notch',x1:pad+innerW*d.diskNotch/100,x2:pad+innerW*d.diskNotch/100,y1:y-1,y2:y+diskH+1,stroke:T.mid,'stroke-width':1.5},svg);
+  const w=(key:string,vars?:Readonly<Record<string,string|number>>)=>c.words(key,vars);
+  const v=resourceView(last),lv=levelsOf(samples),value:Record<Arc,number>={cpu:v.cpu,memory:v.memory,disk:v.disk};
+  const tone=(l:ResourceLevel)=>l==='low'?T.low:l==='mid'?T.mid:T.ok;
+  const tags:Record<Arc,PluginWords>={cpu:w('plugin.resourcesCpu'),memory:w('plugin.resourcesMemory'),disk:w('plugin.resourcesDisk')};
+  const netSample=[...samples].reverse().find(x=>x.netIn!==undefined&&x.netOut!==undefined),net=netSample?networkWords(netSample):null,netName=w('plugin.resourcesNetwork').full;// the svg's label always has the full words
+  const svg=node('svg',{class:'pl-draw-chart pl-radar',width:W,height:H,viewBox:`0 0 ${W} ${H}`,role:'group',
+    'aria-label':[...ARCS.map(a=>`${tags[a].full} ${pct(value[a])}%`),...(net?[`${netName} ${net}`]:[]),`${w('plugin.resourcesPressure').full} ${pressureWords(c,last).full}`].join(' · ')});
+  const {cx,cy,scale,r,bw,fs,vfs,pad}=L,f=(n:number)=>n.toFixed(2);
+  // Range rings and bearing spokes inside the innermost arc, faint.
+  const inner=r[2]-bw/2-2;
+  for(const k of [0.36,0.7])if(inner*k>4)node('path',{'data-ring':'',d:arcPath(cx,cy,inner*k,100),fill:'none',stroke:T.muted,'stroke-opacity':0.35,'stroke-width':0.7,'stroke-dasharray':'2 3'},svg);
+  for(const b of [25,50,75]){const [x0,y0]=polar(cx,cy,inner*0.2,b),[x1,y1]=polar(cx,cy,scale,b);
+    node('line',{'data-bearing':b,x1:f(x0),y1:f(y0),x2:f(x1),y2:f(y1),stroke:T.muted,'stroke-opacity':0.22,'stroke-width':0.7},svg);}
+  // The static sweep glow: a faint wedge trailing a faint line (never animated, D397).
+  const sweep=node('g',{'data-sweep':''},svg);
+  for(const [from,op] of [[46,0.03],[52,0.05],[57,0.08]] as const){const [ax,ay]=polar(cx,cy,scale,from),[bx,by]=polar(cx,cy,scale,62);
+    node('path',{d:`M${f(cx)},${f(cy)}L${f(ax)},${f(ay)}A${f(scale)},${f(scale)} 0 0 1 ${f(bx)},${f(by)}Z`,fill:T.ok,'fill-opacity':op},sweep);}
+  {const [x,y]=polar(cx,cy,scale,62);node('line',{x1:f(cx),y1:f(cy),x2:f(x),y2:f(y),stroke:T.ok,'stroke-opacity':0.35,'stroke-width':0.8},sweep);}
+  // The arcs: a ghost track and the value in its status colour.
+  ARCS.forEach((a,i)=>{
+    node('path',{'data-track':a,d:arcPath(cx,cy,r[i]!,100),fill:'none',stroke:T.rule,'stroke-width':f(bw)},svg);
+    node('path',{'data-arc':a,'data-value':pct(value[a]),d:arcPath(cx,cy,r[i]!,Math.max(0.5,value[a])),fill:'none',stroke:tone(lv[a]),'stroke-width':f(bw),'stroke-opacity':value[a]>0?1:0},svg);
+  });
+  // The scale: thin outer arc, a tick every 10 % (longer at 0 / 50 / 100), amber and red ticks at 80 and 90 %.
+  node('path',{d:arcPath(cx,cy,scale,100),fill:'none',stroke:T.muted,'stroke-opacity':0.6,'stroke-width':0.7},svg);
+  for(let t=0;t<=100;t+=10){const len=t%50===0?5.5:3.5,[x0,y0]=polar(cx,cy,scale,t),[x1,y1]=polar(cx,cy,scale+len,t);
+    node('line',{'data-tick':t,x1:f(x0),y1:f(y0),x2:f(x1),y2:f(y1),stroke:T.muted,'stroke-opacity':0.7,'stroke-width':0.8},svg);}
+  for(const [t,ink] of [[LEVEL_AMBER,T.mid],[LEVEL_RED,T.low]] as const){const [x0,y0]=polar(cx,cy,scale,t),[x1,y1]=polar(cx,cy,scale+7,t);
+    node('line',{'data-threshold':t,x1:f(x0),y1:f(y0),x2:f(x1),y2:f(y1),stroke:ink,'stroke-width':1.4},svg);}
+  node('line',{x1:pad,x2:W-pad,y1:f(cy+bw/2+0.5),y2:f(cy+bw/2+0.5),stroke:T.muted,'stroke-opacity':0.5,'stroke-width':0.8},svg);
+  const s=Math.max(4,Math.min(9,scale*0.1));
+  node('path',{d:`M${f(cx)},${f(cy-s*1.9)}L${f(cx+s)},${f(cy-1)}L${f(cx)},${f(cy-s*0.55)}L${f(cx-s)},${f(cy-1)}Z`,fill:'none',stroke:T.mid,'stroke-width':1.2,'stroke-linejoin':'round'},svg);
+  // The rows (D465): five rows share the height below the radar. Each arc drops a leader from its left foot to its own
+  // row: the name left of the leader, the number right of all leaders, then a sparkline and a side value. Nothing is
+  // cut: the side value gives way first (full, short, none), then the sparkline; a name that would not fit uses its short
+  // form. Full-width (CJK) glyphs are about one em; Latin and digits in the LCD face about 0.62 em.
+  const width=textWidth,right=W-pad-2,recent=samples.slice(-60);
+  const side:Record<Arc,PluginWords>={cpu:w('plugin.resourcesPeak',{n:pct(peak(samples))}),memory:w('plugin.resourcesGb',{used:gb(v.memoryUsed),total:gb(last.memTotal)}),disk:w('plugin.resourcesFree',{gb:gb(last.diskFree)})};
+  const xv=cx-r[2]+bw/2+8,baseOf=(i:number)=>L.rows[i]!+L.rowH/2+vfs*0.35;
+  ARCS.forEach((a,i)=>{
+    const foot=cx-r[i]!,base=baseOf(i),ink=tone(lv[a]),label=tags[a];
+    node('line',{'data-leader':a,x1:f(foot),x2:f(foot),y1:f(cy+bw/2),y2:f(base+1),stroke:ink,'stroke-opacity':0.75,'stroke-width':1},svg);
+    const row=node('g',{'data-row':a,role:'img','aria-label':`${label.full} ${pct(value[a])}% · ${side[a].full}`},svg),name=width(label.full,fs)<=foot-3-1?label.full:label.short;
+    node('text',{'data-label':'',x:f(foot-3),y:f(base),'text-anchor':'end','font-size':fs,'font-family':T.silkFont,fill:T.ink},row).textContent=name;
+    const num=node('text',{'data-num':'',x:f(xv),y:f(base),'font-size':f(vfs),'font-family':T.lcdFont,fill:ink},row);num.textContent=String(pct(value[a]));
+    node('tspan',{'font-size':f(vfs*0.6)},num).textContent='%';
+    const after=xv+width(`${pct(value[a])}`,vfs)+width('%',vfs*0.6)+6,room=right-after,hasSpark=recent.length>=2,spark=hasSpark?22:0;
+    // The sparkline needs 22 px; the side value only takes what is left beyond it.
+    const said=[side[a].full,side[a].short].find(t=>width(t,fs)+6<=room-spark)??'';
+    if(said)node('text',{'data-side':'',x:f(right),y:f(base),'text-anchor':'end','font-size':fs,'font-family':T.lcdFont,fill:T.muted},row).textContent=said;
+    const sx=after,sr=right-(said?width(said,fs)+6:0),sh=Math.min(vfs*0.8,L.rowH-6),sy=base-sh;
+    if(hasSpark&&sh>=4&&sr-sx>=22){
+      const pts=recent.map((p,j)=>{const pv=resourceView(p)[a];return `${f(sx+j/(recent.length-1)*(sr-sx))},${f(sy+sh-Math.min(100,pv)/100*sh)}`;});
+      node('line',{x1:f(sx),x2:f(sr),y1:f(sy+sh),y2:f(sy+sh),stroke:T.muted,'stroke-opacity':0.3,'stroke-width':0.6},row);
+      node('path',{'data-spark':a,d:`M${pts.join('L')}`,fill:'none',stroke:ink,'stroke-opacity':0.8,'stroke-width':1,'stroke-linejoin':'round'},row);
+    }
+  });
+  // Network and memory pressure: a name at the left, the value at the right. The value gives way to a shorter form before the
+  // name is cut; the name takes its short form last.
+  const left=pad+4,textRow=(kind:string,name:PluginWords,values:readonly string[],i:number,ink:string,mark:string,full:string)=>{
+    const g=node('g',{'data-row':kind,role:'img','aria-label':full},svg),y=baseOf(i)-0.5,vsz=fs+1,room=right-left;
+    // The value outranks the name (D465): every name form keeps a value form before any value is dropped, so a narrow
+    // column reads "Pressure Normal"; below that the value alone ("Critical" is the fact, the leader and the row label say what it is),
+    // and only then the name alone.
+    const tries=[...[name.full,name.short].flatMap(n=>values.map(v=>[n,v] as const)),...values.map(v=>['',v] as const),...[name.full,name.short].map(n=>[n,''] as const)];
+    const [nm,val]=tries.find(([n,v])=>width(n,fs)+(v?8+width(v,vsz):0)<=room)??[name.short,''];
+    node('text',{'data-name':'',x:f(left),y:f(y),'font-size':fs,'font-family':T.silkFont,fill:T.muted},g).textContent=nm;
+    if(val)node('text',{[mark]:'',x:f(right),y:f(y),'text-anchor':'end','font-size':vsz,'font-family':T.lcdFont,fill:ink},g).textContent=val;
+  };
+  node('line',{x1:pad,x2:W-pad,y1:f(L.rows[3]!),y2:f(L.rows[3]!),stroke:T.muted,'stroke-opacity':0.3,'stroke-width':0.6},svg);
+  textRow('network',w('plugin.resourcesNetwork'),net?[net,`↓${formatRate(netSample!.netIn!)}`]:[],3,T.ink,'data-net',net?`${netName} ${net}`:netName);
+  const pw=pressureWords(c,last),pn=w('plugin.resourcesPressure'),pink=last.pressure==='critical'?T.low:last.pressure==='warn'?T.mid:T.ink;
+  textRow('pressure',pn,[pw.full,pw.short],4,pink,'data-pressure',`${pn.full} ${pw.full}`);
+  c.area.replaceChildren(svg);
+}
+// ---- D413 (owner 11-24, option B): the big screen is a four-card grid, CPU · memory · disk · network. Each card: a status
+// lamp and the name, the big current value, a 峰/均 pair, a detail line, and a white thin-line history (amber above 80 %,
+// red above 90 %, a dotted average, a hollow peak dot, a bright "now" dot) in the effort page's type and grid. Radar
+// details stay static (range lines, bearing dots, 80/90 ticks, a still sweep at "now"). The centre bottom key picks
+// 10 min (the raw readings) or 1 h (one point a minute, its peak from the raw readings). Nothing animates (D397).
+export type ResourceRange='10m'|'1h';
+export type ResourceMetric='cpu'|'memory'|'disk'|'netIn'|'netOut';
+export interface SeriesPoint {readonly t:number;readonly v:number;readonly peak:number}
+export interface ResourceSeries {
+  readonly range:ResourceRange;readonly start:number;readonly end:number;
+  readonly points:Readonly<Record<ResourceMetric,readonly SeriesPoint[]>>;
+  readonly peak:Readonly<Record<ResourceMetric,number|null>>;readonly avg:Readonly<Record<ResourceMetric,number|null>>;
+}
+const METRICS:readonly ResourceMetric[]=['cpu','memory','disk','netIn','netOut'];
+const sampleValue=(s:ResourceSample,m:ResourceMetric):number|null=>{const v=resourceView(s);return m==='netIn'?s.netIn??null:m==='netOut'?s.netOut??null:v[m];};
+/** The screen's series (pure, unit-tested). 10 min: every raw reading. 1 h: one point a minute: the host's folds, and
+ *  for minutes the host has not folded yet (the current one, or a host that sends none) the page's own readings. */
+export function resourceSeries(state:unknown,range:ResourceRange):ResourceSeries {
+  const samples=statesOf(state),end=samples.length?samples[samples.length-1]!.t:0,span=range==='1h'?HOUR_MS:RESOURCE_WINDOW_MS,start=end-span;
+  const points={} as Record<ResourceMetric,SeriesPoint[]>;for(const m of METRICS)points[m]=[];
+  if(range==='10m'){for(const s of samples){if(s.t<=start)continue;for(const m of METRICS){const v=sampleValue(s,m);if(v!==null)points[m].push({t:s.t,v,peak:v});}}}
+  else{
+    const host=new Map<number,ResourceMinute>();for(const x of (state as ResourceState|undefined)?.minutes??[])if(x.t>start-MINUTE_MS)host.set(x.t,x);
+    const own=new Map<number,ResourceSample[]>();for(const s of samples){const k=Math.floor(s.t/MINUTE_MS)*MINUTE_MS;if(host.has(k))continue;let l=own.get(k);if(!l){l=[];own.set(k,l);}l.push(s);}
+    const keys=[...new Set([...host.keys(),...own.keys()])].sort((a,b)=>a-b);
+    for(const k of keys){
+      const h=host.get(k);
+      if(h){const net:Record<string,[number|undefined,number|undefined]>={netIn:[h.netIn,h.netInPeak],netOut:[h.netOut,h.netOutPeak]};
+        for(const m of METRICS){const [v,p]=m==='cpu'?[h.cpu,h.cpuPeak]:m==='memory'?[h.memory,h.memoryPeak]:m==='disk'?[h.disk,h.diskPeak]:net[m]!;
+          if(v!==undefined&&p!==undefined)points[m].push({t:k+MINUTE_MS/2,v,peak:p});}continue;}
+      const list=own.get(k)!;
+      for(const m of METRICS){const vs=list.map(x=>sampleValue(x,m)).filter((x):x is number=>x!==null);if(vs.length)points[m].push({t:k+MINUTE_MS/2,v:vs.reduce((a,b)=>a+b,0)/vs.length,peak:Math.max(...vs)});}
+    }
+    // A minute that overlaps the window counts (its start may be before the window's): 60 closed minutes + the open one.
+    for(const m of METRICS)points[m]=points[m].filter(p=>p.t+MINUTE_MS/2>start);
+  }
+  const peakOf={} as Record<ResourceMetric,number|null>,avgOf={} as Record<ResourceMetric,number|null>;
+  for(const m of METRICS){const p=points[m];peakOf[m]=p.length?Math.max(...p.map(x=>x.peak)):null;avgOf[m]=p.length?p.reduce((a,x)=>a+x.v,0)/p.length:null;}
+  return {range,start,end,points,peak:peakOf,avg:avgOf};
+}
+const rangeToggle=(c:PluginContext,range:ResourceRange)=>({key:'range',value:range,options:[{value:'10m',label:c.words('plugin.resourcesRange10')},{value:'1h',label:c.words('plugin.resourcesRange60')}]});
+/** Bytes per second as the network card's big number: value and unit apart. */
+function rateParts(bps:number):[string,string] {
+  if(bps>=1e9)return [String(Math.round(bps/1e8)/10),'GB/s'];if(bps>=1e6)return [String(Math.round(bps/1e5)/10),'MB/s'];
+  if(bps>=1e3)return [String(Math.round(bps/1e3)),'KB/s'];return [String(Math.round(bps)),'B/s'];
+}
+let gridIds=0;
+/** Full-width (CJK) glyphs are about one em; Latin and digits in the LCD face about 0.62 em. */
+const textWidth=(text:string,size:number)=>[...text].reduce((n,ch)=>n+(/[\u2e80-\uffef]/.test(ch)?1:0.62),0)*size;
+/** Paints the D413 four-card grid into the screen's clipped area (drawn at its measured size; 362 × 213 in the app). */
+function drawGrid(c:PluginDrawContext,state:unknown,range:ResourceRange):void {
+  const samples=statesOf(state),last=samples[samples.length-1];if(!last||c.width<=0||c.height<=0)return;
+  const doc=c.area.ownerDocument,T=c.tokens,W=Math.max(1,c.width),H=Math.max(1,c.height),f=(n:number)=>n.toFixed(1),id=`rg${++gridIds}-`;
+  const node=(tag:string,attrs:Record<string,string|number>,parent?:Element)=>{const e=doc.createElementNS(SVG,tag);for(const [k,v] of Object.entries(attrs))e.setAttribute(k,String(v));parent?.append(e);return e;};
+  const w=(key:string,vars?:Readonly<Record<string,string|number>>)=>c.words(key,vars).full;
+  const MUTED='#87939e',DETAIL='#6f7a85',TICK='#5d6873',INK='#e9edf0',GLASS='#04070c',font=T.lcdFont;
+  const series=resourceSeries(state,range),v=resourceView(last),lv=levelsOf(samples);
+  const tone=(l:ResourceLevel)=>l==='low'?T.low:l==='mid'?T.mid:T.ok,figure=(l:ResourceLevel)=>l==='low'?T.low:l==='mid'?T.mid:INK;
+  const rangeWord=w(range==='1h'?'plugin.resourcesLast60':'plugin.resourcesLast10');
+  const svg=node('svg',{class:'pl-draw-chart pl-grid',width:W,height:H,viewBox:`0 0 ${W} ${H}`,role:'img','data-range':range,
+    'aria-label':`${w('plugin.resourcesTitle')} · ${rangeWord} · ${w('plugin.resourcesCpu')} ${pct(v.cpu)}% · ${w('plugin.resourcesMemory')} ${pct(v.memory)}% · ${w('plugin.resourcesDisk')} ${pct(v.disk)}%`});
+  const text=(x:number,y:number,size:number,fill:string,content:string,attrs:Record<string,string|number>={},parent:Element=svg)=>{const t=node('text',{x:f(x),y:f(y),'font-size':size,'font-family':font,fill,...attrs},parent);t.textContent=content;return t;};
+  const span=(parent:Element,content:string,attrs:Record<string,string|number>)=>{node('tspan',attrs,parent).textContent=content;};
+  // Top line: "资源 · 最近 10 分钟" left; memory pressure and load right (values in ink).
+  const headEl=text(8,17,11,INK,w('plugin.resourcesHead',{range:rangeWord}),{'data-head':''});
+  // The right side gives way before it meets the title: full words and load, then without the load, then the short
+  // words, then the value alone (EN \"Mem pressure Elevated · Load 1.2\" does not fit beside \"Resources · last 10 min\" at 362 px).
+  const pw=pressureWords(c,last),headRoom=W-16-textWidth(headEl.textContent??'',11)-8;
+  const loadText=String(Math.round(last.load*100)/100),pLabel=c.words('plugin.resourcesPressure');
+  const sides:[string,string,string][]=[[`${pLabel.full} `,pw.full,` · ${w('plugin.resourcesLoad')} ${loadText}`],[`${pLabel.full} `,pw.full,''],[`${pLabel.short} `,pw.short,''],['',pw.short,'']];
+  const [sl,sv,sx]=sides.find(([a,b,x])=>textWidth(a+b+x,10)<=headRoom)??sides[sides.length-1]!;
+  const right=text(W-8,17,10,MUTED,sl,{'text-anchor':'end'});
+  span(right,sv,{fill:INK});if(sx){const k=sx.indexOf(loadText);span(right,sx.slice(0,k),{});span(right,loadText,{fill:INK});}
+  const gap=7,cw=Math.floor((W-16-gap)/2),top=25.5,ch=Math.max(40,Math.floor((H-top-23.5-6)/2));
+  const netName=w('plugin.resourcesNetwork'),netInNow=series.points.netIn.at(-1)?.v,netOutNow=series.points.netOut.at(-1)?.v,netLast=netInNow!==undefined&&netOutNow!==undefined;// the range decides, not the latest sample: one tick without rates (a counter reset) keeps the graph
+  type Card={metric:ResourceMetric;name:string;lamp:string;big:[string,string];colour:string;detail:string;pv:[string,string]|null;percent:boolean};
+  const pctText=(n:number|null)=>n===null?'':`${Math.round(n)}%`,rateText=(n:number|null)=>n===null?'':formatRate(n);
+  const [netBig,netUnit]=netLast?rateParts(netInNow!):['',''];
+  const cards:Card[]=[
+    {metric:'cpu',name:w('plugin.resourcesCpu'),lamp:tone(lv.cpu),big:[String(pct(v.cpu)),'%'],colour:figure(lv.cpu),detail:w('plugin.resourcesUserSys',{u:pct(last.cpuUser),s:pct(last.cpuSystem)}),pv:[pctText(series.peak.cpu),pctText(series.avg.cpu)],percent:true},
+    {metric:'memory',name:w('plugin.resourcesMemory'),lamp:tone(lv.memory),big:[String(pct(v.memory)),'%'],colour:figure(lv.memory),detail:c.words('plugin.resourcesGb',{used:gb(v.memoryUsed),total:gb(last.memTotal)}).short,pv:[pctText(series.peak.memory),pctText(series.avg.memory)],percent:true},
+    {metric:'disk',name:w('plugin.resourcesDisk'),lamp:tone(lv.disk),big:[String(pct(v.disk)),'%'],colour:figure(lv.disk),detail:c.words('plugin.resourcesFree',{gb:gb(last.diskFree)}).short,pv:[pctText(series.peak.disk),pctText(series.avg.disk)],percent:true},
+    {metric:'netIn',name:`${netName} ↓`,lamp:T.ok,big:[netBig,netUnit],colour:INK,detail:netLast?`↑ ${rateParts(netOutNow!).join(' ')}`:'',pv:netLast?[rateText(series.peak.netIn),rateText(series.avg.netIn)]:null,percent:false},
+  ];
+  const ticks=range==='1h'?{n:12,major:6,labels:[w('plugin.resourcesAgo',{n:60}),'−30',w('plugin.resourcesNow')]}:{n:10,major:5,labels:[w('plugin.resourcesAgo',{n:10}),'−5',w('plugin.resourcesNow')]};
+  cards.forEach((card,i)=>{
+    const x0=8.5+(i%2)*(cw+gap),y0=top+Math.floor(i/2)*(ch+6),g=node('g',{'data-card':card.metric==='netIn'?'network':card.metric},svg);
+    node('rect',{x:f(x0),y:f(y0),width:cw,height:ch,rx:3,fill:'#ffffff','fill-opacity':0.018,stroke:'#ffffff12'},g);
+    node('rect',{'data-lamp':'',x:f(x0+6.5),y:f(y0+5.5),width:2,height:7,rx:0.6,fill:card.lamp},g);
+    text(x0+12.5,y0+12.5,9,MUTED,card.name,{'data-name':''},g);
+    if(card.detail)text(x0+cw-6.5,y0+12.5,9,DETAIL,card.detail,{'text-anchor':'end','data-detail':''},g);
+    if(card.big[0]){const big=text(x0+6.5,y0+32.5,16,card.colour,card.big[0],{'font-weight':600,'data-value':''},g);span(big,card.big[1],{'font-size':9,'font-weight':400,fill:MUTED,dx:1});}
+    if(card.pv){const pv=text(x0+cw-6.5,y0+31.5,10,INK,'',{'text-anchor':'end','data-pv':''},g);span(pv,`${w('plugin.resourcesPk')} `,{'font-size':9,fill:MUTED});span(pv,card.pv[0],{});span(pv,`${w('plugin.resourcesAvg')} `,{'font-size':9,fill:MUTED,dx:6});span(pv,card.pv[1],{});}
+    // The chart: x by time over the range, y 0–100 % (network: 0 to the range's peak).
+    const cx0=x0+6.5,cx1=x0+cw-10.5,cy0=y0+38.5,cy1=y0+ch-7.5,hgt=cy1-cy0;
+    const pts=series.points[card.metric],max=card.percent?100:Math.max(1,series.peak.netIn??0,series.peak.netOut??0);
+    const X=(t:number)=>cx0+Math.max(0,Math.min(1,(t-series.start)/Math.max(1,series.end-series.start)))*(cx1-cx0),Y=(val:number)=>cy1-Math.min(1,Math.max(0,val/max))*hgt;
+    node('line',{x1:f(cx0),x2:f(cx1),y1:f(cy1+0.5),y2:f(cy1+0.5),stroke:INK,'stroke-opacity':0.14},g);
+    for(const [k,op] of [[0.5,0.07],[1,0.045]] as const)node('line',{'data-ring':'',x1:f(cx0),x2:f(cx1),y1:f(cy1-k*hgt),y2:f(cy1-k*hgt),stroke:'#ffffff','stroke-opacity':op,'stroke-dasharray':'2 3'},g);
+    for(let k=1;k<5;k++){const x=cx0+k/5*(cx1-cx0);node('line',{'data-bearing':'',x1:f(x),x2:f(x),y1:f(cy0),y2:f(cy1),stroke:'#ffffff','stroke-opacity':0.05,'stroke-dasharray':'1 3'},g);}
+    const defs=node('defs',{},g),gid=id+i;
+    const grad=(name:string,x2:number,y2:number,stops:[number,number][])=>{const l=node('linearGradient',{id:gid+name,x1:0,y1:0,x2,y2},defs);for(const [o,op] of stops)node('stop',{offset:o,'stop-color':INK,'stop-opacity':op},l);};
+    grad('a',0,1,[[0,0.16],[1,0.015]]);grad('s',1,0,[[0,0],[1,0.07]]);
+    const noNet=card.metric==='netIn'&&!netLast;
+    if(!noNet)node('rect',{'data-sweep':'',x:f(cx1-22),y:f(cy0-1),width:22,height:f(hgt+1),fill:`url(#${gid}s)`},g);
+    node('line',{x1:f(cx1+0.5),x2:f(cx1+0.5),y1:f(cy0-1),y2:f(cy1),stroke:INK,'stroke-opacity':0.2},g);
+    if(noNet){text((cx0+cx1)/2,(cy0+cy1)/2+3,9,DETAIL,w('plugin.resourcesNoNet'),{'text-anchor':'middle','data-empty':''},g);}
+    else if(pts.length){
+      const line=pts.map(p=>`${f(X(p.t))},${f(Y(p.v))}`).join(' L'),area=`M${line} L${f(X(pts[pts.length-1]!.t))},${f(cy1)} L${f(X(pts[0]!.t))},${f(cy1)} Z`;
+      const clip=(name:string,y:number,h:number)=>{const cp=node('clipPath',{id:gid+name},defs);node('rect',{x:f(cx0-2),y:f(y),width:f(cx1-cx0+4),height:f(Math.max(0,h))},cp);return `url(#${gid+name})`;};
+      node('path',{d:area,fill:`url(#${gid}a)`},g);
+      const d=`M${line}`;
+      if(card.percent){
+        const y80=Y(LEVEL_AMBER),y90=Y(LEVEL_RED),cw80=clip('w',y80,cy1+3-y80),ca=clip('m',y90,y80-y90),cr=clip('r',cy0-6,y90-cy0+6);
+        const ga=node('g',{'clip-path':ca},g),gr=node('g',{'clip-path':cr},g);
+        node('path',{d:area,fill:T.mid,'fill-opacity':0.22},ga);node('path',{d:area,fill:T.low,'fill-opacity':0.2},gr);
+        node('path',{'data-line':'',d,fill:'none',stroke:INK,'stroke-opacity':0.88,'stroke-width':1.2,'stroke-linejoin':'round','clip-path':cw80},g);
+        node('path',{'data-line-mid':'',d,fill:'none',stroke:T.mid,'stroke-width':1.3,'stroke-linejoin':'round','clip-path':ca},g);
+        node('path',{'data-line-low':'',d,fill:'none',stroke:T.low,'stroke-width':1.3,'stroke-linejoin':'round','clip-path':cr},g);
+      }else{
+        node('path',{'data-line':'',d,fill:'none',stroke:INK,'stroke-opacity':0.88,'stroke-width':1.2,'stroke-linejoin':'round'},g);
+        const up=series.points.netOut;if(up.length)node('path',{'data-line-up':'',d:`M${up.map(p=>`${f(X(p.t))},${f(Y(p.v))}`).join(' L')}`,fill:'none',stroke:INK,'stroke-opacity':0.6,'stroke-width':1,'stroke-dasharray':'1 2'},g);
+      }
+      const avg=series.avg[card.metric];if(avg!==null)node('line',{'data-avg':'',x1:f(cx0),x2:f(cx1),y1:f(Y(avg)),y2:f(Y(avg)),stroke:MUTED,'stroke-width':1,'stroke-dasharray':'.1 2.6','stroke-linecap':'round'},g);
+      const hi=pts.reduce((a,p)=>p.peak>a.peak?p:a,pts[0]!);
+      node('circle',{'data-peak':'',cx:f(X(hi.t)),cy:f(Y(hi.peak)),r:2,fill:GLASS,stroke:INK,'stroke-opacity':0.85,'stroke-width':1},g);
+      const now=pts[pts.length-1]!,nowInk=card.percent&&now.v>=LEVEL_RED?T.low:card.percent&&now.v>=LEVEL_AMBER?T.mid:INK;
+      node('circle',{cx:f(X(now.t)),cy:f(Y(now.v)),r:4.5,fill:nowInk,'fill-opacity':0.14},g);
+      node('circle',{'data-now':'',cx:f(X(now.t)),cy:f(Y(now.v)),r:2.1,fill:nowInk,stroke:GLASS,'stroke-width':1},g);
+    }
+    // The scale at the right edge: 0 / 50 / 100, and the amber and red ticks at 80 / 90 % (percent cards only).
+    for(const k of [0,0.5,1])node('line',{x1:f(cx1+1.5),x2:f(cx1+4.5),y1:f(cy1-k*hgt),y2:f(cy1-k*hgt),stroke:INK,'stroke-opacity':0.25},g);
+    if(card.percent)for(const [t,ink] of [[LEVEL_AMBER,T.mid],[LEVEL_RED,T.low]] as const)node('line',{'data-threshold':t,x1:f(cx1+1.5),x2:f(cx1+4.5),y1:f(Y(t)),y2:f(Y(t)),stroke:ink,'stroke-opacity':0.7},g);
+    // The time axis under the bottom row: a short tick each minute (1 h: each 5 minutes), a long one each 5 (30).
+    if(i>=2){for(let k=0;k<=ticks.n;k++){const x=cx0+k/ticks.n*(cx1-cx0),major=k%ticks.major===0;node('line',{'data-tick':'',x1:f(x),x2:f(x),y1:f(cy1+1),y2:f(cy1+(major?4:2.5)),stroke:INK,'stroke-opacity':major?0.35:0.2},g);}
+      const ly=y0+ch+11.5;text(cx0,ly,8,TICK,ticks.labels[0]!,{},g);text((cx0+cx1)/2,ly,8,TICK,ticks.labels[1]!,{'text-anchor':'middle'},g);text(cx1,ly,8,TICK,ticks.labels[2]!,{'text-anchor':'end'},g);}
+  });
   c.area.replaceChildren(svg);
 }
 const peak=(samples:readonly ResourceSample[])=>samples.reduce((m,s)=>Math.max(m,resourceView(s).cpu),0);
 export const resourcePlugin:CockpitPlugin=Object.freeze({
   id:'resources',
   title:'plugin.resourcesTitle',
+  screenShort:'plugin.resourcesScreenShort',
   summary:'plugin.resourcesSummary',
   // D371: white line art without the small square frame: just the heartbeat line.
   icon:'<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 8.5h3.5l1.8-5 3.2 9 1.8-4H15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/></svg>',
@@ -177,8 +378,16 @@ export const resourcePlugin:CockpitPlugin=Object.freeze({
   // D324: the column samples every 2, 5 or 10 s while it is shown (the host snaps other saved values to these).
   settings:Object.freeze([Object.freeze({key:'intervalSeconds',kind:'seconds' as const,min:2,max:10,default:5,choices:Object.freeze([2,5,10])})]),
   accept(data:unknown,previous:unknown){
-    if(data===null||typeof data!=='object'||Array.isArray(data)||Object.keys(data).length!==1)return undefined;
-    const raw=(data as {samples?:unknown}).samples;
+    // A reading is {samples} or (D413) {samples, minutes}: the host's last hour of one-minute folds, sent when it changed.
+    if(data===null||typeof data!=='object'||Array.isArray(data))return undefined;
+    const keys=Object.keys(data);if(!keys.includes('samples')||keys.some(k=>k!=='samples'&&k!=='minutes'))return undefined;
+    const raw=(data as {samples?:unknown}).samples,rawMinutes=(data as {minutes?:unknown}).minutes;
+    let minutes:readonly ResourceMinute[]|undefined=(previous as ResourceState|undefined)?.minutes;
+    if(rawMinutes!==undefined){
+      if(!Array.isArray(rawMinutes)||rawMinutes.length>60)return undefined;
+      const parsed:ResourceMinute[]=[];for(const m of rawMinutes){const x=parseMinute(m);if(!x)return undefined;parsed.push(x);}
+      minutes=Object.freeze(parsed.sort((a,b)=>a.t-b.t));
+    }
     if(!Array.isArray(raw)||raw.length<1||raw.length>MAX_PER_READING)return undefined;
     const incoming:ResourceSample[]=[];
     for(const r of raw){const s=parseSample(r);if(!s)return undefined;incoming.push(s);}
@@ -186,7 +395,7 @@ export const resourcePlugin:CockpitPlugin=Object.freeze({
     for(const s of [...statesOf(previous),...incoming])byTime.set(s.t,s);
     const sorted=[...byTime.values()].sort((a,b)=>a.t-b.t),newest=sorted[sorted.length-1].t;
     const kept=sorted.filter(s=>s.t>newest-RESOURCE_WINDOW_MS).slice(-MAX_KEPT);
-    return Object.freeze({samples:Object.freeze(kept)}) as ResourceState;
+    return Object.freeze(minutes?{samples:Object.freeze(kept),minutes}:{samples:Object.freeze(kept)}) as ResourceState;
   },
   column(state:unknown,c:PluginContext):PluginColumn{
     const samples=statesOf(state),s=latest(state);
@@ -199,14 +408,16 @@ export const resourcePlugin:CockpitPlugin=Object.freeze({
       {tag:tags[1],value:pct(v.memory),unit:'%',side:c.words('plugin.resourcesGb',{used:gb(v.memoryUsed),total:gb(s.memTotal)}),bar:v.memory/100,tone:true,trend:recent.map(x=>x.memory/100),level:lv.memory},
       {tag:tags[2],value:pct(v.disk),unit:'%',side:c.words('plugin.resourcesFree',{gb:gb(s.diskFree)}),bar:v.disk/100,tone:true,level:lv.disk},
     ];
-    return {cells,foot};
+    // D407: with a reading the column paints the R1 radar; the cells are its fallback (and the empty column's tags).
+    return {cells,foot,draw:(ctx:PluginDrawContext)=>drawRadar(ctx,state),drawFoot:true};
   },
   screen(state:unknown,c:PluginContext):PluginScreen{
     const s=latest(state),w=(key:string,vars?:Readonly<Record<string,string|number>>)=>c.words(key,vars).full;
     const every={label:w('plugin.resourcesSampling'),value:w('plugin.resourcesEvery',{n:c.settings.intervalSeconds})};
-    if(!s)return {lines:[every]};
+    if(!s)return {lines:[every],toggle:rangeToggle(c,c.memo?.range==='1h'?'1h':'10m')};
     const v=resourceView(s),samples=statesOf(state),unit=(text:string)=>`${text} GB`;
-    return {draw:(ctx:PluginDrawContext)=>drawCharts(ctx,state),lines:[
+    const range:ResourceRange=c.memo?.range==='1h'?'1h':'10m';
+    return {draw:(ctx:PluginDrawContext)=>drawGrid(ctx,state,range),toggle:rangeToggle(c,range),lines:[
       {label:w('plugin.resourcesCpu'),value:`${pct(v.cpu)}%`},
       {label:w('plugin.resourcesUserSystem'),value:`${pct(s.cpuUser)}% · ${pct(s.cpuSystem)}%`},
       {label:w('plugin.resourcesLoad'),value:String(Math.round(s.load*10)/10)},
@@ -216,6 +427,7 @@ export const resourcePlugin:CockpitPlugin=Object.freeze({
       {label:w('plugin.resourcesKinds'),value:unit([s.memWired,s.memApp,s.memCompressed].map(gb).join(' · '))},
       {label:w('plugin.resourcesCachedFree'),value:unit([s.memCached,s.memFree].map(gb).join(' · '))},
       {label:w('plugin.resourcesDisk'),value:`${pct(v.disk)}% · ${w('plugin.resourcesFree',{gb:gb(s.diskFree)})}`},
+      {label:w('plugin.resourcesNetwork'),value:networkWords(s)??''},
       every,
     ]};
   },

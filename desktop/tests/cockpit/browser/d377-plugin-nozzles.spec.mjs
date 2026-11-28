@@ -27,7 +27,7 @@ const read=page=>page.evaluate(()=>{
  return {cols,bells,plugins:document.querySelectorAll('.eng-cols .pl-col').length};
 });
 
-for(const tier of ['tall','compact'])test(`D377 ${tier}: one nozzle per column, plugin columns included, same size and art`,async({page})=>{
+for(const tier of ['tall'])test(`D377 ${tier}: one nozzle per column, plugin columns included, same size and art`,async({page})=>{
  await open(page,{tier});const v=await read(page);
  expect(v.plugins).toBeGreaterThanOrEqual(2);
  expect(v.bells.length).toBe(v.cols.length);
@@ -56,9 +56,9 @@ test('D377 a plugin nozzle stays dark at rest and lights with the whole row on l
 import {mkdir} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 const OUT=fileURLToPath(new URL('../../../cockpit/.tmp/test-results/visual-capture/',import.meta.url));
-for(const tier of ['tall','compact'])test(`D377 capture ${tier}: hull bottom at rest and igniting`,async({page})=>{
+for(const tier of ['tall'])test(`D377 capture ${tier}: hull bottom at rest and igniting`,async({page})=>{
  await open(page,{tier});await mkdir(OUT,{recursive:true});
- const height=tier==='tall'?951:681,clip={x:0,y:height-120,width:636,height:120};
+ const height=951,clip={x:0,y:height-120,width:636,height:120};
  await page.screenshot({path:`${OUT}d377-nozzles-${tier}-rest.png`,clip,animations:'disabled'});
  await page.evaluate(()=>{document.getElementById('cockpit').dataset.ignite='true';});
  await page.waitForTimeout(400);

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
-// D63: the full alert list adds extra resets expiring within 48 hours (with the lower-effort advice from #719); rows
-// whose data the producer does not send are left out. Built page, normal bridge, synthetic data only.
+// D63 as amended by D474 §3.3 / §5.1 (C7, C41): the full alert list adds banked resets expiring within 48 hours as an
+// amber, counted line that never lights the lamp (with the lower-effort advice from #719); rows whose data the producer
+// does not send are left out. Built page, normal bridge, synthetic data only.
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
 import {appearance,commands,pageId,shell,excludePortholeFlicker} from '../fixture.mjs';
 import {visualFixture} from '../visual-fixture.mjs';
@@ -22,11 +23,12 @@ function cards(hours,state='complete'){
  data.details.subscriptions[0].resetCards={state,count:hours.length,truncated:false,sources:[],items:hours.map((h,i)=>({id:(i+1).toString(16).padStart(64,'0'),expiresAt:h===null?null:new Date(NOW+h*H).toISOString().replace('.000Z','Z')}))};
  return data;
 }
-const blue=page=>page.locator('.pg-overview .mfd-alerts li.al-blue');
+// D474: the expiring-reserve line is amber (counted, not lit), with no bullet.
+const blue=page=>page.locator('.pg-overview .mfd-alerts li.al-amber');
 for(const [name,hours,en,zh] of [
- ['one card inside 48 h',[30,72],'●Codex · 1 reset expires within 48 hours','●Codex · 重置次数中有 1 次将在 48 小时内到期'],
- ['two cards inside 48 h',[2,47.5,100],'●Codex · 2 resets expire within 48 hours','●Codex · 重置次数中有 2 次将在 48 小时内到期'],
-])test(`D63 extra resets expiring soon are listed: ${name}`,async({page})=>{
+ ['one card inside 48 h',[30,72],'Codex · 1 reset expires within 48 hours','Codex · 重置次数中有 1 次将在 48 小时内到期'],
+ ['two cards inside 48 h',[2,47.5,100],'Codex · 2 resets expire within 48 hours','Codex · 重置次数中有 2 次将在 48 小时内到期'],
+])test(`D63 banked resets expiring soon are listed: ${name}`,async({page})=>{
  const {send,receive}=await open(page,cards(hours));
  await expect(blue(page)).toHaveText(en);
  await expect(page.locator('[data-caution]')).not.toHaveClass(/\b(lit|red|amber)\b/);
@@ -43,7 +45,9 @@ test('D63 the lamp opens the full list with the expiring resets in it',async({pa
  await open(page,data);
  await page.locator('[data-caution]').click();
  await expect(page.locator('.mfd-alerts.all li.al-red')).toHaveCount(1);
- await expect(page.locator('.mfd-alerts.all li.al-blue')).toHaveText('●Codex · 1 reset expires within 48 hours');
+ await expect(page.locator('.mfd-alerts.all li.al-amber.al-t-reserve')).toHaveText('Codex · 1 reset expires within 48 hours');
+ await expect(page.locator('.mfd-alerts.all li.al-t-reserve .al-dot')).toHaveCount(0);
+ await expect(page.locator('.pg-alerts .al-head')).toHaveText('Alerts · 2');
 });
 test('D63 a subscription joined only by row and route gets no personal reset line',async({page})=>{
  const data=cards([30]);data.subscriptions=[];

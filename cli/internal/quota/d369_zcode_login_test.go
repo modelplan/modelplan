@@ -268,7 +268,7 @@ func TestD369ConsentOnReadsCodingPlanQuota(t *testing.T) {
 	dir := writeZCodeLogin(t, home, zcodeFixture{family: "zai", kind: "individual-coding-plan", accountKey: true, jwt: zcodeTestJWT(time.Now().Add(time.Hour))})
 	before := zcodeSnapshot(t, dir)
 	z := newZCodeServer(t, zcodeQuotaBody, 200, "api.z.ai")
-	grantZCodeLogin(t)
+	grantZCodeKeychain(t, "allow") // D380: both choices; every store waits for the Keychain one
 	now := time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC)
 	cache := t.TempDir()
 	p := ProductionPathsWithAdmission(cache, "1.0.0", consent.Capture())
@@ -315,7 +315,7 @@ func TestD369StartPlanBillingWithDeviceMid(t *testing.T) {
 	body := `{"code":200,"data":{"plans":[{"name":"ZCode Start Plan","status":"active","plan_id":"p1","entitlements":[{"entitlement_id":"e1","period":"daily"}]}],
 	 "balances":[{"entitlement_id":"e1","plan_id":"p1","show_name":"GLM-5.3","total_units":1000,"used_units":250,"remaining_units":750,"expires_at":` + jsonInt(time.Now().Add(6*time.Hour).Unix()) + `}]}}`
 	z := newZCodeServer(t, body, 200, "zcode.z.ai")
-	grantZCodeLogin(t)
+	grantZCodeKeychain(t, "allow") // D380: both choices; every store waits for the Keychain one
 	now := time.Now().UTC()
 	cache := t.TempDir()
 	p := ProductionPathsWithAdmission(cache, "1.0.0", consent.Capture())
@@ -349,7 +349,7 @@ func TestD369ExpiredSignInAsksToSignInAgain(t *testing.T) {
 		dir := writeZCodeLogin(t, home, zcodeFixture{family: "zai", kind: "start-plan", jwt: zcodeTestJWT(time.Now().Add(-time.Minute))})
 		before := zcodeSnapshot(t, dir)
 		z := newZCodeServer(t, `{}`, 200, "zcode.z.ai")
-		grantZCodeLogin(t)
+		grantZCodeKeychain(t, "allow") // D380: both choices; every store waits for the Keychain one
 		now := time.Now().UTC()
 		cache := t.TempDir()
 		p := ProductionPathsWithAdmission(cache, "1.0.0", consent.Capture())
@@ -374,7 +374,7 @@ func TestD369ExpiredSignInAsksToSignInAgain(t *testing.T) {
 		home, _ := os.UserHomeDir()
 		writeZCodeLogin(t, home, zcodeFixture{family: "zai", kind: "individual-coding-plan", accountKey: true})
 		z := newZCodeServer(t, `{"code":401,"msg":"token expired or incorrect"}`, 401, "api.z.ai")
-		grantZCodeLogin(t)
+		grantZCodeKeychain(t, "allow") // D380: both choices; every store waits for the Keychain one
 		now := time.Now().UTC()
 		cache := t.TempDir()
 		_ = ExecuteScopeRefresh(context.Background(), ProductionPathsWithAdmission(cache, "1.0.0", consent.Capture()), consent.ScopeZaiAccountUsageSavedLogin, now)
@@ -398,7 +398,7 @@ func TestD369RegionHostScoping(t *testing.T) {
 		home, _ := os.UserHomeDir()
 		writeZCodeLogin(t, home, zcodeFixture{family: "bigmodel", kind: "individual-coding-plan", accountKey: true})
 		z := newZCodeServer(t, zcodeQuotaBody, 200, "open.bigmodel.cn")
-		grantZCodeLogin(t)
+		grantZCodeKeychain(t, "allow") // D380: both choices; every store waits for the Keychain one
 		cache := t.TempDir()
 		_ = ExecuteScopeRefresh(context.Background(), ProductionPathsWithAdmission(cache, "1.0.0", consent.Capture()), consent.ScopeZaiAccountUsageSavedLogin, time.Now())
 		if z.calls.Load() != 1 {
@@ -414,7 +414,7 @@ func TestD369RegionHostScoping(t *testing.T) {
 		home, _ := os.UserHomeDir()
 		writeZCodeLogin(t, home, zcodeFixture{family: "bigmodel", kind: "start-plan", jwt: zcodeTestJWT(time.Now().Add(time.Hour))})
 		z := newZCodeServer(t, `{}`, 200, "zcode.z.ai", "api.z.ai", "open.bigmodel.cn")
-		grantZCodeLogin(t)
+		grantZCodeKeychain(t, "allow") // D380: both choices; every store waits for the Keychain one
 		cache := t.TempDir()
 		_ = ExecuteScopeRefresh(context.Background(), ProductionPathsWithAdmission(cache, "1.0.0", consent.Capture()), consent.ScopeZaiAccountUsageSavedLogin, time.Now())
 		if z.calls.Load() != 0 {
@@ -430,7 +430,7 @@ func TestD369RegionHostScoping(t *testing.T) {
 		home, _ := os.UserHomeDir()
 		writeZCodeLogin(t, home, zcodeFixture{family: "zai", kind: "individual-coding-plan", accountKey: true, baseURL: "https://open.bigmodel.cn/api/anthropic"})
 		z := newZCodeServer(t, zcodeQuotaBody, 200, "api.z.ai", "open.bigmodel.cn")
-		grantZCodeLogin(t)
+		grantZCodeKeychain(t, "allow") // D380: both choices; every store waits for the Keychain one
 		cache := t.TempDir()
 		_ = ExecuteScopeRefresh(context.Background(), ProductionPathsWithAdmission(cache, "1.0.0", consent.Capture()), consent.ScopeZaiAccountUsageSavedLogin, time.Now())
 		if z.calls.Load() != 0 {
@@ -457,7 +457,7 @@ func TestD369Code500IsNoPlan(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	writeZCodeLogin(t, home, zcodeFixture{family: "zai", kind: "individual-coding-plan", accountKey: true})
 	newZCodeServer(t, `{"code":500,"msg":"no subscription","success":false}`, 200, "api.z.ai")
-	grantZCodeLogin(t)
+	grantZCodeKeychain(t, "allow") // D380: both choices; every store waits for the Keychain one
 	cache := t.TempDir()
 	now := time.Now().UTC()
 	_ = ExecuteScopeRefresh(context.Background(), ProductionPathsWithAdmission(cache, "1.0.0", consent.Capture()), consent.ScopeZaiAccountUsageSavedLogin, now)
@@ -508,7 +508,7 @@ func TestD369RevokeHidesReading(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	writeZCodeLogin(t, home, zcodeFixture{family: "zai", kind: "individual-coding-plan", accountKey: true})
 	newZCodeServer(t, zcodeQuotaBody, 200, "api.z.ai")
-	grantZCodeLogin(t)
+	grantZCodeKeychain(t, "allow") // D380: both choices; every store waits for the Keychain one
 	cache := t.TempDir()
 	now := time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC)
 	if err := ExecuteScopeRefresh(context.Background(), ProductionPathsWithAdmission(cache, "1.0.0", consent.Capture()), consent.ScopeZaiAccountUsageSavedLogin, now); err != nil {

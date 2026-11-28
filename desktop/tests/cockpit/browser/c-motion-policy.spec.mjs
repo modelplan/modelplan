@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Motion policy audit (MOT-2.3-01/02/03/04/08, CKP-MOT-03) on the built page through its normal bridge.
-// Replaces the old blanket `*{animation:none;transition:none}` switch: every animation or transition that is
-// live in the rendered cockpit must be on this list, and none may run under Reduce Motion or while hidden.
+// Every live animation or transition must be on this list. Reduce Motion and hidden windows stop the motion.
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
 import {appearance,commands,pageId,shell} from '../fixture.mjs';
 import {visualFixture,renderVisualDeck} from '../visual-fixture.mjs';
@@ -15,9 +14,13 @@ const ALLOWED_ANIMATIONS=new Set([
  'cockpit-light-breathe', // CKP-ENG-19 (D294) base working light, working subscriptions only; same gates
  'cockpit-bell-flare',    // CKP-SHELL-33 (D294) landing burn thrown out of the mouth, only while the host ignites
  'cockpit-bell-burn',     // the burn's stepped flutter, same gate
+ 'cockpit-flame-flip',    // D454/D459 official blue thrust flipbook, full thrust only; same gates
+ 'cockpit-flame-breathe', // D454 per-nozzle length breath (scale), full thrust only; same gates
+ 'cockpit-flame-flicker', // D454 per-nozzle brightness flicker (opacity), full thrust only; same gates
 ]);
 // Selector fragment -> transitioned properties allowed on it (interaction feedback and fader glide).
-const ALLOWED_TRANSITIONS=[[/\bfd-cap\b/,['top','--fd-frame']],[/\bfd-ghost\b/,['top','opacity']],[/\bfd-peek\b/,['opacity']],// WP-10: the porthole switch's two art layers and the date keys cross-fade in 120 ms (spec R3, section 6 and 7).
+// D405 (#1229): the lever and ghost glide along the tilted slot line; their row is mirrored in --fd-kx for the x half of the glide.
+const ALLOWED_TRANSITIONS=[[/\bfd-cap\b/,['top','--fd-frame','--fd-kx']],[/\bfd-ghost\b/,['top','opacity','--fd-kx']],[/\bfd-peek\b/,['opacity']],// WP-10: the porthole switch's two art layers and the date keys cross-fade in 120 ms (spec R3, section 6 and 7).
  [/\bshutter-slider\b/,['opacity']],[/\brk\b/,['color']],[/\brk-cap\b/,['opacity']],
  // CKP-SHELL-33 (D178/D186): the launch-rack ignition glow fades on the base bells (120 ms in, 220 ms out); off under Reduce Motion.
  // D294: the burn's plume also retracts by transform; the working light yields by opacity.
@@ -78,6 +81,48 @@ for(const how of ['app setting','system setting'])test(`CKP-MOT-03 Reduce Motion
 // Effects really running on the page, including CSS transitions a computed-style scan cannot see.
 const running=page=>page.evaluate(()=>document.getElementById('cockpit').getAnimations({subtree:true}).map(a=>({
  kind:a.constructor.name,name:a.transitionProperty??a.animationName,element:typeof a.effect.target?.className==='string'?a.effect.target.className:'',state:a.playState})));
+
+test('inactive cockpit schedules no animation frames or fast timers',async({page})=>{
+ await page.addInitScript(()=>{
+  const calls={frameRequests:0,frameCallbacks:0,fastTimers:0,fastCallbacks:0};window.idleEnergyCalls=calls;
+  const raf=window.requestAnimationFrame.bind(window);
+  window.requestAnimationFrame=(callback)=>{
+   calls.frameRequests++;return raf(time=>{calls.frameCallbacks++;callback(time);});
+  };
+  for(const name of ['setTimeout','setInterval']){
+   const timer=window[name].bind(window);
+   window[name]=(callback,delay,...args)=>{
+    if(!(Number(delay??0)<1000)||typeof callback!=='function')return timer(callback,delay,...args);
+    calls.fastTimers++;
+    return timer((...values)=>{calls.fastCallbacks++;callback(...values);},delay,...args);
+   };
+  }
+ });
+ const {data}=visualFixture();
+ data.details=null;data.projection.rows=data.projection.rows.slice(0,1);
+ const windows=data.projection.rows[0].accounts[0].windows;
+ for(const w of windows)w.remainingPercent=75;
+ const {send,receive}=await open(page,data);
+ windows[0].remainingPercent=0;
+ expect(await receive(send('display',{data}))).toBe(true);
+ windows[1].remainingPercent=10;
+ expect(await receive(send('display',{data}))).toBe(true);
+ await page.getByRole('button',{name:'Plans',exact:true}).click();
+ await page.locator('[data-caution]').click();
+ const flash=await page.evaluate(message=>{
+  const row=document.querySelector('.pg-alerts .mfd-alerts li.al-flash');
+  const before=row&&getComputedStyle(row).animationName;
+  const accepted=window.modelPlanCockpit.receive(message);
+  const after=row&&getComputedStyle(row).animationName;
+  return {before,accepted,after};
+ },send('visibility',{visible:true,occluded:true,key:false}));
+ expect(flash).toEqual({before:'cockpit-alert-row-flash',accepted:true,after:'none'});
+ expect(await running(page)).toEqual([]);
+ const before=await page.evaluate(()=>({...window.idleEnergyCalls}));
+ await page.waitForTimeout(1100);
+ expect(await page.evaluate(()=>window.idleEnergyCalls)).toEqual(before);
+ expect(await running(page)).toEqual([]);
+});
 
 test('MOT-2.3-08 a hidden or closed cockpit runs no animation',async({page})=>{
  const fx=visualFixture(),account=fx.data.projection.rows[0].accounts[0];account.windows[0].remainingPercent=20;

@@ -5,15 +5,17 @@
 //   "Credits being drawn" is red too, but no reader reports it yet, so it never appears here.
 // - AMBER: a quota forecast to run out before its reset while still above T (cockpitForecastV1). An engine
 //   that does not negotiate it creates no amber condition.
-//   WP-03: a forecast whose reset time is unknown is amber too ("约40m用完" with no reset part).
-// - Public reset announcements/confirmations, lower-effort advice and extra resets expiring within 48 hours are
+//   WP-03: a forecast whose reset time is unknown is amber too ("预估 40m 用完" with no reset part).
+// - Public reset announcements/confirmations, lower-effort advice and banked resets expiring within 48 hours are
 //   list-only (blue); they never light the lamp. Credits being drawn and non-reset official notices have no producer
 //   field yet, so they are not listed.
 // - ALR-51 (WP-11, V1-FINAL §11, §12): a subscription that cannot be read, and a retained (stale) reading, are grey:
 //   list-only, never lit, never a column wash; a grey row opens Settings › Subscriptions.
 // Every red, amber and unreadable line is the one shared sentence (study/rocket-r1/alert-sentence.js, ALR-50).
 import type {WireCockpitData} from '../generated/wire.js';
-import {cockpitMembers} from './members.js';
+import {cockpitMembers,unseenMembers} from './members.js';
+import {reserveSoon} from './reserve-expiry.js';
+import {newsLive,newsMark} from './news-clock.js';
 import {currentWindow,runOutMinutes} from './prototype-data-adapter.js';
 import {alertSentence,isUnreadable,openSettingsAction,resetsAvailable,type Both} from '../study/rocket-r1/alert-sentence.js';
 import {tables} from '../study/rocket-r1/i18n.js';
@@ -25,14 +27,31 @@ import '../study/rocket-r1/strings/host.js';
 export type CautionLevel='red'|'amber';
 /** ALR-51: red and amber light the lamp; blue (announced, not yet in effect) and grey (unreadable) are list-only. */
 export type AlertLevel=CautionLevel|'blue'|'grey';
-export const lights=<T extends {readonly level:AlertLevel}>(item:T):item is T&{readonly level:CautionLevel}=>item.level==='red'||item.level==='amber';
+/** D474 §4.1 (C41): only a quota condition lights the lamp, washes a column, colours a page arrow or a subscription's
+ *  status. A reserve item expiring within 48 h is amber and counted in the list, but never lit. */
+export const lights=<T extends {readonly level:AlertLevel;readonly topic?:AlertTopic}>(item:T):item is T&{readonly level:CautionLevel}=>(item.level==='red'||item.level==='amber')&&(item.topic===undefined||item.topic==='quota');
+/** The alert list's count (`提醒 · N`): amber and red only, the reserve included (D474 §3.3). */
+export const counted=<T extends {readonly level:AlertLevel}>(item:T)=>item.level==='red'||item.level==='amber';
+/** D474 §3.3 / §4.1: what a row is about. Only `quota` lights; `reserve` is counted; the rest are listed below, uncounted. */
+export type AlertTopic='quota'|'reserve'|'news'|'peak'|'read'|'advice';
 export interface CautionItem {
+ /** D474 §4.1: quota, reserve, news, peak, read (grey) or advice. */
+ readonly topic:AlertTopic;
+ /** §6.2: the subscription name that leads `text`, so a line that does not fit fades the name first, never the time. */
+ readonly who?:Both;
  /** Stable per condition and window cycle: a reset or a cleared-then-returning condition is a new condition. */
  readonly id:string; /** Identity of the caution itself: tool, window and severity. Unlike `id` it survives a refresh that moves the reset time. */ readonly stable:string; readonly level:AlertLevel; readonly member:string;
  /** ALR-50: the shared sentence (with the reset when known); `short` drops the reset for a place it does not fit. */
  readonly text:Both; readonly short?:Both;
  /** CKP-MFD-55: the alert list's second line (available resets, or the Settings action of a grey row). */
  readonly detail?:Both;
+ /** The row's tooltip, for an entry whose uncertainty the sentence cannot carry (a tentative published peak). */
+ readonly tip?:Both;
+ /** D466: the one blue dot of reset news (hollow = announced, solid = confirmed, or banked resets about to expire). Rows
+  *  without it carry no bullet: colour and words say the rest. */
+ readonly dot?:'hollow'|'solid';
+ /** D466: the news mark of the announcement this row draws (the clock records a look only for rendered marks). */
+ readonly news?:string;
  /** CKP-MFD-56: a grey row opens Settings › Subscriptions instead of selecting the subscription. */
  readonly settings?:true;
  /** A grey row is either a retained (stale) reading or one that cannot be read at all (WP-12: only the latter merge). */
@@ -55,7 +74,7 @@ const finite=(v:unknown):v is number=>typeof v==='number'&&Number.isFinite(v);
 export function cautionItems(data:WireCockpitData,now:number,redBelow:number):CautionItem[] {
  const lamp:{item:CautionItem;remaining:number;resetAt:number}[]=[],list:CautionItem[]=[],grey:CautionItem[]=[];
  const members=cockpitMembers(data),verified=new Set(data.subscriptions.map(s=>s.subscriptionRef));
- // CKP-MFD-55: available resets (reset cards with time left), joined only through a verified reference.
+ // CKP-MFD-55: available resets (banked resets with time left), joined only through a verified reference.
  // The producer may list only part of the cards (state partial, truncated, or a count above the items), so a count of the
  // visible items is exact only for a complete list: `partial` makes the line say "resets available" without a number.
  const cardFacts=(key:string,unstable:boolean)=>{
@@ -74,12 +93,12 @@ export function cautionItems(data:WireCockpitData,now:number,redBelow:number):Ca
  for(const {key,row,account,unstable} of members){
   if(account.valueState==='retained'){
    const at=account.observedAt?Date.parse(account.observedAt):NaN,age=Number.isFinite(at)?span((now-at)/60000):null;
-   grey.push({id:JSON.stringify(['stale',key]),stable:JSON.stringify(['stale',key]),level:'grey',kind:'stale',member:key,settings:true,detail:openSettingsAction(),text:age?both('host.alStaleAge',lang=>({s:nameOf(row,lang),age})):both('host.alStale',lang=>({s:nameOf(row,lang)}))});
+   grey.push({id:JSON.stringify(['stale',key]),stable:JSON.stringify(['stale',key]),level:'grey',topic:'read',kind:'stale',member:key,settings:true,detail:openSettingsAction(),text:age?both('host.alStaleAge',lang=>({s:nameOf(row,lang),age})):both('host.alStale',lang=>({s:nameOf(row,lang)}))});
    continue;
   }
   if(account.valueState==='none'){
    const code=account.lastFailure?.code??null;
-   if(isUnreadable(code)){const s=alertSentence({kind:'unreadable',subscription:subscription(row),cause:code});grey.push({id:JSON.stringify(['unread',key,code]),stable:JSON.stringify(['unread',key]),level:'grey',kind:'unreadable',member:key,settings:true,detail:openSettingsAction(),text:s.text,short:s.short});}
+   if(isUnreadable(code)){const s=alertSentence({kind:'unreadable',subscription:subscription(row),cause:code,tool:row.id});grey.push({id:JSON.stringify(['unread',key,code]),stable:JSON.stringify(['unread',key]),level:'grey',topic:'read',kind:'unreadable',member:key,settings:true,detail:openSettingsAction(),text:s.text,short:s.short});}
    continue;
   }
   const extra=available(key,unstable),detail=extra?{detail:resetsAvailable(extra.partial?null:extra.n)}:{};
@@ -89,10 +108,10 @@ export function cautionItems(data:WireCockpitData,now:number,redBelow:number):Ca
    const out=runOutMinutes(data,row.id,account,w,now,true);
    const s=alertSentence({kind:'quota',subscription:subscription(row),window:{en:w.label.en,zh:w.label.zh},remaining:w.remainingPercent,runOutMinutes:out,resetMinutes});
    if(w.remainingPercent>redBelow){
-    if(out!==null)lamp.push({remaining:w.remainingPercent,resetAt:Number.isFinite(resetAt)?resetAt:Infinity,item:{id:JSON.stringify([key,w.id,w.resetsAt,'forecast']),stable:JSON.stringify([key,w.id,'amber']),level:'amber',member:key,...(Number.isFinite(resetAt)?{cycle:resetAt}:{}),text:s.text,short:s.short,...detail}});
+    if(out!==null)lamp.push({remaining:w.remainingPercent,resetAt:Number.isFinite(resetAt)?resetAt:Infinity,item:{id:JSON.stringify([key,w.id,w.resetsAt,'forecast']),stable:JSON.stringify([key,w.id,'amber']),level:'amber',topic:'quota',who:subscription(row),member:key,...(Number.isFinite(resetAt)?{cycle:resetAt}:{}),text:s.text,short:s.short,...detail}});
     continue;
    }
-   lamp.push({remaining:w.remainingPercent,resetAt:Number.isFinite(resetAt)?resetAt:Infinity,item:{id:JSON.stringify([key,w.id,w.resetsAt]),stable:JSON.stringify([key,w.id,'red']),level:'red',member:key,text:s.text,short:s.short,...detail}});
+   lamp.push({remaining:w.remainingPercent,resetAt:Number.isFinite(resetAt)?resetAt:Infinity,item:{id:JSON.stringify([key,w.id,w.resetsAt]),stable:JSON.stringify([key,w.id,'red']),level:'red',topic:'quota',who:subscription(row),member:key,text:s.text,short:s.short,...detail}});
   }
  }
  // ALR-51 / CKP-MFD-56: the producer drops the Dock surface from a signed-out or unreadable tool row, so such a row is not
@@ -110,29 +129,34 @@ export function cautionItems(data:WireCockpitData,now:number,redBelow:number):Ca
    const code=account?.lastFailure?.code??row.reason.code;
    if(!isUnreadable(code))continue;
    taken.add(key);
-   const s=alertSentence({kind:'unreadable',subscription:subscription(row),cause:code});
-   grey.push({id:JSON.stringify(['unread',key,code]),stable:JSON.stringify(['unread',key]),level:'grey',kind:'unreadable',member:key,settings:true,detail:openSettingsAction(),text:s.text,short:s.short});
+   const s=alertSentence({kind:'unreadable',subscription:subscription(row),cause:code,tool:row.id});
+   grey.push({id:JSON.stringify(['unread',key,code]),stable:JSON.stringify(['unread',key]),level:'grey',topic:'read',kind:'unreadable',member:key,settings:true,detail:openSettingsAction(),text:s.text,short:s.short});
   }
  }
  // CKP-MFD-28 (study mfd-adapter.js resetAlert): an announced public reset is placed at its window's middle, to the
  // half hour; a date-only or missing schedule has no time to show. Never the user's own reset.
  for(const e of data.details?.resetEvents??[]){
-  if(!(Date.parse(e.expiresAt)>now))continue;const m=members.find(m=>m.row.id===e.rowId&&(!e.planIds?.length||e.planIds.includes(m.account.plan.id)));if(!m)continue;// a plan-scoped announcement belongs to that plan's subscription only (CKP-MFD-56)
+  // D466 / DOCK-3.7-05: an announcement is listed for its news clock only (30 min after a look, 3 present hours, 24 h).
+  if(!newsLive(e,data,now))continue;const m=members.find(m=>m.row.id===e.rowId&&(!e.planIds?.length||e.planIds.includes(m.account.plan.id)));if(!m)continue;// a plan-scoped announcement belongs to that plan's subscription only (CKP-MFD-56)
   const s=(lang:'en'|'zh-CN')=>lang==='en'?m.row.name.en:m.row.name.zh,id=JSON.stringify(['reset',e.id]),stable=id;
-  if(e.status==='confirmed'){list.push({id,stable,level:'blue',member:m.key,text:both('mfd.alResetConf',lang=>({s:s(lang)}))});continue;}
+  // D166/D428: only reset_credit is a banked reset; a direct reset and a legacy event with no kind use the direct wording.
+  const bank=e.kind==='reset_credit';
+  if(e.status==='confirmed'){list.push({id,stable,level:'blue',topic:'news',dot:'solid',news:newsMark(e),member:m.key,text:both(bank?'mfd.alBankedConf':'mfd.alResetConf',lang=>({s:s(lang)}))});continue;}
   const from=e.schedule?Date.parse(e.schedule.from):NaN,through=e.schedule?Date.parse(e.schedule.through):NaN;
   const mid=e.schedule&&e.schedule.precision!=='date'&&Number.isFinite(from)?Number.isFinite(through)?(from+through)/2:from:null;
   const at=mid===null?null:Math.round(mid/(30*60000))*30*60000;
-  list.push({id,stable,level:'blue',member:m.key,text:at===null?both('mfd.alResetSoon',lang=>({s:s(lang)})):both('mfd.alResetAnn',lang=>({s:s(lang),at:relativeMoment(at,{now,lang})}))});
+  list.push({id,stable,level:'blue',topic:'news',dot:'hollow',news:newsMark(e),member:m.key,text:at===null?both(bank?'mfd.alBankedSoon':'mfd.alResetSoon',lang=>({s:s(lang)})):both(bank?'mfd.alBankedAnn':'mfd.alResetAnn',lang=>({s:s(lang),at:relativeMoment(at,{now,lang})}))});
  }
- // D63: extra resets (reset cards) that expire within 48 hours, one blue line per subscription. Personal facts are joined
- // only through a verified reference, as the Subscription page joins them. List-only: they never light the lamp.
+ // D474 §3.3 / §5.1 (C7, C41): banked resets that expire within 48 hours (the shared reserveSoon rule), one amber line
+ // per subscription. Counted in the list, never lit: no lamp, wash, arrow or ring; no bullet (amber words say it).
+ // Personal facts are joined only through a verified reference, as the Subscription page joins them.
+ const reserve:CautionItem[]=[];
  for(const m of members){
   if(m.unstable||!verified.has(m.key))continue;
   const f=cardFacts(m.key,false);if(!f)continue;
-  const n=f.items.filter(c=>{const at=c.expiresAt?Date.parse(c.expiresAt):NaN;return Number.isFinite(at)&&at>now&&at-now<=48*3600e3;}).length;
+  const n=f.items.filter(c=>reserveSoon(c.expiresAt??null,now)).length;
   if(!n)continue;
-  list.push({id:JSON.stringify(['cards',m.key,n]),stable:JSON.stringify(['cards',m.key]),level:'blue',member:m.key,text:both(f.partial?'host.alCardsSome':n===1?'host.alCardsOne':'host.alCardsMany',lang=>({s:nameOf(m.row,lang),n:String(n)}))});
+  reserve.push({id:JSON.stringify(['cards',m.key,n]),stable:JSON.stringify(['cards',m.key]),level:'amber',topic:'reserve',member:m.key,text:both(f.partial?'host.alCardsSome':n===1?'host.alCardsOne':'host.alCardsMany',lang=>({s:nameOf(m.row,lang),n:String(n)}))});
  }
  // D63: a declared plan's published peak-rate window (cockpitPeaksV1), from the same time-of-day windows the CLI's
  // advice reads. Blue and list-only; a peak already over is not listed. Unlike the reset-card loop above, unstable members
@@ -141,10 +165,12 @@ export function cautionItems(data:WireCockpitData,now:number,redBelow:number):Ca
   const m=members.find(x=>x.row.id===peak.rowId),start=Date.parse(peak.startsAt),end=peak.endsAt?Date.parse(peak.endsAt):NaN;
   if(!m||!Number.isFinite(start)||(Number.isFinite(end)&&end<=now))continue;
   const s=(lang:'en'|'zh-CN')=>lang==='en'?m.row.name.en:m.row.name.zh,id=JSON.stringify(['peak',peak.rowId,peak.startsAt]),stable=JSON.stringify(['peak',peak.rowId]);
-  if(start<=now){list.push({id,stable,level:'blue',member:m.key,text:{en:`${s('en')} ${tables.en['mfd.peak']} · ${tables.en['mfd.peakNow']}`,zh:`${s('zh-CN')} ${tables['zh-CN']['mfd.peak']} · ${tables['zh-CN']['mfd.peakNow']}`}});continue;}
+  // A peak the producer did not confirm (a tool-read ZCode subscription, or a tentative window) says so, in the sentence and the tooltip.
+  const tentative=peak.status!=='confirmed',tip=tentative?both('host.alPeakTip',()=>({})):undefined;
+  if(start<=now){list.push({id,stable,level:'blue',topic:'peak',member:m.key,tip,text:tentative?both('host.alPeakNowT',lang=>({s:s(lang)})):{en:`${s('en')} ${tables.en['mfd.peak']} · ${tables.en['mfd.peakNow']}`,zh:`${s('zh-CN')} ${tables['zh-CN']['mfd.peak']} · ${tables['zh-CN']['mfd.peakNow']}`}});continue;}
   const wait=(start-now)/60000;
-  if(Number.isFinite(end))list.push({id,stable,level:'blue',member:m.key,text:both('alert.peak',lang=>({s:s(lang),in:dhm(wait),dur:dhm((end-start)/60000)}))});
-  else list.push({id,stable,level:'blue',member:m.key,text:both('host.alPeakOpen',lang=>({s:s(lang),in:dhm(wait)}))});
+  if(Number.isFinite(end))list.push({id,stable,level:'blue',topic:'peak',member:m.key,tip,text:both(tentative?'host.alPeakT':'alert.peak',lang=>({s:s(lang),in:dhm(wait),dur:dhm((end-start)/60000)}))});
+  else list.push({id,stable,level:'blue',topic:'peak',member:m.key,tip,text:both(tentative?'host.alPeakOpenT':'host.alPeakOpen',lang=>({s:s(lang),in:dhm(wait)}))});
  }
  // CKP-MFD-55: tightest first within a colour: the lowest remaining, then the soonest reset.
  lamp.sort((a,b)=>rank[a.item.level]-rank[b.item.level]||a.remaining-b.remaining||a.resetAt-b.resetAt);
@@ -158,13 +184,21 @@ export function cautionItems(data:WireCockpitData,now:number,redBelow:number):Ca
   const row=(level:number)=>model.efforts.find(e=>ladderLevel(e.effort)===level),now_=row(cur),best=row(rec);
   if(!now_||!best||!finite(now_.cost)||!finite(best.cost)||now_.cost<=0||!finite(now_.ability)||!finite(best.ability))continue;
   const cost=(best.cost/now_.cost).toFixed(2),abl=(best.ability-now_.ability).toFixed(1).replace('-','−');
-  advice.push({id:JSON.stringify(['advice',x.subscriptionRef,x.sessionRef,LADDER[cur]]),stable:JSON.stringify(['advice',x.subscriptionRef,x.sessionRef]),level:'blue',member:x.subscriptionRef,text:both('alert.advice',()=>({m:model.name,e:LADDER[cur]!,rec:LADDER[rec]!,cost,abl}))});
+  advice.push({id:JSON.stringify(['advice',x.subscriptionRef,x.sessionRef,LADDER[cur]]),stable:JSON.stringify(['advice',x.subscriptionRef,x.sessionRef]),level:'blue',topic:'advice',member:x.subscriptionRef,text:both('alert.advice',()=>({m:model.name,e:LADDER[cur]!,rec:LADDER[rec]!,cost,abl}))});
  }
- return [...lamp.map(x=>x.item),...advice,...list,...grey].sort((a,b)=>rank[a.level]-rank[b.level]);
+ // D474 decision 3: a subscription never read on this Mac has no column, but its grey line still says why.
+ for(const {key,row,account} of unseenMembers(data)){
+  if(account.valueState!=='none')continue;const code=account.lastFailure?.code??null;if(!isUnreadable(code))continue;
+  const s=alertSentence({kind:'unreadable',subscription:subscription(row),cause:code,tool:row.id});
+  grey.push({id:JSON.stringify(['unread',key,code]),stable:JSON.stringify(['unread',key]),level:'grey',topic:'read',kind:'unreadable',member:key,settings:true,detail:openSettingsAction(),text:s.text,short:s.short});
+ }
+ // D474 §3.3: the counted rows first (red, amber; the reserve after the quota amber), then 新消息, 时段, 读取 uncounted.
+ const order={quota:0,reserve:1,news:2,peak:3,advice:4,read:5} as const;
+ return [...lamp.map(x=>x.item),...reserve,...advice,...list,...grey].sort((a,b)=>rank[a.level]-rank[b.level]||order[a.topic]-order[b.topic]);
 }
 /** The lamp shows the most severe condition; list-only items never light it. */
 export function cautionLevel(items:readonly CautionItem[],member?:string):CautionLevel|null {
- const own=member===undefined?items:items.filter(x=>x.member===member);
+ const own=(member===undefined?items:items.filter(x=>x.member===member)).filter(lights);
  return own.some(x=>x.level==='red')?'red':own.some(x=>x.level==='amber')?'amber':null;
 }
 

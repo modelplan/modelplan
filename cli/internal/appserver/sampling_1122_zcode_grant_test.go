@@ -34,12 +34,14 @@ func TestSampling1122SettingsGrantKeepsQRLoginWhenNoEnvironmentKey(t *testing.T)
 	paths := func(a consent.Admission) quota.Paths { return quota.ProductionPathsWithAdmission(cache, "1.0.0", a) }
 	b, err := NewSharedBackend(SharedConfig{Detect: func() detect.Report {
 		return detect.Report{Tools: []detect.Tool{{Entry: detect.Entry{ProviderID: "zai", Preferred: "native", ReaderID: "native:zai"}, Detected: true}}}
-	}, Paths: paths, Cleanup: func(string, bool) error { return nil }})
+	}, Paths: paths, Cleanup: func(string, bool, consent.EraseGuard) error { return nil }})
 	if err != nil {
 		t.Fatal(err)
 	}
 	state := consent.Capture().State()
-	_, err = b.Grant(context.Background(), wire.ConsentGrantParams{RequestID: "sampling-qr", ExpectStoreEpoch: state.StoreEpoch, ExpectGeneration: state.Generation, TextVersion: consent.TextVersion, Allow: []string{consent.ScopeZaiAccountUsageAPIKey, consent.ScopeZaiAccountUsageSavedLogin}})
+	_, err = b.Grant(context.Background(), wire.ConsentGrantParams{RequestID: "sampling-qr", ExpectStoreEpoch: state.StoreEpoch, ExpectGeneration: state.Generation, TextVersion: consent.TextVersion, Allow: []string{consent.ScopeZaiAccountUsageAPIKey, consent.ScopeZaiAccountUsageSavedLogin},
+		// D380 (macrev2-1162-1): every ZCode store also waits for the saved login's own Keychain choice.
+		Keychain: map[string]wire.KeychainChoice{consent.ScopeZaiAccountUsageSavedLogin: wire.KeychainAllow}})
 	if err != nil {
 		t.Fatal(err)
 	}

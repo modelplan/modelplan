@@ -55,14 +55,15 @@ public struct CockpitPluginClosePrompt: Equatable, Sendable {
         self.model = model; self.language = language
     }
     /// The words for a listed plugin that is on now; nil for anything else (no menu item).
-    public func prompt(_ pluginID: String) -> CockpitPluginClosePrompt? {
-        guard let plugin = CockpitPluginCatalogue.listed(model.catalogue).first(where: { $0.id == pluginID }),
+    /// `anyPlugin` also accepts a framework-only plugin (the cockpit key's Remove covers every plugin it can show).
+    public func prompt(_ pluginID: String, anyPlugin: Bool = false) -> CockpitPluginClosePrompt? {
+        guard let plugin = (anyPlugin ? model.catalogue : CockpitPluginCatalogue.listed(model.catalogue)).first(where: { $0.id == pluginID }),
               model.preferences.enabledIDs(model.catalogue).contains(pluginID) else { return nil }
         return CockpitPluginClosePrompt(plugin: plugin.title, language: language())
     }
     /// Asks, then turns the plugin off. Returns whether it was turned off.
-    @discardableResult public func requestClose(_ pluginID: String) async -> Bool {
-        guard let prompt = prompt(pluginID), presenter(prompt) else { return false }
+    @discardableResult public func requestClose(_ pluginID: String, anyPlugin: Bool = false) async -> Bool {
+        guard let prompt = prompt(pluginID, anyPlugin: anyPlugin), presenter(prompt) else { return false }
         return await model.perform(.setEnabled(pluginID, false))
     }
 }

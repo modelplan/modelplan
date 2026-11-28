@@ -96,7 +96,7 @@ import ModelPlanWire
             switch member {
             case .tight:
                 XCTAssertTrue(texts.contains("2 分钟前更新")); XCTAssertTrue(texts.contains("约40m用完"))
-                XCTAssertTrue(texts.contains("Tight 5小时 9% · 约40m用完 · 2h00 后重置"), "the footer sentence is painted")
+                XCTAssertTrue(texts.contains("Tight 5小时 9% · 预估 40m 用完 · 2h00 后重置"), "the footer sentence is painted")
             case .keptOld:
                 XCTAssertTrue(texts.contains("3 小时前更新")); XCTAssertTrue(texts.contains("63%"))
             default:

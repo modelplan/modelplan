@@ -98,7 +98,7 @@ func TestHourlyMidnightDSTAndCap(t *testing.T) {
 		l.addHourly("codex", request{cfg: cfg, end: at.Add(time.Minute), out: 1}, at)
 	}
 	l.pruneHourly(now)
-	if len(l.Hourly) != 48 {
+	if len(l.Hourly) != 49 { // both local days in full: the repeated DST hour makes 25 + 24
 		t.Fatalf("%d", len(l.Hourly))
 	}
 	seen := map[string]bool{}
@@ -171,8 +171,14 @@ func TestConcurrentLiveSessionsAndShortRate(t *testing.T) {
 		}
 	}
 	v.Now = now.Add(LiveWithin)
+	for _, s := range v.LiveSessions() {
+		if s.Status != "idle" || s.InProgress {
+			t.Fatal("past the live window a session is idle", s)
+		}
+	}
+	v.Now = now.Add(LiveIdleKeep)
 	if len(v.LiveSessions()) != 0 {
-		t.Fatal("stale sessions retained")
+		t.Fatal("sessions past the idle horizon retained")
 	}
 	t.Setenv("MODELPLAN_HISTORY", "off")
 	empty := t.TempDir()

@@ -5,7 +5,8 @@ Foundation and Darwin only: no AppKit, WebKit, child process, file write or netw
 
 - `SystemResourceReader` reads one sample with system calls: `host_processor_info` (CPU ticks per core, deltas since
   the previous read), `host_statistics64(HOST_VM_INFO64)`, `sysctlbyname` (`kern.memorystatus_vm_pressure_level`,
-  `vm.swapusage`), `getloadavg` and `statfs` on the data volume. The memory split follows Stats (Modules/RAM/readers.swift):
+  `vm.swapusage`), `getloadavg`, `statfs` on the data volume and, for the D407 network row, the `NET_RT_IFLIST2` sysctl
+  (64-bit byte counters of every interface but loopback; bytes per second since the previous read, none on the first). The memory split follows Stats (Modules/RAM/readers.swift):
   used = app + wired + compressed, cached = purgeable + external. One sample takes well under 2 ms (tested).
 - `ResourceCadence` / `ResourceSchedule`: column shown = its setting (2 / 5 / 10 s, other saved values snap), widget
   shown = 10 s, neither = 60 s, plugin off = no sampling. The sampler asks `ResourceSchedule.admit` before every read.

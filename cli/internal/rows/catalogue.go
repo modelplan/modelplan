@@ -155,7 +155,7 @@ func planValue(tool, raw, declared string) Plan {
 	return Plan{ID: "unknown"}
 }
 
-var limitKeys = map[string]bool{"main": true, "reserve": true, "premium_interactions": true, "code_review": true, "requests": true, "tokens": true, "spend": true, "credits": true, "five_hour": true, "daily": true, "weekly": true, "monthly": true, "other": true}
+var limitKeys = map[string]bool{"main": true, "reserve": true, "premium_interactions": true, "code_review": true, "requests": true, "tokens": true, "spend": true, "credits": true, "five_hour": true, "daily": true, "weekly": true, "monthly": true, "mcp": true, "other": true}
 var poolKeys = map[string]bool{"main": true, "reserve": true, "code_review": true, "premium_interactions": true, "other": true}
 
 func limitKey(raw string) string {
@@ -165,7 +165,33 @@ func limitKey(raw string) string {
 	if limitKeys[raw] {
 		return raw
 	}
+	// D417: the ZCode MCP allowance names itself; the reader reports it as "MCP".
+	if raw == "MCP" {
+		return "mcp"
+	}
 	return "other"
+}
+
+// D417: an extra window is named by what it is. These short forms are the labels the widget and the
+// cockpit column show in full (at most 6 characters), so neither surface clips or abbreviates them.
+var scopeLabels = map[string]string{"opus": "Opus", "sonnet": "Sonnet", "gemini-2.5-pro": "Pro", "gemini-2.5-flash": "Flash"}
+
+// windowLabel is the one label for a window: a single reviewed model scope names the model, the
+// MCP key names itself, an unknown limit stays generic, and anything else keeps its role label.
+func windowLabel(r Role, key string, scope *ModelScope) Text {
+	if scope != nil && len(scope.Models) == 1 {
+		if name, ok := scopeLabels[scope.Models[0]]; ok {
+			return Text{EN: name, ZH: name}
+		}
+	}
+	if key == "mcp" {
+		return Text{EN: "MCP", ZH: "MCP"}
+	}
+	if key == "other" {
+		return Text{EN: "Other limit", ZH: "其他限额"}
+	}
+	_, label := role(string(r))
+	return label
 }
 func poolKey(raw string) string {
 	if raw == "" {

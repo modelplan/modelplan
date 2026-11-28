@@ -2,15 +2,24 @@ package speed
 
 import (
 	"encoding/json"
-	"io/fs"
+	"github.com/modelplan/modelplan/cli/internal/consent"
+	"github.com/modelplan/modelplan/cli/internal/logindex"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
-	"strings"
+	"sync/atomic"
 	"time"
 )
 
+// LiveWithin is how recently a log must have changed to be tailed, and how long a turn can read as
+// running. It does not decide how long a finished session stays listed (D277: idle sessions read "6m
+// ago"); LiveIdleKeep and LiveIdleMax do.
 const LiveWithin = 5 * time.Minute
+
+// LiveIdleKeep and LiveIdleMax: idle sessions stay listed, newest first, up to LiveIdleMax within LiveIdleKeep.
+const LiveIdleKeep = 24 * time.Hour
+const LiveIdleMax = 5
 const LiveRateWindow = time.Minute
 const maxLive = 64
 const liveTail = 256 << 10
@@ -140,10 +149,19 @@ func probeTurns(turns []turn) liveProbe {
 }
 
 // ActiveLogs discovers only regular JSONL files under the harness's history roots, including
-// separate Claude subagent files. It follows no symlinks, visits at most 20,000 entries per root,
+// separate Claude subagent files. It follows no symlinks, keeps at most 20,000 entries per root,
 // and returns at most 64 newest logs changed in the last five minutes. Each read is a 256 KiB tail.
 func ActiveLogs(claudeHome, codexHome string, now time.Time) []LiveLog {
-	return activeLogs([]liveRoot{{filepath.Join(claudeHome, "projects"), "claude-code", claudeHome != ""}, {filepath.Join(codexHome, "sessions"), "codex", codexHome != ""}}, now)
+	return ActiveLogsIn(nil, consent.Fence{}, logindex.Ticket{}, claudeHome, codexHome, now)
+}
+
+// ActiveLogsIn is ActiveLogs from the app-server's shared history inventory, under the caller's
+// consent fence and the withdrawal ticket it took with it; a nil inventory scans afresh.
+func ActiveLogsIn(inv *logindex.Inventory, fence consent.Fence, ticket logindex.Ticket, claudeHome, codexHome string, now time.Time) []LiveLog {
+	if inv == nil {
+		inv = &logindex.Inventory{}
+	}
+	return recentLogsCached(inv, fence, []liveRoot{{filepath.Join(claudeHome, "projects"), "claude-code", claudeHome != ""}, {filepath.Join(codexHome, "sessions"), "codex", codexHome != ""}}, now, now, nil, ticket)
 }
 
 type liveRoot struct {
@@ -153,7 +171,7 @@ type liveRoot struct {
 
 // ActivityLogs shares the existing bounded discovery with the ZCode lifecycle root.
 func ActivityLogs(claudeHome, codexHome, zcodeHome string, now time.Time) []LiveLog {
-	return activeLogs(activityRoots(claudeHome, codexHome, zcodeHome), now)
+	return recentLogs(&logindex.Inventory{}, consent.Fence{}, activityRoots(claudeHome, codexHome, zcodeHome), now, now)
 }
 func activityRoots(claudeHome, codexHome, zcodeHome string) []liveRoot {
 	return []liveRoot{{filepath.Join(claudeHome, "projects"), "claude-code", claudeHome != ""},
@@ -161,48 +179,99 @@ func activityRoots(claudeHome, codexHome, zcodeHome string) []liveRoot {
 		{filepath.Join(zcodeHome, "cli", "log"), "zcode", zcodeHome != ""}}
 }
 
-func activeLogs(roots []liveRoot, now time.Time) []LiveLog {
-	type candidate struct {
-		log LiveLog
-		at  time.Time
-	}
-	var all []candidate
+// recentLogs: the newest (at most 64) logs under the enabled roots changed in the last five
+// minutes, from the inventory's metadata.
+func recentLogs(inv *logindex.Inventory, fence consent.Fence, roots []liveRoot, now, elapsed time.Time) []LiveLog {
+	return recentLogsCached(inv, fence, roots, now, elapsed, nil, logindex.Ticket{})
+}
+
+// liveCandidate is a log changed within LiveWithin of when its selection was made.
+type liveCandidate struct {
+	log LiveLog
+	at  time.Time
+}
+
+// liveSelection caches the candidates selected at an inventory generation. The window only moves
+// forward with now, so the candidates of an unchanged inventory stay a superset of the logs
+// that are still recent, and each tick filters only them (#1222 sampling P2).
+type liveSelection struct {
+	gen   uint64
+	want  []logindex.Root
+	fence consent.Fence
+	built time.Time
+	cands []liveCandidate
+}
+
+func recentLogsCached(inv *logindex.Inventory, fence consent.Fence, roots []liveRoot, now, elapsed time.Time, c *liveSelection, ticket logindex.Ticket) []LiveLog {
+	var want []logindex.Root
 	for _, root := range roots {
-		if !root.enabled || !filepath.IsAbs(root.dir) {
-			continue
+		if root.enabled && filepath.IsAbs(root.dir) {
+			want = append(want, logindex.Root{Dir: root.dir, Source: root.source})
 		}
-		visited := 0
-		_ = filepath.WalkDir(root.dir, func(path string, d fs.DirEntry, err error) error {
-			visited++
-			if visited > 20000 {
-				return fs.SkipAll
-			}
-			if err != nil || d.IsDir() || d.Type()&os.ModeSymlink != 0 || !strings.HasSuffix(path, ".jsonl") {
-				return nil
-			}
-			fi, e := d.Info()
-			if e != nil || !fi.Mode().IsRegular() || fi.ModTime().Before(now.Add(-LiveWithin)) {
-				return nil
-			}
-			all = append(all, candidate{LiveLog{Path: path, Source: root.source, Sidechain: filepath.Base(filepath.Dir(path)) == "subagents"}, fi.ModTime()})
-			return nil
-		})
 	}
-	sort.Slice(all, func(i, j int) bool {
-		if all[i].at.Equal(all[j].at) {
-			return all[i].log.Path < all[j].log.Path
+	if len(want) == 0 {
+		// Every source withdrawn (or the consent store unavailable): a withdrawal. Forget the
+		// cached selection and the roots it came from, and record it, so a read or commit under
+		// a ticket from before it is refused (macrev2-1261-2).
+		var dirs []string
+		if c != nil {
+			for _, r := range c.want {
+				dirs = append(dirs, r.Dir)
+			}
+			*c = liveSelection{}
 		}
-		return all[i].at.After(all[j].at)
-	})
+		inv.Withdraw(dirs...)
+		return []LiveLog{}
+	}
+	have := uint64(0)
+	if c != nil && c.gen != 0 && c.fence == fence && slices.Equal(c.want, want) && !now.Before(c.built) {
+		have = c.gen
+	}
+	files, gen, changed := inv.FilesIfChanged(fence, want, now, elapsed, have, ticket)
+	if changed && gen == 0 { // refused: a withdrawal since the ticket; keep nothing
+		return []LiveLog{}
+	}
+	var cands []liveCandidate
+	if changed {
+		for _, f := range files {
+			if f.Mod.Before(now.Add(-LiveWithin)) {
+				continue
+			}
+			cands = append(cands, liveCandidate{LiveLog{Path: f.Path, Source: f.Source, Sidechain: filepath.Base(filepath.Dir(f.Path)) == "subagents"}, f.Mod})
+		}
+		sort.Slice(cands, func(i, j int) bool {
+			if cands[i].at.Equal(cands[j].at) {
+				return cands[i].log.Path < cands[j].log.Path
+			}
+			return cands[i].at.After(cands[j].at)
+		})
+		if c != nil {
+			next := liveSelection{gen: gen, want: want, fence: fence, built: now, cands: cands}
+			// Under the lock Withdraw takes: a withdrawal since the ticket drops the result.
+			if !inv.CommitIf(ticket, func() { *c = next }) {
+				return []LiveLog{}
+			}
+		} else if !inv.CommitIf(ticket, func() {}) {
+			return []LiveLog{}
+		}
+	} else {
+		cands = c.cands
+	}
+	// Newest first: the first expired candidate ends the recent ones, so a tick visits at most
+	// maxLive+1 of them however many have aged out under an unchanged inventory (macrev2-1261-1).
 	out := []LiveLog{}
-	for i, c := range all {
-		if i == maxLive {
+	for _, cand := range cands {
+		liveCandidateVisits.Add(1)
+		if len(out) == maxLive || cand.at.Before(now.Add(-LiveWithin)) {
 			break
 		}
-		out = append(out, c.log)
+		out = append(out, cand.log)
 	}
 	return out
 }
+
+// liveCandidateVisits counts cached candidates visited by the activity selection (tests).
+var liveCandidateVisits atomic.Int64
 
 // ObserveLive reads only bounded local log tails. It neither adds historical token counts nor
 // asks an account endpoint. Existing normal observations provide subscription references.
@@ -249,7 +318,7 @@ func ObserveLive(cache string, logs []LiveLog, labels bool, subscriptions map[st
 }
 func (l *PerfLedger) setLive(key, source string, x liveProbe, subscription string, now time.Time) bool {
 	start := l.start(source)
-	if x.cfg.model == "" || x.last.IsZero() || x.last.Before(start) || !x.last.After(now.Add(-LiveWithin)) || x.last.After(now) || x.start.IsZero() {
+	if x.cfg.model == "" || autoReview(x.cfg.model) || x.last.IsZero() || x.last.Before(start) || !x.last.After(now.Add(-LiveWithin)) || x.last.After(now) || x.start.IsZero() {
 		return false
 	}
 	r := LiveRecord{GrantEpoch: currentEpoch(l.admission, source), Key: key, Ref: newRef(), Source: source, Model: clip(x.cfg.model), Effort: clip(x.cfg.effort), Speed: speedMode(x.cfg.speed), StartedAt: x.start.UTC(), LastAt: x.last.UTC(), Running: x.running, SubscriptionRef: subscription}
@@ -313,7 +382,13 @@ func (l *PerfLedger) setLive(key, source string, x liveProbe, subscription strin
 func (l *PerfLedger) pruneLive(now time.Time) {
 	kept := l.Live[:0]
 	for _, r := range l.Live {
-		if r.LastAt.After(now.Add(-LiveWithin)) && !r.LastAt.After(now) {
+		if autoReview(r.Model) {
+			continue // a record cached before the auto-review rule
+		}
+		if r.LastAt.After(now.Add(-LiveIdleKeep)) && !r.LastAt.After(now) {
+			if !r.LastAt.After(now.Add(-LiveWithin)) {
+				r.Running, r.Activity = false, nil // a kept idle session never reads as running
+			}
 			kept = append(kept, r)
 		}
 	}
@@ -335,9 +410,15 @@ func (v PerfView) LiveSessions() []LiveSession {
 	if !v.OK || !v.Recording {
 		return out
 	}
-	for _, r := range v.Ledger.Live {
-		if !r.LastAt.After(v.Now.Add(-LiveWithin)) || r.LastAt.After(v.Now) {
+	recs := slices.Clone(v.Ledger.Live)
+	sort.SliceStable(recs, func(i, j int) bool { return recs[i].LastAt.After(recs[j].LastAt) })
+	for _, r := range recs {
+		// A record cached before the auto-review rule is never published (the model is not a session).
+		if autoReview(r.Model) || r.LastAt.After(v.Now) || !r.LastAt.After(v.Now.Add(-LiveIdleKeep)) {
 			continue
+		}
+		if !r.LastAt.After(v.Now.Add(-LiveWithin)) {
+			r.Running, r.Activity = false, nil // past the live window: idle by definition
 		}
 		x := LiveSession{Ref: r.Ref, Source: r.Source, Model: r.Model, Effort: r.Effort, EffortStatus: "unreported", Speed: r.Speed, StartedAt: r.StartedAt, LastAt: r.LastAt, Status: "idle", ProjectRef: refOrNil(r.ProjectRef), ProjectLabel: r.ProjectLabel, SubscriptionRef: refOrNil(r.SubscriptionRef), InProgress: r.turnOpen(v.Now)}
 		if r.Effort != "" {
@@ -398,5 +479,17 @@ func (v PerfView) LiveSessions() []LiveSession {
 		}
 		return out[i].LastAt.After(out[j].LastAt)
 	})
-	return out
+	// Running rows are never cut; only the newest LiveIdleMax idle rows stay, however recently they finished.
+	idle := 0
+	kept := out[:0]
+	for _, x := range out {
+		if x.Status != "running" {
+			if idle == LiveIdleMax {
+				continue
+			}
+			idle++
+		}
+		kept = append(kept, x)
+	}
+	return kept
 }

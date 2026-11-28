@@ -90,6 +90,27 @@ final class CockpitPluginBridgeTests: XCTestCase {
         XCTAssertEqual(after, reopened)
     }
 
+    /// D376 / CKP-PLG-54: the page's right-click Remove shows the widget's confirmation (CockpitPluginCloser) and turns the
+    /// plugin off only on Turn Off; Cancel changes nothing.
+    @MainActor func testPageCloseRunsTheCloserWithConfirmation() async throws {
+        let coordinator = EngineCockpitCoordinator { _ in throw CockpitBridgeError.unavailable }
+        let bridge = await CockpitPluginBridge.load(directory: try directory(), coordinator: coordinator)
+        XCTAssertTrue(bridge.model.preferences.enabledIDs().contains("resources"), "the resource plugin is on by default")
+        let closer = CockpitPluginCloser(model: bridge.model, language: { .english })
+        var asked: [CockpitPluginClosePrompt] = [], answer = false
+        closer.presenter = { asked.append($0); return answer }
+        bridge.closer = closer
+        coordinator.onPluginClose?("resources")
+        for _ in 0..<50 where asked.isEmpty { try await Task.sleep(for: .milliseconds(5)) }
+        XCTAssertEqual(asked.count, 1, "the confirmation is shown")
+        XCTAssertTrue(bridge.model.preferences.enabledIDs().contains("resources"), "Cancel changes nothing")
+        answer = true
+        coordinator.onPluginClose?("resources")
+        for _ in 0..<200 where bridge.model.preferences.enabledIDs().contains("resources") { try await Task.sleep(for: .milliseconds(5)) }
+        XCTAssertEqual(asked.count, 2)
+        XCTAssertFalse(bridge.model.preferences.enabledIDs().contains("resources"), "Turn Off removes it")
+    }
+
     /// macrevb-1104-3 / macrevd-1104-2 / macrev2-1104-4: a page edit that cannot be saved sends the committed choice to
     /// the page again (the page already removed the key), and the sampler keeps following the committed choice.
     @MainActor func testAFailedPageEditSaveRestoresTheCommittedChoice() async throws {

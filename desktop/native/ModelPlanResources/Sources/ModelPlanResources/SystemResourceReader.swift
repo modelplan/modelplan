@@ -4,7 +4,8 @@ import Darwin
 import Foundation
 
 /// Reads this Mac with system calls only (D324): host_processor_info (CPU ticks), host_statistics64 (HOST_VM_INFO64),
-/// sysctlbyname (memory pressure, swap), getloadavg and statfs. It never starts a child process.
+/// sysctlbyname (memory pressure, swap), getloadavg, statfs and, for the D407 network row, the NET_RT_IFLIST2 sysctl
+/// (64-bit byte counters of every interface but loopback). It never starts a child process.
 ///
 /// Memory follows Stats (exelban/Stats Modules/RAM/readers.swift, the macOS reference for resource readers):
 /// used = active + inactive + speculative + wired + compressed − purgeable − external; app = used − wired − compressed;
@@ -21,11 +22,15 @@ public final class SystemResourceReader: ResourceReader {
     private let tickSource: (() -> [[UInt32]]?)?
     /// How many times the CPU ticks were read (macrevb-1096-3: zero until the sampler admits a read).
     public private(set) var tickReads = 0
+    /// D407: total bytes in and out (a test passes its own source); the previous totals and their uptime give the rate.
+    private let networkSource: (() -> (in: UInt64, out: UInt64)?)?
+    private var previousNetwork: (uptime: TimeInterval, in: UInt64, out: UInt64)?
 
     /// macrevb-1096-3: construction reads nothing. A saved-Off launch builds the reader and never samples, so it must
     /// never touch the CPU ticks; the first admitted read primes them (see `readCPU`).
-    public init(diskPath: String? = nil, tickSource: (() -> [[UInt32]]?)? = nil) {
+    public init(diskPath: String? = nil, tickSource: (() -> [[UInt32]]?)? = nil, networkSource: (() -> (in: UInt64, out: UInt64)?)? = nil) {
         self.tickSource = tickSource
+        self.networkSource = networkSource
         host = mach_host_self()
         pageSize = UInt64(vm_kernel_page_size)
         memTotal = ProcessInfo.processInfo.physicalMemory
@@ -39,10 +44,44 @@ public final class SystemResourceReader: ResourceReader {
         guard let cpu = readCPU(), let memory = readMemory(), let disk = readDisk() else { return nil }
         var loads = [Double](repeating: 0, count: 3)
         let load = getloadavg(&loads, 3) >= 1 ? loads[0] : 0
+        let network = readNetwork(uptime: uptime)
         return ResourceSample(unixMs: unixMs, uptime: uptime, cpuUser: cpu.user, cpuSystem: cpu.system, load: load.isFinite ? max(0, load) : 0,
                               memTotal: memTotal, memApp: memory.app, memWired: memory.wired, memCompressed: memory.compressed,
                               memCached: memory.cached, memFree: memory.free, swapUsed: memory.swap, pressure: memory.pressure,
-                              diskTotal: disk.total, diskFree: disk.free)
+                              diskTotal: disk.total, diskFree: disk.free, netIn: network?.in, netOut: network?.out)
+    }
+
+    /// D407: bytes per second since the previous read. The first read only primes the totals; a counter that went
+    /// down (an interface went away) or no time passing gives no rate for this read.
+    private func readNetwork(uptime: TimeInterval) -> (in: UInt64, out: UInt64)? {
+        guard let now = networkSource.map({ $0() }) ?? interfaceBytes() else { previousNetwork = nil; return nil }
+        defer { previousNetwork = (uptime, now.in, now.out) }
+        guard let before = previousNetwork, uptime > before.uptime, now.in >= before.in, now.out >= before.out else { return nil }
+        let seconds = uptime - before.uptime
+        return (UInt64(Double(now.in - before.in) / seconds), UInt64(Double(now.out - before.out) / seconds))
+    }
+
+    /// Sums the 64-bit byte counters of every non-loopback interface from one NET_RT_IFLIST2 sysctl (no child process).
+    private func interfaceBytes() -> (in: UInt64, out: UInt64)? {
+        var mib: [Int32] = [CTL_NET, PF_ROUTE, 0, 0, NET_RT_IFLIST2, 0]
+        var size = 0
+        guard sysctl(&mib, UInt32(mib.count), nil, &size, nil, 0) == 0, size > 0 else { return nil }
+        var buffer = [UInt8](repeating: 0, count: size)
+        guard sysctl(&mib, UInt32(mib.count), &buffer, &size, nil, 0) == 0 else { return nil }
+        var totalIn: UInt64 = 0, totalOut: UInt64 = 0, offset = 0
+        buffer.withUnsafeBytes { raw in
+            while offset + MemoryLayout<if_msghdr>.size <= size {
+                let header = raw.loadUnaligned(fromByteOffset: offset, as: if_msghdr.self)
+                let length = Int(header.ifm_msglen)
+                guard length > 0, offset + length <= size else { break }
+                if Int32(header.ifm_type) == RTM_IFINFO2, offset + MemoryLayout<if_msghdr2>.size <= size, header.ifm_flags & IFF_LOOPBACK == 0 {
+                    let info = raw.loadUnaligned(fromByteOffset: offset, as: if_msghdr2.self)
+                    totalIn &+= info.ifm_data.ifi_ibytes; totalOut &+= info.ifm_data.ifi_obytes
+                }
+                offset += length
+            }
+        }
+        return (totalIn, totalOut)
     }
 
     private func ticks() -> [[UInt32]]? {

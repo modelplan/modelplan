@@ -75,9 +75,12 @@ func text(_ element: AXUIElement, _ name: String) -> String? {
     if let number = value as? NSNumber { return number.stringValue }
     return nil
 }
-struct Walk { var left: Int; let depthLimit: Int }
+/// `deadline` is the overall time budget of one tree read: a slow web area (a render loop starving WebContent)
+/// makes each AX read wait out the messaging timeout, so the walk stops there and the tree is marked truncated.
+struct Walk { var left: Int; let depthLimit: Int; let deadline: Date; var truncated = false }
 func describe(_ element: AXUIElement, depth: Int, walk: inout Walk) -> [String: Any]? {
     guard walk.left > 0 else { return nil }
+    guard Date() < walk.deadline else { walk.truncated = true; return nil }
     walk.left -= 1
     var node: [String: Any] = [:]
     for (key, name) in [("role", kAXRoleAttribute), ("subrole", kAXSubroleAttribute), ("id", kAXIdentifierAttribute),
@@ -91,9 +94,17 @@ func describe(_ element: AXUIElement, depth: Int, walk: inout Walk) -> [String: 
     }
     return node
 }
-func application(_ pid: Int32) -> AXUIElement { AXUIElementCreateApplication(pid) }
+/// One slow AX read waits at most this long (the system default is 6 s).
+let axMessagingTimeout: Float = 1.5
+/// Overall budget of one tree read, in seconds.
+let treeBudget: TimeInterval = 20
+func application(_ pid: Int32) -> AXUIElement {
+    let app = AXUIElementCreateApplication(pid)
+    AXUIElementSetMessagingTimeout(app, axMessagingTimeout)
+    return app
+}
 func tree(pid: Int32) -> [String: Any] {
-    var walk = Walk(left: 6000, depthLimit: 40)
+    var walk = Walk(left: 6000, depthLimit: 40, deadline: Date().addingTimeInterval(treeBudget))
     let app = application(pid)
     var out: [String: Any] = ["windows": [], "extras": []]
     if let list = attribute(app, kAXWindowsAttribute) as? [AXUIElement] {
@@ -102,6 +113,7 @@ func tree(pid: Int32) -> [String: Any] {
     if let extras = attribute(app, "AXExtrasMenuBar") {
         out["extras"] = describe(extras as! AXUIElement, depth: 0, walk: &walk) ?? [:]
     }
+    if walk.truncated || Date() >= walk.deadline { out["truncated"] = true }
     return out
 }
 func find(_ element: AXUIElement, attribute name: String, equals wanted: String, depth: Int, left: inout Int) -> AXUIElement? {

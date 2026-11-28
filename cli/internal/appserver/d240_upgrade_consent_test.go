@@ -58,7 +58,7 @@ func (f *upgradeFixture) config() SharedConfig {
 			}}
 		},
 		LaterInstalled: ledger.Observe,
-		Paths:          f.paths, Cleanup: func(string, bool) error { return nil },
+		Paths:          f.paths, Cleanup: func(string, bool, consent.EraseGuard) error { return nil },
 	}
 }
 

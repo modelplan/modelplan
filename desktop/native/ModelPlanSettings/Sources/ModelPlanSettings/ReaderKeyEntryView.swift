@@ -16,6 +16,8 @@ import AppKit
     private var test: ConnectionButton!
     private var save: ConnectionButton!
     private var remove: ConnectionButton!
+    /// GLM only: opens the region's official console, where a key is created (owner 11-22).
+    private var getKey: ConnectionButton?
     var buttons: [ConnectionButton] { [test, save, remove] }
     /// Called when whether a key is saved changes (after load, save or remove), so the host row can say so.
     var onPresenceChange: (() -> Void)?
@@ -53,7 +55,12 @@ import AppKit
         addArrangedSubview(otherKey)
         if entry.provider.hasRegion { addArrangedSubview(picker) }
         addArrangedSubview(field)
-        addArrangedSubview(NSStackView(views: [test, save, remove]))
+        if entry.provider.hasRegion {
+            getKey = ConnectionButton(title: "", identifier: id + ".getkey") { [weak self] in
+                guard let region = self?.entry.region else { return }; NSWorkspace.shared.open(region.keyConsoleURL)
+            }
+        }
+        addArrangedSubview(NSStackView(views: [test, save, remove] + (getKey.map { [$0] } ?? [])))
         addArrangedSubview(help)
         addArrangedSubview(result)
         entry.onChange = { [weak self] in
@@ -88,6 +95,7 @@ import AppKit
         test.title = language == .english ? "Test" : "测试"
         save.title = language == .english ? "Save" : "保存"
         remove.title = language == .english ? "Remove" : "移除"
+        getKey?.title = language == .english ? "Get a key" : "获取 key"
         test.isEnabled = entry.canTest; save.isEnabled = entry.canSave; remove.isEnabled = entry.canRemove
         field.isEnabled = !entry.isBusy; picker.isEnabled = !entry.isBusy
         help.stringValue = entry.provider.help.value(language)

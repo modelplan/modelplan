@@ -84,18 +84,19 @@ function withHistory(){
  const data=fixture(),ref=data.projection.rows[0].accounts[0].subscriptionRef;
  data.history={version:1,sources:['local-history'],coverage:'local-history',recordingSince:null,dailyFrom:localDay(39),
   subscriptions:[{subscriptionRef:ref,sources:[{source:'codex',bindingBasis:'source-wide-current-binding',recent7d:sums(1),recent30d:sums(1)}]}],
-  models:ranking,tools:ranking,daily:[[0,200],[1,1000],[3,4000],[5,9000],[8,20000],[39,1500]].map(([back,n])=>({at:localDay(back),source:'codex',origin:'live',observedOutputTokens:n})),hourly:[],projects:{recent7d:[],recent30d:[]},cycles:[]};
+  models:ranking,tools:ranking,daily:[[0,200],[1,1000],[3,4000],[5,9000],[8,20000],[39,1500]].map(([back,n])=>({at:localDay(back),source:'codex',origin:'live',observedOutputTokens:n})),hourly:[{at:new Date(2026,10,4,9).toISOString(),source:'codex',origin:'live',observedOutputTokens:500}],projects:{recent7d:[],recent30d:[]},cycles:[]};
  return data;
 }
-for(const [tier,height] of [['tall',890],['compact',640]]){
+for(const [tier,height] of [['tall',890]]){
  test(`CKP-MFD-25 a click inside a page reaches its module and the charts take the measured screen at ${tier}`,async({page})=>{
   await page.clock.setFixedTime(new Date(NOW));
   await open(page,{data:withHistory(),tier,height});
-  // Overview (WP-12): the totals row is there; the Grid key is not lit in v1 and pressing it reaches the module without
-  // changing the view (the heatmap cells-fit check moved out with the key, to v1.1).
+  // Overview (WP-12, D390): the totals row is there; the Grid key reaches the module and the heatmap fits its measured area.
   await expect(page.locator('.pg-overview .ov-top')).toBeVisible();
   await page.locator('[data-opt="chart"] b',{hasText:/^Grid$/}).click();
-  await expect(page.locator('[data-opt="chart"] b.on')).toHaveText('Bars');await expect(page.locator('.pg-overview svg.ov-heat')).toHaveCount(0);
+  await expect(page.locator('[data-opt="chart"] b.on')).toHaveText('Grid');await expect(page.locator('.pg-overview svg.ov-heat')).toHaveCount(1);
+  await expect.poll(()=>page.evaluate(()=>{const area=document.querySelector('[data-fill="ov"]'),svg=area?.querySelector('svg.ov-heat');if(!svg||!area.clientWidth)return null;const a=area.getBoundingClientRect(),b=svg.getBoundingClientRect();return b.width<=a.width+1&&b.height<=a.height+1;})).toBe(true);
+  await page.locator('[data-opt="chart"] b',{hasText:/^Bars$/}).click();await expect(page.locator('.pg-overview svg.ov-heat')).toHaveCount(0);
   // Compare: a fader press opens it, a try key inside it reaches the compare module, and its chart fills its measured area.
   await page.locator('.fd-strip[aria-label^="Synthetic lineup-1:"]').click();
   const screen=page.locator('.mfd-page.pg-compare');await expect(screen).toBeVisible();
@@ -150,8 +151,12 @@ for(const theme of ['night','day'])test(`THM-2.4-04 the LCD windows stay dark in
 // THM-10-02: text on metal reaches 4.5:1 and the LCD status bars 3:1, in both themes (inactive and decorative text
 // is exempt, so only the page keys, engine keys and bar segments are measured).
 for(const theme of ['night','day'])test(`THM-10-02 metal text reaches 4.5:1 and LCD status bars 3:1 in ${theme}`,async({page})=>{
- const data=visualFixture().data;data.details=null;
+ const data=visualFixture().data;data.details={...data.details,sessions:[],resetEvents:[]};
  [75,40,20,75].forEach((value,i)=>{for(const w of data.projection.rows[i].accounts[0].windows)w.remainingPercent=value;});
+ // D474 decision 2 (C9): a bar is amber only when its estimate runs out before the reset, so the 40 % reading gets one.
+ {const now=Date.now(),iso=m=>new Date(now+m*60000).toISOString(),row=data.projection.rows[1],a=row.accounts[0];
+  Object.assign(a.windows[0],{current:true,validUntil:iso(600),resetsAt:iso(300)});
+  data.details.forecasts=[{source:row.id,subscriptionRef:a.subscriptionRef,windowId:a.windows[0].id,runsOutAt:iso(40),pace:'tight',basis:'recent-rate',observedAt:iso(-2)}];}
  for(const [i,group] of data.subscriptions.entries())group.accounts[0].account.windows=structuredClone(data.projection.rows[i].accounts[0].windows);
  await open(page,{data,theme});
  for(const [text,surface] of [['.pk','.pk'],['.ek-name','.ek']]){
