@@ -256,7 +256,13 @@ test("D484-5 (macrev2-1312-2): the replacement brief carries the block and its R
   const ans = (rec) => `Record: ${H}\n${rec}\n\nVERDICT: merge`;
   assert.equal(S.parseAnswer(ans("crit -> ok"), H, ["X-1"]).ok, false, "no disposition: rejected");
   assert.match(S.parseAnswer(ans("crit -> ok"), H, ["X-1"]).why, /X-1/);
-  assert.equal(S.parseAnswer(ans("X-1 -> closed, test t"), H, ["X-1"]).ok, true);
+  assert.equal(S.parseAnswer(ans("X-1 -> closed: covered by test t"), H, ["X-1"]).ok, true);
+  assert.equal(S.parseAnswer(ans("- **x-1** => FIXED: covered by test t"), H, ["X-1"]).ok, true, "case-insensitive, list marker, bold");
+  assert.equal(S.parseAnswer(ans("X-1 \u2192 withdrawn: not reachable"), H, ["X-1"]).ok, true);
+  for (const bad of ["X-1 is mentioned here", "X-1 -> open: still failing", "X-1 -> closed", "X-1 -> closed:", "X-1 -> closed: ok", "see X-1 -> closed: covered by test t", "X-10 -> closed: covered by test t"])
+    assert.equal(S.parseAnswer(ans(bad), H, ["X-1"]).ok, false, bad);
+  assert.equal(S.parseAnswer(ans("A-1 -> closed: done here\nB-2 -> fixed: done here"), H, ["A-1", "B-2"]).ok, true);
+  assert.equal(S.parseAnswer(ans("A-1 -> closed: done here"), H, ["A-1", "B-2"]).ok, false, "every ID needs its own line");
   assert.equal(S.parseAnswer(ans("crit -> ok"), H, []).ok, true, "no prior block: unchanged");
 });
 

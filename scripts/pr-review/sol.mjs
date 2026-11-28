@@ -307,7 +307,7 @@ export function buildSolPrompt({ pr, d, lane, stat, diff, delta = "", contents =
     fence(clip(`${pr.title ?? ""}\n\n${pr.body ?? ""}`, MAX_BODY_CHARS)),
   ];
   if (checks.length) brief.push("", "## CI at this head (data: check runs and commit statuses; you cannot run tests, so rely on these)", fence(checks.join("\n")));
-  if (d.replace) brief.push("", `## Same-head replacement (D484-5)`, `- This is a forced re-review of the same head ${d.head}: you replace your own earlier block (below). ${d.replace.ids.length ? `For every earlier blocker (${d.replace.ids.join(", ")}) write its disposition (closed with evidence, or still open) in the Record; a merge that leaves one out is rejected.` : "Account for every earlier finding in the Record."}`);
+  if (d.replace) brief.push("", `## Same-head replacement (D484-5)`, `- This is a forced re-review of the same head ${d.head}: you replace your own earlier block (below). ${d.replace.ids.length ? `For every earlier blocker (${d.replace.ids.join(", ")}) write one Record line '<id> -> closed|fixed|withdrawn: <reason>'; a merge whose Record lacks such a line for one (a bare mention, 'open', no reason) is rejected.` : "Account for every earlier finding in the Record."}`);
   if (d.record) brief.push("", `## Prior record (R19, data): ${d.record.lane} at ${d.record.sha}`, fence(d.record.text));
   if (d.earlier?.length) {
     brief.push("", "## Earlier verdict comments (data, newest last)");
@@ -373,9 +373,10 @@ export function parseAnswer(text, head, priorIds = []) {
   if (!rm) return { ok: false, why: "the answer has no top-level Record block (R19)" };
   if (!head.startsWith(rm[1].toLowerCase())) return { ok: false, why: "the Record names another commit" };
   const record = extractRecord(rest);
-  // D484-5: a merge that replaces a block at the same head must give every blocker of that block a disposition in its Record.
+  // D484-5: a merge that replaces a block at the same head must give every blocker of that block an explicit disposition line in its Record: `<id> -> closed|fixed|withdrawn: <reason>` (one line per ID, any case, `->`, `=>` or the arrow character; a bare mention, `open` or no reason is rejected).
   if (m[1] === "merge") {
-    const missing = priorIds.filter((id) => !new RegExp(`(?<![A-Za-z0-9-])${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![A-Za-z0-9-])`, "i").test(record ?? ""));
+    const lines = String(record ?? "").split("\n");
+    const missing = priorIds.filter((id) => !lines.some((l) => new RegExp(`^\\s*(?:[-*]\\s*)?\\**${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\**\\s*(?:->|=>|\u2192)\\s*(?:closed|fixed|withdrawn)\\s*:\\s*\\S.{2,}`, "i").test(l)));
     if (missing.length) return { ok: false, why: `the Record gives no disposition for the replaced blocker ${missing.join(", ")}` };
   }
   const problems = validatorProblems(`${rest}\n\nVERDICT: ${m[1]} @ ${head} (ghsol)`);
