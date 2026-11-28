@@ -12,6 +12,7 @@
 
 import referenceMap from "./reference-map.json" with { type: "json" };
 import reviewRouting from "./review-routing.json" with { type: "json" };
+import { bareNames, mappedClasses, parseAbsent, parseRecord, setHash } from "./gui-map.mjs";
 export const CONTEXT = "modelplan-gates";
 // The repository whose runs count; evaluate.mjs passes GITHUB_REPOSITORY, this is the default.
 export const REPO = "modelplan/modelplan";
@@ -753,7 +754,9 @@ export function dataSyncProblem({ pr, files, items, sync, glmTiers = DEFAULT_GLM
 // tiers: parseTiers(); sync: dataSyncRunId's run and head commit (see dataSyncProblem).
 // glmFallbackUntil/now: the GLM-out fallback window (parseFallbackUntil); null keeps it closed.
 // glmTiers: parseGlmTiers(vars.REVIEW_GLM_TIERS), the tiers on which (ghglm) decides.
-export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, proveMainMerges, conf, members = [], tiers = new Map(), sync = null, glmFallbackUntil = null, now = Date.now(), glmTiers = DEFAULT_GLM_TIERS }) {
+// guiMaps: the parsed GUI test maps (gui-map.mjs; evaluate.mjs passes main's, plus the head's when the PR changes it). A
+// PR whose changed paths map to a class needs a successful exact-head PR GUI run (D481, prGuiState); null or [] = no map.
+export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, proveMainMerges, conf, members = [], tiers = new Map(), sync = null, glmFallbackUntil = null, now = Date.now(), glmTiers = DEFAULT_GLM_TIERS, guiMaps = null }) {
   const head = pr.head.sha;
   const gpt = gptLabelled(pr);
   if (gpt) glmTiers = [];
@@ -840,9 +843,15 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   // D314: hosted macOS legs are post-merge only, unless the PR changes a workflow (hosted.mjs explains why).
   extra.hostedExempt = !touchesWorkflows(paths) && files.length < FILE_LIST_LIMIT;
   if (!extra.hostedExempt) notes.push("workflow change: hosted legs gate");
-  const ci = ciState(runs, statuses, { scope: prRunScope(pr), hosted: extra.hostedExempt, ...(dataSync ? { required: [ANCHOR_WORKFLOW, DATA_SYNC.repoChecks] } : {}) });
+  // D481: a PR GUI run (a desktop dispatch titled "desktop PR GUI #<n> @ <sha>") is judged by prGuiState below, never by
+  // ciState: as the newest desktop run at the head it would otherwise displace the PR's own pull_request desktop run.
+  const ci = ciState(runs.filter((r) => !isPrGuiRun(r)), statuses, { scope: prRunScope(pr), hosted: extra.hostedExempt, ...(dataSync ? { required: [ANCHOR_WORKFLOW, DATA_SYNC.repoChecks] } : {}) });
   if (ci.info) notes.push(ci.info);
   if (ci.state === FAILURE) return res(FAILURE, say(ci.why), extra);
+  const guiClasses = dataSync ? [] : requiredGuiClasses(paths, guiMaps, { truncated: files.length >= FILE_LIST_LIMIT });
+  if (guiClasses.length) extra.guiClasses = guiClasses;
+  const gui = guiClasses.length ? prGuiState(runs, pr, guiClasses, requiredGuiClasses([], guiMaps, { truncated: true })) : null;
+  if (gui?.state === FAILURE) return res(FAILURE, say(gui.why), extra);
   if (missing.length) return res(PENDING, say(`tier ${tier}: needs ${missing.join(", ")}`), extra);
   if (ci.state === PENDING) return res(PENDING, say(ci.why), extra);
   // Owner D374: the review no longer waits for the Mac compile, so the merge gate does. A native head (or one whose file
@@ -850,6 +859,8 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   // already held back by ciState above. A data-sync PR never touches desktop/native.
   if (!dataSync && (needsCompile(paths) || files.length >= FILE_LIST_LIMIT) && !(statuses ?? []).some((s) => s.context === COMPILE_CONTEXT && s.state === "success"))
     return res(PENDING, say("waiting for mac-compile at this head"), extra);
+  // D481: after mac-compile, because the coordinator dispatches the PR GUI run only once mac-compile passed.
+  if (gui && gui.state !== SUCCESS) return res(PENDING, say(gui.why), extra);
   return res(SUCCESS, say(`tier ${tier}: gates pass${chain.length ? ` (carried ${chain.length})` : ""}`), extra);
 }
 
@@ -892,6 +903,12 @@ export const GUI_NOT_NEEDED_STEP = "GUI share not needed";
 export function guiLegState(jobs) {
   if (jobs == null) return { state: SUCCESS, why: "GUI leg not read" };
   if (jobs.some((j) => j.name === "queue-scope" && (j.steps ?? []).some((s) => s.name === GUI_NOT_NEEDED_STEP && s.conclusion === "success"))) return { state: SUCCESS, why: "GUI share not needed" };
+  const leg = guiPoolState(jobs);
+  return leg.missing ? { state: FAILURE, why: `${leg.why} without queue-scope saying it is not needed` } : leg;
+}
+
+// The GUI leg jobs of one desktop run: one pool green (native, or native-hosted + native-owner-gui), none failed.
+function guiPoolState(jobs) {
   // Only the actual GUI leg jobs count (names from a real merge-group run: the reusable workflow's job named after the
   // task, "<caller> (os) / <task> (os)"). Its other child jobs (probe, sequences, transport, u11-native, ...) are skipped
   // by design and ignored, and so is a whole job skipped before it expanded (its name keeps "${{ matrix.os }}").
@@ -901,7 +918,69 @@ export function guiLegState(jobs) {
   const leg = [...A, ...H, ...O];
   if (leg.some((j) => j.conclusion !== "success")) return { state: FAILURE, why: `GUI leg ${leg.filter((j) => j.conclusion !== "success").map((j) => `${j.name} ${j.conclusion}`).join(", ")}` };
   if (A.length || (H.length && O.length)) return { state: SUCCESS, why: "GUI leg green" };
-  return { state: FAILURE, why: "GUI leg skipped or missing without queue-scope saying it is not needed" };
+  return { state: FAILURE, why: "GUI leg skipped or missing", missing: true };
+}
+
+// ---- PR GUI leg (D481, owner 2026-11-27) ----
+// A ready PR whose changed paths map to at least one class of the GUI test map (gui-map.mjs) needs a successful PR GUI run
+// at its exact head before this gate passes: a desktop.yml workflow_dispatch of the PR's own head branch with pr=<n> and
+// sha=<head>, titled "desktop PR GUI #<n> @ <head>" (desktop.yml run-name; the runs API carries no inputs, so the title
+// binds the run to the head, as mac-compile.yml's title does). It runs only the mapped classes, through the pinned
+// trusted-mac.yml (`gui_classes`). PRs with no mapped class are unaffected; the merge queue still runs the whole share.
+export const DESKTOP_WORKFLOW = ".github/workflows/desktop.yml";
+export const PR_GUI_TITLE = /^desktop PR GUI #([1-9][0-9]*) @ ([0-9a-f]{40})$/;
+export const isPrGuiRun = (r) => String(r?.path ?? "").split("@")[0] === DESKTOP_WORKFLOW && r?.event === "workflow_dispatch"
+  && PR_GUI_TITLE.test(r?.display_title ?? "");
+
+// The PR GUI runs that count for this PR head: the title names this PR and head, GitHub ran it at that very commit on the
+// PR's own branch in this repository, and the trusted account dispatched it (trusted-mac.yml admits the owner's GUI Macs
+// only for that actor anyway).
+export function prGuiRunScope(pr) {
+  const repo = pr.base.repo.full_name;
+  return (r) => {
+    const m = PR_GUI_TITLE.exec(r?.display_title ?? "");
+    return isPrGuiRun(r) && !!m && Number(m[1]) === pr.number && m[2] === pr.head.sha && r.head_sha === pr.head.sha
+      && r.head_repository?.full_name === repo && r.head_branch === pr.head.ref && isTrusted(r.actor) && isTrusted(r.triggering_actor);
+  };
+}
+
+export const requiredGuiClasses = (paths, maps, { truncated = false } = {}) => (maps?.length ? mappedClasses(paths, maps, { truncated }) : []);
+
+// classes: the required "<package>:<Class>" list. The newest bound run decides, whatever its state (a newer queued or
+// running one holds the PR even after an older green one; merge-gates.yml re-evaluates when it is requested). Its jobs
+// (run.jobs, read by evaluate.mjs) must show gui-scope green and a GUI leg that actually ran green: a run whose GUI jobs
+// were skipped found no class to run, which disagrees with this gate's map, and fails closed. Then the two gui-scope
+// records (run.guiRecord / run.guiAbsent, gui-map.mjs RECORD_TITLE / ABSENT_TITLE, read by evaluate.mjs):
+// - a required class the run found undeclared at the head: PENDING "merge main first" (it cannot run at this head);
+// - the record must cover every required class: a plain list must contain them; "all@<hash>" must equal setHash of
+//   this gate's full set (full: every class of its maps); "sha256:<hash>:<n>" must equal setHash and the size of the
+//   required set itself. Anything else (no record, a smaller or other set, the map changed since) waits for a re-run.
+// The gate's maps are main's plus the head's (evaluate.mjs), the same union the run selects with, so the hashes agree.
+export function prGuiState(runs, pr, classes, full = classes) {
+  const names = bareNames(classes);
+  const list = names.length > 3 ? `${names.slice(0, 3).join(", ")} +${names.length - 3}` : names.join(", ");
+  const r = runs.filter(prGuiRunScope(pr)).sort((a, b) => b.id - a.id)[0];
+  if (!r) return { state: PENDING, why: `waiting for PR GUI run (classes: ${list})` };
+  if (r.status !== "completed") return { state: PENDING, why: `PR GUI run in progress (classes: ${list})` };
+  if (r.conclusion !== "success") return { state: FAILURE, why: `PR GUI run ${r.conclusion} (classes: ${list}); fix or re-dispatch` };
+  if (!Array.isArray(r.jobs)) return { state: PENDING, why: `PR GUI run jobs not read (classes: ${list})` };
+  if (!r.jobs.some((j) => j.name === "gui-scope" && j.conclusion === "success")) return { state: FAILURE, why: "PR GUI run has no successful gui-scope job" };
+  const short = (l) => (l.length > 3 ? `${l.slice(0, 3).join(", ")} +${l.length - 3}` : l.join(", "));
+  const rec = r.guiRecord == null ? null : parseRecord(r.guiRecord);
+  const abs = r.guiAbsent == null ? null : parseAbsent(r.guiAbsent);
+  if (!rec || !abs) return { state: PENDING, why: `re-run needed: PR GUI run recorded no class set (classes: ${list})` };
+  if (abs.many) return { state: PENDING, why: `merge main first: ${abs.many} mapped classes do not exist at this head` };
+  const gone = bareNames(classes.filter((c) => abs.list.includes(c)));
+  if (gone.length) return { state: PENDING, why: `merge main first: class ${short(gone)} does not exist at this head` };
+  const leg = guiPoolState(r.jobs);
+  if (leg.state !== SUCCESS) return { state: FAILURE, why: leg.missing ? `PR GUI run ran no GUI leg, but the map needs classes: ${list}` : `PR GUI run: ${leg.why} (classes: ${list})` };
+  if (rec.list) {
+    const missing = bareNames(classes.filter((c) => !rec.list.includes(c)));
+    if (missing.length) return { state: PENDING, why: `re-run needed: PR GUI run did not cover ${short(missing)}` };
+  } else if (rec.all ? rec.all !== setHash(full) : rec.hash !== setHash(classes) || rec.count !== new Set(classes).size) {
+    return { state: PENDING, why: `re-run needed: PR GUI run's hashed class set is not the gate's (classes: ${list})` };
+  }
+  return { state: SUCCESS, why: `PR GUI run green (classes: ${list})` };
 }
 
 export function evaluateGroup({ steps, queueRuns, queueStatuses = [], queueCheckRuns = [], desktopJobs = null, repo = REPO, now = Date.now() }) {
