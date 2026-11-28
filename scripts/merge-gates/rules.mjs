@@ -897,18 +897,70 @@ export function queueCheckState(queueRuns, queueCheckRuns, repo = REPO, { hosted
 }
 
 // The GUI leg of desktop.yml's queue run, read from its jobs (GET /actions/runs/{id}/jobs). A skipped GUI job is
-// ok only when queue-scope's "GUI share not needed" step succeeded (desktop.yml's design decision); otherwise the
-// leg must have actually run: one pool green (native, or native-hosted + native-owner-gui). A skip for any other reason, or no GUI job at all, fails closed. null jobs = not read: no check.
+// ok only when queue-scope's "GUI share not needed" step succeeded (desktop.yml's design decision), or (D488) when
+// gui-defer's "GUI covered by a later group" step succeeded AND guiCoverState verifies the covering run itself
+// (`cover`, read by evaluate.mjs; the step's claim alone never passes). Otherwise the leg must have actually run:
+// one pool green (native, or native-hosted + native-owner-gui). A skip for any other reason, or no GUI job at all,
+// fails closed. null jobs = not read: no check.
 export const GUI_NOT_NEEDED_STEP = "GUI share not needed";
-export function guiLegState(jobs) {
+export function guiLegState(jobs, { cover = null, groupSha = null, runId = null, repo = REPO } = {}) {
   if (jobs == null) return { state: SUCCESS, why: "GUI leg not read" };
   if (jobs.some((j) => j.name === "queue-scope" && (j.steps ?? []).some((s) => s.name === GUI_NOT_NEEDED_STEP && s.conclusion === "success"))) return { state: SUCCESS, why: "GUI share not needed" };
   const leg = guiPoolState(jobs);
-  return leg.missing ? { state: FAILURE, why: `${leg.why} without queue-scope saying it is not needed` } : leg;
+  if (!leg.missing) return leg;
+  if (jobs.some((j) => j.name === GUI_DEFER_JOB && j.conclusion === "success" && (j.steps ?? []).some((s) => s.name === GUI_COVERED_STEP && s.conclusion === "success")))
+    return guiCoverState(cover, { groupSha, runId, repo });
+  return { state: FAILURE, why: `${leg.why} without queue-scope saying it is not needed` };
+}
+
+// ---- Merge-queue GUI leg for the group tail only (D488, owner 2026-11-28) ----
+// The queue builds up to four groups at once and every group commit contains the groups before it, but the owner
+// has one GUI Mac. desktop.yml's gui-defer job (gui-defer.mjs) lets an entry that is not the tail of the building
+// window wait for a later group's GUI leg instead of queueing its own. It records the covering run as a notice
+// annotation titled GUI_COVER_TITLE ("run=<id> sha=<head>") and runs its "GUI covered by a later group" step.
+// The gate trusts neither: guiCoverState re-reads that run and passes only when it is a desktop.yml merge_group run of
+// this repository on a queue branch, other than this group's run, at a different commit whose history contains this
+// group commit (cover.contains: git merge-base --is-ancestor in evaluate.mjs), with gui-scope green and a GUI leg
+// that actually ran green. Anything missing or unreadable fails.
+export const GUI_DEFER_JOB = "gui-defer";
+export const GUI_COVERED_STEP = "GUI covered by a later group";
+export const GUI_COVER_TITLE = "D488 GUI covered by";
+export const parseCoverRecord = (msg) => {
+  const m = /^run=([1-9][0-9]*) sha=([0-9a-f]{40})$/.exec(String(msg ?? ""));
+  return m ? { runId: Number(m[1]), sha: m[2] } : null;
+};
+export const queuePrOf = (branch) => {
+  const m = /^(?:refs\/heads\/)?gh-readonly-queue\/main\/pr-([1-9][0-9]*)-[0-9a-f]{40}$/.exec(String(branch ?? ""));
+  return m ? Number(m[1]) : null;
+};
+// A run that can cover another group's GUI leg, without the containment proof (callers add it).
+export function coverCandidate(run, { repo = REPO, runId = null, groupSha = null } = {}) {
+  return !!run && Number.isInteger(run.id) && run.id !== Number(runId)
+    && String(run.path ?? "").split("@")[0] === DESKTOP_WORKFLOW && run.event === "merge_group"
+    && run.head_repository?.full_name === repo && queuePrOf(run.head_branch) != null
+    && SHA.test(run.head_sha ?? "") && run.head_sha !== groupSha;
+}
+// The covering run's own GUI leg: gui-scope green and one pool green (a "not needed" declaration never covers).
+export function coverGuiState(jobs) {
+  if (!Array.isArray(jobs)) return { state: PENDING, why: "covering run's jobs not read" };
+  if (!jobs.some((j) => j.name === "gui-scope" && j.conclusion === "success")) return { state: PENDING, why: "covering run has no successful gui-scope job" };
+  const leg = guiPoolState(jobs);
+  return leg.missing ? { state: PENDING, why: "covering run's GUI leg has not run" } : leg;
+}
+export function guiCoverState(cover, { groupSha = null, runId = null, repo = REPO } = {}) {
+  const no = (why) => ({ state: FAILURE, why: `GUI leg deferred (D488) but ${why}` });
+  if (!cover?.run) return no("the covering run could not be read");
+  const r = cover.run;
+  if (!coverCandidate(r, { repo, runId, groupSha })) return no(`run ${r.id} is not another merge_group desktop run of ${repo}`);
+  if (cover.record && (cover.record.runId !== r.id || cover.record.sha !== r.head_sha)) return no(`run ${r.id} does not match the recorded cover`);
+  if (cover.contains !== true) return no(`run ${r.id}'s commit ${String(r.head_sha).slice(0, 8)} does not contain this group commit`);
+  const leg = coverGuiState(cover.jobs);
+  if (leg.state !== SUCCESS) return no(`run ${r.id}: ${leg.why}`);
+  return { state: SUCCESS, why: `GUI leg covered by #${queuePrOf(r.head_branch)} merge_group run ${r.id}` };
 }
 
 // The GUI leg jobs of one desktop run: one pool green (native, or native-hosted + native-owner-gui), none failed.
-function guiPoolState(jobs) {
+export function guiPoolState(jobs) {
   // Only the actual GUI leg jobs count (names from a real merge-group run: the reusable workflow's job named after the
   // task, "<caller> (os) / <task> (os)"). Its other child jobs (probe, sequences, transport, u11-native, ...) are skipped
   // by design and ignored, and so is a whole job skipped before it expanded (its name keeps "${{ matrix.os }}").
@@ -983,7 +1035,7 @@ export function prGuiState(runs, pr, classes, full = classes) {
   return { state: SUCCESS, why: `PR GUI run green (classes: ${list})` };
 }
 
-export function evaluateGroup({ steps, queueRuns, queueStatuses = [], queueCheckRuns = [], desktopJobs = null, repo = REPO, now = Date.now() }) {
+export function evaluateGroup({ steps, queueRuns, queueStatuses = [], queueCheckRuns = [], desktopJobs = null, guiCover = null, groupSha = null, desktopRunId = null, repo = REPO, now = Date.now() }) {
   if (!steps.length) return { state: FAILURE, why: "no PR found in the merge group" };
   for (const s of steps) {
     const n = `#${s.pr}`;
@@ -994,7 +1046,7 @@ export function evaluateGroup({ steps, queueRuns, queueStatuses = [], queueCheck
   const hosted = steps.every((s) => s.prResult.hostedExempt === true);
   let ci = ciState(queueRuns, queueStatuses, { required: QUEUE_WORKFLOWS, scope: queueRunScope(repo), hosted });
   if (ci.state === SUCCESS) ci = queueCheckState(queueRuns, queueCheckRuns, repo, { hosted });
-  if (ci.state === SUCCESS) ci = guiLegState(desktopJobs);
+  if (ci.state === SUCCESS) ci = guiLegState(desktopJobs, { cover: guiCover, groupSha, runId: desktopRunId, repo });
   if (ci.state === PENDING) {
     const starts = queueRuns.filter(queueRunScope(repo)).map((r) => Date.parse(r.created_at)).filter(Number.isFinite);
     if (starts.length && now - Math.min(...starts) > GROUP_WAIT_MS) return { state: FAILURE, why: `group timed out after ${GROUP_WAIT_MS / 60000} min: ${ci.why}` };

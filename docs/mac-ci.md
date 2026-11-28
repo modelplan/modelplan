@@ -188,6 +188,40 @@ group, and `native-headless` hosted like every other event (D198; D246 reverted)
 queue whenever the group changes a desktop path, even when its tree equals the PR head (D169,
 below); the five Linux workflows have their own `queue-scope` job and no Mac job.
 
+### GUI leg for the group tail only (D488)
+
+The queue builds up to four groups at once (HEADGREEN), and each group commit contains every
+group before it. Every group used to start its own GUI leg on the one GUI Mac, so the tail,
+whose result is the one that merges the batch, waited about 20 minutes behind each earlier
+entry. On 2026-11-28 one batch at 09:32Z took five GUI runs when one was needed.
+
+In a `merge_group` run that needs the GUI share, `desktop.yml`'s `gui-defer` job
+(`scripts/merge-gates/gui-defer.mjs`, hosted ubuntu) runs before the GUI jobs and reads the
+merge queue (GraphQL `mergeQueue` entries: position, state, head commit, PR):
+
+- If this entry is the tail of the building window (no later entry is awaiting checks,
+  mergeable or locked), it outputs `own=true` after a 90-second settle, and the GUI leg runs
+  in this run as before. Any doubt has the same result: a branch that is not a queue branch,
+  or the queue unreadable three polls in a row.
+- Otherwise it polls every 60 seconds. If a later `merge_group` desktop run whose commit
+  contains this group commit (compare API: ahead, nothing behind) has a green GUI leg, it
+  outputs `own=false`, records `run=<id> sha=<head>` as a `D488 GUI covered by` notice and runs
+  its `GUI covered by a later group` step. If the later entries leave the queue and this
+  entry becomes the tail, it outputs `own=true` and runs its own GUI leg.
+- If there is no cover after 70 minutes and the entry is still not the tail, or the entry
+  leaves the queue without a cover, the job fails. The GUI jobs are then skipped, and the
+  group fails.
+
+`modelplan-gates` (`rules.mjs` `guiLegState` / `guiCoverState`) does not trust the claim. It
+accepts skipped GUI jobs only after it re-reads the recorded run and checks four things: it is
+a `desktop.yml` `merge_group` run of this repository on a queue branch, it is not this group's
+run, its commit contains this group commit (`git merge-base --is-ancestor` in `evaluate.mjs`),
+and its `gui-scope` and GUI leg both succeeded. A "GUI share not needed" declaration never
+covers another group. Invariant: no merge_group entry passes the GUI leg unless a passing GUI
+run exists whose tree contains its head, either its own run or a verified later group head.
+`trusted-mac.yml` and its pin are unchanged. The PR-stage GUI leg (D481) and the nightly and
+dispatch rules (D169) are not affected.
+
 ## Affected GUI tests on PRs, full suite in the queue and nightly (D169)
 
 Owner decision D169 (2026-11-11). `pull_request` events never start a GUI leg; a ready PR head gets

@@ -1878,3 +1878,159 @@ test("D481: desktop.yml's PR GUI title is what the gate binds, and merge-gates r
   assert.match(evaluate, /guiMaps: maps/, "evaluate.mjs passes the maps");
   assert.match(evaluate, /wr\.event === "workflow_dispatch"/, "a PR GUI run re-evaluates its PR");
 });
+
+// ---- D488 (owner 2026-11-28): merge-queue GUI leg for the group tail only ----
+const D = await import("../merge-gates/gui-defer.mjs");
+const GUI_JOB = "native (macos-latest) / native (macos-latest)";
+const SHA1 = "1".repeat(40), SHA2 = "2".repeat(40), SHA3 = "3".repeat(40);
+const djob = (name, conclusion, steps = []) => ({ name, conclusion, steps });
+const coverRun = (over = {}) => ({ id: 902, path: ".github/workflows/desktop.yml", event: "merge_group", head_sha: SHA3,
+  head_branch: `gh-readonly-queue/main/pr-1306-${SHA2}`, head_repository: { full_name: "modelplan/modelplan" }, created_at: "2026-11-28T09:33:00Z", ...over });
+const coverJobs = [djob("gui-scope", "success"), djob("gui-defer", "success"), djob(GUI_JOB, "success")];
+const deferred = [djob("queue-scope", "success"), djob("gui-scope", "success"),
+  djob("gui-defer", "success", [{ name: "GUI covered by a later group", conclusion: "success" }]), djob("native (${{ matrix.os }})", "skipped")];
+
+test("D488 gate: a deferred GUI leg passes only with a verified covering run", () => {
+  const cover = { record: { runId: 902, sha: SHA3 }, run: coverRun(), jobs: coverJobs, contains: true };
+  const leg = (jobs, c, o = {}) => R.guiLegState(jobs, { cover: c, groupSha: SHA1, runId: 901, ...o });
+  const ok = leg(deferred, cover);
+  assert.equal(ok.state, R.SUCCESS);
+  assert.equal(ok.why, "GUI leg covered by #1306 merge_group run 902");
+  // Not covered: every unverifiable piece fails closed.
+  assert.equal(leg(deferred, null).state, R.FAILURE, "cover not read");
+  assert.equal(leg(deferred, { ...cover, contains: false }).state, R.FAILURE, "covering commit does not contain the group");
+  assert.equal(leg(deferred, { ...cover, contains: undefined }).state, R.FAILURE, "containment not proven");
+  assert.equal(leg(deferred, { ...cover, run: coverRun({ event: "workflow_dispatch" }) }).state, R.FAILURE, "not a merge_group run");
+  assert.equal(leg(deferred, { ...cover, run: coverRun({ head_repository: { full_name: "fork/modelplan" } }) }).state, R.FAILURE, "another repository");
+  assert.equal(leg(deferred, { ...cover, run: coverRun({ path: ".github/workflows/ci.yml" }) }).state, R.FAILURE, "another workflow");
+  assert.equal(leg(deferred, { ...cover, run: coverRun({ head_branch: "feature/x" }) }).state, R.FAILURE, "not a queue branch");
+  assert.equal(leg(deferred, { ...cover, run: coverRun({ id: 901 }) }, {}).state, R.FAILURE, "this group's own run");
+  assert.equal(leg(deferred, { ...cover, run: coverRun({ head_sha: SHA1 }) }).state, R.FAILURE, "same commit");
+  assert.equal(leg(deferred, { ...cover, record: { runId: 903, sha: SHA3 } }).state, R.FAILURE, "record names another run");
+  assert.equal(leg(deferred, { ...cover, jobs: [djob("gui-scope", "success"), djob(GUI_JOB, "failure")] }).state, R.FAILURE, "covering GUI leg failed");
+  assert.equal(leg(deferred, { ...cover, jobs: [djob("gui-scope", "success"), djob(GUI_JOB, "in_progress")] }).state, R.FAILURE, "covering GUI leg unfinished");
+  assert.equal(leg(deferred, { ...cover, jobs: [djob("gui-scope", "success"), djob(GUI_JOB, "skipped")] }).state, R.FAILURE, "covering run skipped its GUI leg");
+  assert.equal(leg(deferred, { ...cover, jobs: [djob("queue-scope", "success", [{ name: R.GUI_NOT_NEEDED_STEP, conclusion: "success" }]), djob(GUI_JOB, "skipped")] }).state, R.FAILURE, "'not needed' never covers");
+  assert.equal(leg(deferred, { ...cover, jobs: [djob(GUI_JOB, "success")] }).state, R.FAILURE, "covering run without gui-scope");
+  assert.equal(leg(deferred, { ...cover, jobs: null }).state, R.FAILURE, "covering jobs not read");
+  // The claim is the step, not the job: a green gui-defer without the covered step (own=true) needs its own GUI leg.
+  const noStep = deferred.map((j) => j.name === "gui-defer" ? djob("gui-defer", "success", [{ name: "GUI covered by a later group", conclusion: "skipped" }]) : j);
+  assert.equal(leg(noStep, cover).state, R.FAILURE, "own=true but no GUI leg ran");
+  assert.equal(leg(deferred.map((j) => j.name === "gui-defer" ? { ...j, conclusion: "failure" } : j), cover).state, R.FAILURE, "defer failed");
+  // An own GUI leg still decides by itself; a cover cannot rescue a failed one.
+  assert.equal(leg([...deferred.slice(0, 3), djob(GUI_JOB, "failure")], cover).state, R.FAILURE);
+  assert.equal(leg([...deferred.slice(0, 3), djob(GUI_JOB, "success")], null).state, R.SUCCESS);
+  // Through evaluateGroup.
+  const runs = R.QUEUE_WORKFLOWS.map((path, i) => qrun(path, "success", 1, "completed", { check_suite_id: 100 + i }));
+  const g = (c) => R.evaluateGroup({ steps: [{ pr: 7, prResult: { state: R.SUCCESS, why: "ok" }, mergeProof: { ok: true } }], queueRuns: runs, desktopJobs: deferred, guiCover: c, groupSha: SHA1, desktopRunId: 901 });
+  assert.equal(g(cover).state, R.SUCCESS);
+  assert.equal(g(null).state, R.FAILURE);
+  assert.equal(R.parseCoverRecord(`run=902 sha=${SHA3}`).runId, 902);
+  for (const bad of ["run=902", `run=0 sha=${SHA3}`, `run=902 sha=${SHA3} x`, null]) assert.equal(R.parseCoverRecord(bad), null, String(bad));
+  assert.equal(R.queuePrOf(`refs/heads/gh-readonly-queue/main/pr-12-${SHA1}`), 12);
+  assert.equal(R.queuePrOf("refs/heads/gh-readonly-queue/main/pr-12-x"), null);
+});
+
+// A stub GitHub: a scripted queue per poll (last one repeats), merge_group runs, jobs per run id, compare per head.
+function stubGh({ queues, runs = () => [], jobs = {}, compare = {}, graphqlFail = 0 }) {
+  let poll = 0, gfails = 0;
+  const calls = [];
+  return {
+    calls,
+    graphql: async (q) => {
+      calls.push("graphql");
+      if (gfails++ < graphqlFail) throw new Error("graphql down");
+      const nodes = queues[Math.min(poll++, queues.length - 1)];
+      return { repository: { mergeQueue: { entries: { nodes } } } };
+    },
+    all: async (path) => {
+      calls.push(path);
+      if (/\/workflows\/desktop\.yml\/runs\?event=merge_group/.test(path)) return runs(poll);
+      const m = /\/runs\/(\d+)\/jobs/.exec(path);
+      if (m) { const j = jobs[m[1]]; if (typeof j === "function") return j(poll); if (!j) throw new Error("404"); return j; }
+      throw new Error(`unexpected ${path}`);
+    },
+    get: async (path) => {
+      calls.push(path);
+      const m = /\/compare\/([0-9a-f]{40})\.\.\.([0-9a-f]{40})$/.exec(path);
+      if (m && compare[m[2]]) return compare[m[2]];
+      throw new Error(`404 ${path}`);
+    },
+  };
+}
+const entry = (pr, position, state = "AWAITING_CHECKS", oid = null) => ({ pullRequest: { number: pr }, position, state, headCommit: oid ? { oid } : null });
+const REF = `refs/heads/gh-readonly-queue/main/pr-1302-${SHA2}`;
+async function runDefer(gh, over = {}) {
+  let t = Date.parse("2026-11-28T09:33:30Z");
+  const slept = [];
+  const r = await D.defer({ gh, repo: "modelplan/modelplan", sha: SHA1, runId: 901, ref: REF, now: () => t, sleep: async (ms) => { slept.push(ms); t += ms; },
+    deadlineMs: 10 * 60000, intervalMs: 60000, settleMs: 90000, ...over });
+  return { ...r, polls: slept.length };
+}
+
+test("D488 defer: the tail runs its own GUI leg after the settle time; doubt runs it too", async () => {
+  const tail = await runDefer(stubGh({ queues: [[entry(1234, 1, "MERGEABLE"), entry(1302, 2)]] }));
+  assert.equal(tail.own, true, tail.why);
+  assert.match(tail.why, /tail of the building window/);
+  assert.equal(tail.polls, 2, "waits out the 90 s settle before deciding (later entries may still be joining)");
+  // A QUEUED or UNMERGEABLE later entry is outside the build window or failing: still the tail.
+  const outside = await runDefer(stubGh({ queues: [[entry(1302, 1), entry(1306, 2, "QUEUED"), entry(1307, 3, "UNMERGEABLE")]] }));
+  assert.equal(outside.own, true);
+  // The queue unreadable three times in a row: own GUI leg (today's behaviour), never a cover.
+  const down = await runDefer(stubGh({ queues: [[entry(1302, 1), entry(1306, 2)]], graphqlFail: 3 }));
+  assert.equal(down.own, true);
+  assert.match(down.why, /unreadable/);
+  // Not a queue branch.
+  assert.equal((await runDefer(stubGh({ queues: [[]] }), { ref: "refs/heads/main" })).own, true);
+  // Found by its group commit when the PR number does not match.
+  assert.equal(D.queuePosition([entry(9, 1, "AWAITING_CHECKS", SHA1), entry(10, 2)], { pr: 1302, sha: SHA1 }).tail, false);
+});
+
+test("D488 defer: a non-tail entry is covered only by a later group containing it with a green GUI leg", async () => {
+  const later = coverRun();
+  const queue = [[entry(1302, 1), entry(1306, 2)]];
+  // Covered at the third poll: the later group's GUI leg finishes then.
+  const gh = stubGh({ queues: queue, runs: () => [later], compare: { [SHA3]: { status: "ahead", ahead_by: 1, behind_by: 0 } },
+    jobs: { 902: (poll) => [djob("gui-scope", "success"), djob(GUI_JOB, poll >= 3 ? "success" : null)] } });
+  const covered = await runDefer(gh);
+  assert.equal(covered.own, false, covered.why);
+  assert.equal(covered.cover.id, 902);
+  assert.equal(covered.why, "covered by #1306 merge_group run 902");
+  assert.equal(gh.calls.filter((c) => c.startsWith("/compare/")).length, 1, "containment is asked once per commit");
+  // Not covered: the later commit does not contain this group (e.g. a re-formed group on another base).
+  const apart = await runDefer(stubGh({ queues: queue, runs: () => [later], compare: { [SHA3]: { status: "diverged", ahead_by: 1, behind_by: 1 } }, jobs: { 902: coverJobs } }));
+  assert.equal(apart.fail, true, "never covered, never the tail: fails at the deadline");
+  assert.match(apart.why, /no verified covering GUI run within 10 min/);
+  // Not covered: the containing run's GUI leg failed, was skipped, or the jobs cannot be read.
+  for (const jobs of [[djob("gui-scope", "success"), djob(GUI_JOB, "failure")], [djob("gui-scope", "success"), djob(GUI_JOB, "skipped")], undefined]) {
+    const r = await runDefer(stubGh({ queues: queue, runs: () => [later], compare: { [SHA3]: { status: "ahead", ahead_by: 1, behind_by: 0 } }, jobs: jobs ? { 902: jobs } : {} }));
+    assert.equal(r.own, undefined, JSON.stringify(jobs));
+    assert.equal(r.fail, true);
+  }
+  // Not covered: this group's own run, another repository, an older run, a non-merge_group run.
+  for (const run of [coverRun({ id: 901 }), coverRun({ head_repository: { full_name: "x/y" } }), coverRun({ created_at: "2026-11-28T08:00:00Z" }), coverRun({ event: "push" })]) {
+    const r = await runDefer(stubGh({ queues: queue, runs: () => [run], compare: { [SHA3]: { status: "ahead", ahead_by: 1, behind_by: 0 } }, jobs: { 902: coverJobs, 901: coverJobs } }));
+    assert.equal(r.fail, true, JSON.stringify(run));
+  }
+  // identical commit is not "later".
+  const same = await runDefer(stubGh({ queues: queue, runs: () => [later], compare: { [SHA3]: { status: "identical", ahead_by: 0, behind_by: 0 } }, jobs: { 902: coverJobs } }));
+  assert.equal(same.fail, true);
+});
+
+test("D488 defer: when the later entries leave, the entry becomes the tail and runs its own GUI leg", async () => {
+  // Poll 1-2: #1306 behind us; then #1306 is removed (its GUI leg failed): we are the tail.
+  const failedLater = coverRun();
+  const gh = stubGh({ queues: [[entry(1302, 1), entry(1306, 2)], [entry(1302, 1), entry(1306, 2)], [entry(1302, 1), entry(1306, 2, "UNMERGEABLE")], [entry(1302, 1)]],
+    runs: () => [failedLater], compare: { [SHA3]: { status: "ahead", ahead_by: 1, behind_by: 0 } }, jobs: { 902: [djob("gui-scope", "success"), djob(GUI_JOB, "failure")] } });
+  const r = await runDefer(gh);
+  assert.equal(r.own, true, r.why);
+  assert.equal(r.polls, 2);
+  // The entry itself left the queue (dequeued) without any cover: fail, never pass.
+  const gone = await runDefer(stubGh({ queues: [[entry(1302, 1), entry(1306, 2)], [entry(1306, 1)]] }));
+  assert.equal(gone.fail, true);
+  assert.match(gone.why, /left the merge queue/);
+  // ...but a verified cover found meanwhile still counts (HEADGREEN merged the whole group).
+  const merged = await runDefer(stubGh({ queues: [[entry(1302, 1), entry(1306, 2)], []], runs: (poll) => (poll >= 2 ? [coverRun()] : []),
+    compare: { [SHA3]: { status: "ahead", ahead_by: 1, behind_by: 0 } }, jobs: { 902: coverJobs } }));
+  assert.equal(merged.own, false, merged.why);
+});
