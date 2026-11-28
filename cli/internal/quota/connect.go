@@ -573,6 +573,14 @@ func forgetZaiAccountNative(cache, scope string) error {
 // legacy attributes source-less log cursors (speed.LegacyCursorSources), taken once before any
 // ledger is rewritten.
 func filterCachedSource(path, name, tool string, history bool, legacy map[string]string) error {
+	if name == "native.json" {
+		// Consent cleanup shares this RMW lock with manual-key changes and native publication.
+		unlock, err := lockManualKeys(filepath.Dir(filepath.Dir(path)))
+		if err != nil {
+			return err
+		}
+		defer unlock()
+	}
 	return filterCachedSourceWithWriter(path, name, tool, history, legacy, writeAtomic)
 }
 func filterCachedSourceWithWriter(path, name, tool string, history bool, legacy map[string]string, replace func(string, []byte) error) error {
