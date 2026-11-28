@@ -270,8 +270,13 @@ queue. The queue's full GUI leg and the nightly stay as they are.
   (renames count with their old path; a list of 3000 files or more selects every mapped class), selects the classes
   with the head's map and `main`'s map unioned, and passes the `app-integration` ones to the pinned `trusted-mac.yml`
   as `gui_classes` (`none` when only `settings` classes are mapped: that package runs whole in every GUI leg). No mapped
-  class: `run=false` and nothing runs. `gui-scope` records the selected set as the notice annotation
-  `D481 PR GUI classes` (`<package>:<Class>,...` or `none`). Only `gui-scope` and the GUI legs (`native`, or `native-hosted` +
+  class: `run=false` and nothing runs. A selected class that the head's test sources do not declare (the map on `main`
+  is newer than the branch) is dropped from the run and recorded as absent. `gui-scope` writes two notice annotations
+  (`gui-map.mjs`; GitHub truncates a message at 4096 characters, so each stays within 3500):
+  `D481 PR GUI classes` holds the classes it ran, as `none`, a sorted `<package>:<Class>,...` list, `all@<sha256>` when
+  that is every class of its maps, or `sha256:<hex>:<count>` for any other list longer than 3500 characters (the hash is
+  sha256, in hex, of the sorted names joined by `,`). `D481 PR GUI absent classes` holds the absent ones (`none`, a
+  list, or `many:<count>`). Only `gui-scope` and the GUI legs (`native`, or `native-hosted` +
   `native-owner-gui` under `MAC_CI_GUI_POOL=hosted`) run; `pr-ref` resolves no merge, so the Linux jobs, `app-smoke` and
   `native-headless` skip. `trusted-mac.yml` is unchanged: a branch dispatch by the owner account is already admitted to
   the GUI Macs and is the only run that narrows the share. A PR branch whose `desktop.yml` predates this has no `sha`
@@ -279,8 +284,11 @@ queue. The queue's full GUI leg and the nightly stay as they are.
 - **Gate.** `scripts/merge-gates/rules.mjs` `prGuiState`: for a ready PR whose changed paths map to at least one class
   under `main`'s map (plus the head's map when the PR changes it), the newest `desktop` dispatch run titled
   `desktop PR GUI #<n> @ <head>`, at that head on the PR's branch in this repository and dispatched by the owner account,
-  must have succeeded with `gui-scope` green, a GUI leg that ran green, and a recorded class set that covers every class
-  required now. A smaller or missing record (for example the map grew on `main` after the run) is PENDING
+  must have succeeded with `gui-scope` green, a GUI leg that ran green, and records that cover every class required now.
+  The gate selects with the same union as the run (`main`'s map plus the head's). A required class recorded as absent is
+  PENDING `merge main first: class <X> does not exist at this head`. A plain list must contain every required class; an
+  `all@` hash must equal the hash of the gate's full set; a `sha256:` hash and count must equal those of the required set
+  itself. A smaller, missing or different record (for example the map changed on `main` after the run) is PENDING
   `re-run needed: …`: dispatch again at the same head. The newest bound run decides whatever its state, and
   `merge-gates.yml` re-evaluates when a PR GUI run is requested as well as when it completes, so a newer queued run turns
   an earlier green status pending at once. Until one exists the status is

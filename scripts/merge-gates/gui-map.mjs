@@ -8,13 +8,16 @@
 // changes it); the PR GUI leg runs the head's copy with the head's map plus main's, so the leg never runs less than
 // the gate asks for unless the PR itself changes this selector.
 //
-//   node scripts/merge-gates/gui-map.mjs select --files <jsonl> --map <map.json> [--map <other map.json>]
+//   node scripts/merge-gates/gui-map.mjs select --files <jsonl> --map <map.json> [--map <other map.json>] [--root <head checkout>]
 // --files: one JSON object per line with `filename` and optional `previous_filename` (the PR files API, as
 // `gh api --paginate .../pulls/<n>/files --jq '.[] | {filename, previous_filename}'` prints it). Prints one JSON
-// object: {"gui": "<the app-integration classes, comma-separated, or none>", "all": ["<package>:<Class>", ...],
+// object: {"gui": "<the present app-integration classes, comma-separated, or none>", "all": [selected "<package>:<Class>"],
+// "present": [...], "absent": [...], "record": "<RECORD_TITLE message>", "absentRecord": "<ABSENT_TITLE message>",
 // "truncated": bool}. A list of FILE_LIST_LIMIT or more files may be cut off by the API: every mapped class is selected.
 // An invalid map exits 1 (the leg fails; the gate's evaluation fails and posts nothing, so it never passes).
-import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 export const MAP_PATH = "desktop/native/tools/ci/gui-test-map.json";
@@ -112,16 +115,80 @@ export function guiClassesInput(qualified) {
   return names.length ? names.join(",") : "none";
 }
 
-// D481 (macrev2-1310-1): the PR GUI leg records the class set it selected as a notice annotation on its gui-scope job
-// (`::notice title=<RECORD_TITLE>::<classes or none>`); the gate reads it back and requires it to cover the classes
-// required now, so a map that grew after the run does not count an older, smaller run.
+// D481 record (macrev2-1310-1/-4). The PR GUI leg's gui-scope job writes two notice annotations, which the gate reads
+// back from that job's check run:
+//   RECORD_TITLE         the classes it selected AND found declared at the head, in one of three forms:
+//                          "none" | "<pkg>:<Class>,..." (sorted)          a plain list, when it fits RECORD_MAX characters
+//                          "all@<sha256>"                                  the selection is every class of its maps
+//                          "sha256:<hex>:<count>"                          any other selection longer than RECORD_MAX
+//                        <sha256>/<hex> = setHash(list): sha256 (hex) of the sorted qualified names joined by ",".
+//   ABSENT_TITLE         the selected classes NOT declared in the head's test sources ("none" or a list; past
+//                        RECORD_MAX "many:<count>"). They did not run; the gate holds the PR with "merge main first".
+// GitHub truncates an annotation message at 4096 characters, hence RECORD_MAX. A hashed record proves coverage only
+// when it equals the gate's own selection (prGuiState): the gate's full set for "all@", its required set for "sha256:".
 export const RECORD_TITLE = "D481 PR GUI classes";
+export const ABSENT_TITLE = "D481 PR GUI absent classes";
+export const RECORD_MAX = 3500;
 const QUALIFIED = /^[a-z-]+:[A-Za-z_][A-Za-z0-9_]*$/;
-export function parseRecord(message) {
-  const text = String(message ?? "").trim();
+const HEX = /^[0-9a-f]{64}$/;
+
+export const setHash = (qualified) => createHash("sha256").update([...new Set(qualified)].sort().join(",")).digest("hex");
+
+const parseList = (text) => {
   if (text === "none") return [];
   const list = text.split(",");
   return list.length && list.every((q) => QUALIFIED.test(q)) ? list : null;
+};
+
+// -> {list} | {all: hex} | {hash: hex, count} | null (unreadable).
+export function parseRecord(message) {
+  const text = String(message ?? "").trim();
+  let m;
+  if ((m = /^all@([0-9a-f]{64})$/.exec(text))) return { all: m[1] };
+  if ((m = /^sha256:([0-9a-f]{64}):([0-9]+)$/.exec(text))) return { hash: m[1], count: Number(m[2]) };
+  const list = parseList(text);
+  return list ? { list } : null;
+}
+
+// -> {list} ("none" = []) | {many: count} | null.
+export function parseAbsent(message) {
+  const text = String(message ?? "").trim();
+  const m = /^many:([1-9][0-9]*)$/.exec(text);
+  if (m) return { many: Number(m[1]) };
+  const list = parseList(text);
+  return list ? { list } : null;
+}
+
+// What gui-scope records for the classes present at the head, given the full set of its maps.
+export function makeRecord(present, full) {
+  const list = [...new Set(present)].sort();
+  if (!list.length) return "none";
+  const all = [...new Set(full)].sort();
+  if (list.length === all.length && list.every((q, i) => q === all[i])) return `all@${setHash(list)}`;
+  const plain = list.join(",");
+  return plain.length <= RECORD_MAX ? plain : `sha256:${setHash(list)}:${list.length}`;
+}
+
+export function makeAbsent(absent) {
+  const list = [...new Set(absent)].sort();
+  if (!list.length) return "none";
+  const plain = list.join(",");
+  return plain.length <= RECORD_MAX ? plain : `many:${list.length}`;
+}
+
+// The XCTestCase classes declared in each package's test sources under root (the map test uses the same check).
+const CLASS_RE = /^[ \t]*(?:@[A-Za-z0-9_]+(?:\([^)]*\))?[ \t]+)*(?:(?:final|open|public|internal|private|fileprivate) )*class ([A-Za-z0-9_]+)[ \t]*:[ \t]*[A-Za-z0-9_., ]*XCTestCase/gm;
+export function declaredClasses(root, packages) {
+  const out = new Set();
+  for (const [pkg, dir] of Object.entries(packages)) {
+    const base = join(root, dir);
+    if (!existsSync(base)) continue;
+    for (const e of readdirSync(base, { recursive: true, withFileTypes: true })) {
+      if (!e.isFile() || !e.name.endsWith(".swift")) continue;
+      for (const m of readFileSync(join(e.parentPath ?? e.path, e.name), "utf8").matchAll(CLASS_RE)) out.add(`${pkg}:${m[1]}`);
+    }
+  }
+  return out;
 }
 
 export const bareNames = (qualified) => [...new Set(qualified.map((q) => q.slice(q.indexOf(":") + 1)))].sort();
@@ -129,13 +196,14 @@ export const bareNames = (qualified) => [...new Set(qualified.map((q) => q.slice
 function cli(argv) {
   const [cmd, ...rest] = argv;
   if (cmd !== "select") throw new Error("usage: gui-map.mjs select --files <jsonl> --map <map.json> [--map <map.json>]");
-  let files = null;
+  let files = null, root = null;
   const maps = [];
   for (let i = 0; i < rest.length; i += 2) {
     const [flag, value] = [rest[i], rest[i + 1]];
     if (value === undefined) throw new Error(`${flag} needs a value`);
     if (flag === "--files") files = value;
     else if (flag === "--map") maps.push(parseMap(readFileSync(value, "utf8"), value));
+    else if (flag === "--root") root = value;
     else throw new Error(`unknown flag ${flag}`);
   }
   if (files === null || !maps.length) throw new Error("--files and at least one --map are required");
@@ -148,7 +216,13 @@ function cli(argv) {
   }
   const truncated = rows.length >= FILE_LIST_LIMIT;
   const all = mappedClasses(paths, maps, { truncated });
-  return { gui: guiClassesInput(all), all, truncated };
+  const full = mappedClasses([], maps, { truncated: true });
+  // --root: the head checkout. Selected classes its test sources do not declare are dropped (they cannot run here)
+  // and recorded as absent; without --root every selected class counts as present.
+  const declared = root === null ? null : declaredClasses(root, maps[0].packages);
+  const present = declared ? all.filter((q) => declared.has(q)) : all;
+  const absent = all.filter((q) => !present.includes(q));
+  return { gui: guiClassesInput(present), all, present, absent, record: makeRecord(present, full), absentRecord: makeAbsent(absent), truncated };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

@@ -480,15 +480,19 @@ jobs:
               git show "FETCH_HEAD:$GUI_MAP" > "$RUNNER_TEMP/d481-main-map.json"
               maps+=(--map "$RUNNER_TEMP/d481-main-map.json")
             fi
-            sel=$(node scripts/merge-gates/gui-map.mjs select --files "$RUNNER_TEMP/d481-files.jsonl" "${maps[@]}") || fail "GUI test map selection failed"
+            # --root .: selected classes the head's test sources do not declare are dropped and recorded as absent.
+            sel=$(node scripts/merge-gates/gui-map.mjs select --files "$RUNNER_TEMP/d481-files.jsonl" "${maps[@]}" --root .) || fail "GUI test map selection failed"
             classes=$(jq -r .gui <<<"$sel")
             all=$(jq -r '.all | join(",")' <<<"$sel")
-            [ -n "$all" ] || { run=false; classes=none; }
+            absent=$(jq -r '.absent | join(",")' <<<"$sel")
+            [ -n "$(jq -r '.present | join(",")' <<<"$sel")" ] || { run=false; classes=none; }
             [[ $classes =~ ^(none|[A-Za-z_][A-Za-z0-9_]*(,[A-Za-z_][A-Za-z0-9_]*)*)$ ]] || fail "malformed class selection: $classes"
-            echo "D481 PR #$PR @ $PR_SHA: mapped classes: ${all:-none}" | tee -a "$GITHUB_STEP_SUMMARY"
-            # The record modelplan-gates reads back (gui-map.mjs RECORD_TITLE): it must cover the classes required at
-            # evaluation time, so a run made before the map grew does not count. Keep the title.
-            echo "::notice title=D481 PR GUI classes::${all:-none}"
+            echo "D481 PR #$PR @ $PR_SHA: mapped classes: ${all:-none}; not declared at this head (merge main first): ${absent:-none}" | tee -a "$GITHUB_STEP_SUMMARY"
+            [ -z "$absent" ] || echo "::warning::mapped classes not declared at this head, so not run: $absent; merge main into the PR"
+            # The records modelplan-gates reads back (gui-map.mjs RECORD_TITLE / ABSENT_TITLE; under GitHub's 4096-character
+            # annotation limit). Keep the titles.
+            echo "::notice title=D481 PR GUI classes::$(jq -r .record <<<"$sel")"
+            echo "::notice title=D481 PR GUI absent classes::$(jq -r .absentRecord <<<"$sel")"
           elif [ "$EVENT" = schedule ]; then
             # Another nightly at the same commit is still queued or running, or one already passed its GUI leg there:
             # do not take the GUI Mac for the same commit twice. A green run counts only when its GUI leg ran and

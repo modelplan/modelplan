@@ -12,7 +12,7 @@ import { readFileSync, appendFileSync } from "node:fs";
 import { client } from "./github.mjs";
 import * as G from "./git.mjs";
 import { HOSTED_WORKFLOWS } from "./hosted.mjs";
-import { MAP_PATH, RECORD_TITLE, parseMap } from "./gui-map.mjs";
+import { ABSENT_TITLE, MAP_PATH, RECORD_TITLE, parseMap } from "./gui-map.mjs";
 import { CONTEXT, PR_GUI_TITLE, prGuiRunScope, DESKTOP_WORKFLOW, FAILURE, dataSyncRunId, parseFallbackUntil, parseGlmTiers, cancelledRunSuperseded, description, evaluateGroup, evaluatePr, queueRunScope, feed, isTrain, parseDesignConf, supersededPrs, TIER_TABLE, tiersFrom, trainMembers } from "./rules.mjs";
 
 const env = process.env;
@@ -109,13 +109,12 @@ async function readJobs(runs) {
   }));
 }
 
-// D481: main's GUI test map (merge-gates.yml checks out desktop/native/tools/ci), plus the head's map when the PR changes
-// it, so a PR that adds an area is judged by it too. An unreadable or invalid map throws: the evaluation fails and
-// posts nothing, so the gate never passes without it. A map the PR deletes (404 at the head) adds nothing.
+// D481: main's GUI test map (merge-gates.yml checks out desktop/native/tools/ci) plus the head's map: the same union the
+// PR GUI leg selects with, so its hashed records compare (rules.mjs prGuiState). An unreadable or invalid map throws:
+// the evaluation fails and posts nothing, so the gate never passes without it. A head without the map (404) adds nothing.
 let mainGuiMap = null;
 async function guiMaps(pr, files) {
   mainGuiMap ??= parseMap(readFileSync(new URL(`../../${MAP_PATH}`, import.meta.url), "utf8"), `main:${MAP_PATH}`);
-  if (!files.some((f) => f.filename === MAP_PATH || f.previous_filename === MAP_PATH)) return [mainGuiMap];
   let blob;
   try { blob = await gh.get(`/contents/${MAP_PATH}?ref=${pr.head.sha}`); }
   catch (e) { if (/HTTP 404/.test(String(e))) return [mainGuiMap]; throw e; }
@@ -132,9 +131,11 @@ async function readPrGuiJobs(pr, runs) {
     r.jobs = await gh.all(`/actions/runs/${r.id}/jobs?filter=latest`, "jobs", 500);
     const scope = r.jobs.find((j) => j.name === "gui-scope" && j.conclusion === "success");
     if (!scope) return;
-    const notes = (await gh.all(`/check-runs/${scope.id}/annotations`, null, 100)).filter((a) => a.title === RECORD_TITLE && a.annotation_level === "notice");
-    if (notes.length === 1) r.guiRecord = notes[0].message;
-    log({ run: r.id, guiRecord: notes.length === 1 ? notes[0].message.slice(0, 200) : `${notes.length} records` });
+    const all = await gh.all(`/check-runs/${scope.id}/annotations`, null, 100);
+    const one = (title) => { const n = all.filter((a) => a.title === title && a.annotation_level === "notice"); return n.length === 1 ? n[0].message : undefined; };
+    r.guiRecord = one(RECORD_TITLE);
+    r.guiAbsent = one(ABSENT_TITLE);
+    log({ run: r.id, guiRecord: String(r.guiRecord).slice(0, 200), guiAbsent: String(r.guiAbsent).slice(0, 200) });
   } catch (e) { log({ run: r.id, jobs: `unreadable: ${String(e).slice(0, 120)}` }); }
 }
 

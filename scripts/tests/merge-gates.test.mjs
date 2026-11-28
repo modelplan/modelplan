@@ -1638,7 +1638,8 @@ test("D395-5/6: on a NORMAL PR no assignment pins a lane (a Codex verdict counts
 });
 
 // ---- D481: PR GUI leg ----
-const guiMap = (await import("../merge-gates/gui-map.mjs")).parseMap(readFileSync(join(root, "desktop/native/tools/ci/gui-test-map.json"), "utf8"));
+const GM = await import("../merge-gates/gui-map.mjs");
+const guiMap = GM.parseMap(readFileSync(join(root, "desktop/native/tools/ci/gui-test-map.json"), "utf8"));
 const RING = "desktop/native/ModelPlanDock/Native/DockInstrumentRenderer.swift";
 const guiRun = (conclusion = "success", id = 50, status = "completed", over = {}) => run(".github/workflows/desktop.yml", conclusion, id, status, {
   event: "workflow_dispatch", pull_requests: [], display_title: `desktop PR GUI #7 @ ${H}`, actor: ME, triggering_actor: ME, ...over });
@@ -1655,7 +1656,7 @@ test("D481: a ready PR whose paths map to GUI classes waits for an exact-head PR
   assert.match(waiting.why, /^waiting for PR GUI run \(classes: CommunityDockSnapshotTests, D65ZeroQuotaTests, DockAccessibilityFrameTests \+\d+\)/);
   assert.ok(waiting.guiClasses.includes("app-integration:D65ZeroQuotaTests"), "the full list is in the logged result");
   assert.ok(R.description(waiting.why).length <= 140);
-  assert.equal(evalGui({ runs: [...greenCi, guiRun("success", 50, "completed", { jobs: guiJobs, guiRecord: ringRecord })] }).state, R.SUCCESS);
+  assert.equal(evalGui({ runs: [...greenCi, guiRun("success", 50, "completed", { jobs: guiJobs, guiRecord: ringRecord, guiAbsent: "none" })] }).state, R.SUCCESS);
   assert.equal(evalGui({ runs: [...greenCi, guiRun(null, 50, "in_progress")] }).state, R.PENDING, "running");
   assert.match(evalGui({ runs: [...greenCi, guiRun(null, 50, "queued")] }).why, /^PR GUI run in progress/);
   const failed = evalGui({ runs: [...greenCi, guiRun("failure")] });
@@ -1665,21 +1666,21 @@ test("D481: a ready PR whose paths map to GUI classes waits for an exact-head PR
   assert.equal(evalGui({ runs: [...greenCi, guiRun("success")] }).state, R.PENDING, "jobs not read yet: not a pass");
   // The run must actually have run a GUI leg: one pool green.
   // A GUI job skipped before it expanded keeps its matrix expression in the name (gui-scope said run=false).
-  const skipped = evalGui({ runs: [...greenCi, guiRun("success", 50, "completed", { jobs: [gjob("gui-scope"), gjob("native (${{ matrix.os }})", "skipped")] })] });
+  const skipped = evalGui({ runs: [...greenCi, guiRun("success", 50, "completed", { jobs: [gjob("gui-scope"), gjob("native (${{ matrix.os }})", "skipped")], guiRecord: ringRecord, guiAbsent: "none" })] });
   assert.equal(skipped.state, R.FAILURE, "its selection found no class: disagrees with the gate's map");
   assert.match(skipped.why, /^PR GUI run ran no GUI leg, but the map needs classes: /);
-  assert.equal(evalGui({ runs: [...greenCi, guiRun("success", 50, "completed", { jobs: [gjob("gui-scope"), gjob("native (macos-latest) / native (macos-latest)", "skipped")] })] }).state, R.FAILURE, "an expanded GUI job skipped");
+  assert.equal(evalGui({ runs: [...greenCi, guiRun("success", 50, "completed", { jobs: [gjob("gui-scope"), gjob("native (macos-latest) / native (macos-latest)", "skipped")], guiRecord: ringRecord, guiAbsent: "none" })] }).state, R.FAILURE, "an expanded GUI job skipped");
   assert.equal(evalGui({ runs: [...greenCi, guiRun("success", 50, "completed", { jobs: [gjob("native (macos-latest) / native (macos-latest)")] })] }).state, R.FAILURE, "no gui-scope");
   const hosted = [gjob("gui-scope"), gjob("native-hosted (macos-15) / native-hosted-gui (macos-15)"), gjob("native-owner-gui (macos-latest) / native-owner-gui (macos-latest)")];
-  assert.equal(evalGui({ runs: [...greenCi, guiRun("success", 50, "completed", { jobs: hosted, guiRecord: ringRecord })] }).state, R.SUCCESS, "hosted pool pair");
-  assert.equal(evalGui({ runs: [...greenCi, guiRun("success", 50, "completed", { jobs: hosted.slice(0, 2) })] }).state, R.FAILURE, "half the pair");
+  assert.equal(evalGui({ runs: [...greenCi, guiRun("success", 50, "completed", { jobs: hosted, guiRecord: ringRecord, guiAbsent: "none" })] }).state, R.SUCCESS, "hosted pool pair");
+  assert.equal(evalGui({ runs: [...greenCi, guiRun("success", 50, "completed", { jobs: hosted.slice(0, 2), guiRecord: ringRecord, guiAbsent: "none" })] }).state, R.FAILURE, "half the pair");
   // The newest bound run decides.
-  assert.equal(evalGui({ runs: [...greenCi, guiRun("success", 50, "completed", { jobs: guiJobs, guiRecord: ringRecord }), guiRun("failure", 51)] }).state, R.FAILURE);
-  assert.equal(evalGui({ runs: [...greenCi, guiRun("failure", 50), guiRun("success", 51, "completed", { jobs: guiJobs, guiRecord: ringRecord })] }).state, R.SUCCESS);
+  assert.equal(evalGui({ runs: [...greenCi, guiRun("success", 50, "completed", { jobs: guiJobs, guiRecord: ringRecord, guiAbsent: "none" }), guiRun("failure", 51)] }).state, R.FAILURE);
+  assert.equal(evalGui({ runs: [...greenCi, guiRun("failure", 50), guiRun("success", 51, "completed", { jobs: guiJobs, guiRecord: ringRecord, guiAbsent: "none" })] }).state, R.SUCCESS);
 });
 
 test("D481 (macrev2-1310-1): a green run counts only when its recorded class set covers the classes required now", () => {
-  const green = (guiRecord) => [...greenCi, guiRun("success", 50, "completed", { jobs: guiJobs, ...(guiRecord === undefined ? {} : { guiRecord }) })];
+  const green = (guiRecord) => [...greenCi, guiRun("success", 50, "completed", { jobs: guiJobs, guiAbsent: "none", ...(guiRecord === undefined ? {} : { guiRecord }) })];
   assert.equal(evalGui({ runs: green(ringRecord) }).state, R.SUCCESS);
   assert.equal(evalGui({ runs: green(ringRecord + ",settings:SettingsB5GridTests") }).state, R.SUCCESS, "a larger record is fine");
   // Same PR, same sha: main's map grows by one class after the run. The old run no longer satisfies the gate.
@@ -1690,7 +1691,7 @@ test("D481 (macrev2-1310-1): a green run counts only when its recorded class set
   assert.equal(stale.state, R.PENDING);
   assert.match(stale.why, /^re-run needed: PR GUI run did not cover StatusItemAnchorTests/);
   // A re-run at the same head that records the grown set passes again.
-  assert.equal(evalGui({ runs: [...green(ringRecord), guiRun("success", 51, "completed", { jobs: guiJobs, guiRecord: R.requiredGuiClasses([RING], [grown]).join(",") })], maps: [grown] }).state, R.SUCCESS);
+  assert.equal(evalGui({ runs: [...green(ringRecord), guiRun("success", 51, "completed", { jobs: guiJobs, guiRecord: R.requiredGuiClasses([RING], [grown]).join(","), guiAbsent: "none" })], maps: [grown] }).state, R.SUCCESS);
   // No record, an unreadable one, or "none" while classes are required: never a pass.
   for (const [why, rec] of [["no record", undefined], ["none", "none"], ["unqualified", "D65ZeroQuotaTests"], ["empty", ""], ["junk", "a:b;c"]]) {
     const r = evalGui({ runs: green(rec) });
@@ -1700,7 +1701,7 @@ test("D481 (macrev2-1310-1): a green run counts only when its recorded class set
 });
 
 test("D481 (macrev2-1310-3): the newest same-head run decides whatever its state; its start re-evaluates the PR", () => {
-  const older = guiRun("success", 50, "completed", { jobs: guiJobs, guiRecord: ringRecord });
+  const older = guiRun("success", 50, "completed", { jobs: guiJobs, guiRecord: ringRecord, guiAbsent: "none" });
   assert.equal(evalGui({ runs: [...greenCi, older] }).state, R.SUCCESS, "first run green");
   for (const status of ["requested", "queued", "waiting", "pending", "in_progress"]) {
     const r = evalGui({ runs: [...greenCi, older, guiRun(null, 51, status)] });
@@ -1708,7 +1709,7 @@ test("D481 (macrev2-1310-3): the newest same-head run decides whatever its state
     assert.match(r.why, /^PR GUI run in progress/, status);
   }
   assert.equal(evalGui({ runs: [...greenCi, older, guiRun("failure", 51)] }).state, R.FAILURE, "the second run's completed result");
-  assert.equal(evalGui({ runs: [...greenCi, older, guiRun("success", 51, "completed", { jobs: guiJobs, guiRecord: ringRecord })] }).state, R.SUCCESS);
+  assert.equal(evalGui({ runs: [...greenCi, older, guiRun("success", 51, "completed", { jobs: guiJobs, guiRecord: ringRecord, guiAbsent: "none" })] }).state, R.SUCCESS);
   const gates = readFileSync(join(root, ".github/workflows/merge-gates.yml"), "utf8");
   assert.match(gates, /^    types: \[completed, requested\]$/m, "a run's start is an event");
   const jobIf = /^    if: >-\n((?:      .*\n)+)/m.exec(gates)[1];
@@ -1721,8 +1722,51 @@ test("D481 (macrev2-1310-3): the newest same-head run decides whatever its state
   assert.match(evaluate, /\/check-runs\/\$\{scope\.id\}\/annotations/, "the record is read from gui-scope's annotations");
 });
 
+test("D481 (macrev2-1310-1 round 2): a required class undeclared at the head holds the PR with \"merge main first\"", () => {
+  // main's map gained StatusItemAnchorTests for the ring after the PR branched; gui-scope found it undeclared at the head,
+  // dropped it from the run and recorded it as absent. The other selected classes ran green: still not a pass.
+  const grown = { ...guiMap, areas: guiMap.areas.map((a) => a.area !== "dock-ring-presentation" ? a
+    : { ...a, classes: { ...a.classes, "app-integration": [...a.classes["app-integration"], "StatusItemAnchorTests"].sort() } }) };
+  const run = (guiAbsent, jobs = guiJobs) => [...greenCi, guiRun("success", 50, "completed", { jobs, guiRecord: ringRecord, guiAbsent })];
+  const r = evalGui({ runs: run("app-integration:StatusItemAnchorTests"), maps: [grown] });
+  assert.equal(r.state, R.PENDING);
+  assert.match(r.why, /^merge main first: class StatusItemAnchorTests does not exist at this head/);
+  // Every selected class absent: the GUI legs were skipped; it is still "merge main first", not a failure.
+  assert.match(evalGui({ runs: run("app-integration:StatusItemAnchorTests", [gjob("gui-scope"), gjob("native (${{ matrix.os }})", "skipped")]), maps: [grown] }).why, /^merge main first: /);
+  assert.match(evalGui({ runs: run("many:40") }).why, /^merge main first: 40 mapped classes do not exist at this head/);
+  // An absent class this gate does not require does not hold it; a missing or unreadable absent record does.
+  assert.equal(evalGui({ runs: run("app-integration:SomeOtherTests") }).state, R.SUCCESS);
+  for (const bad of [undefined, "", "Junk"]) assert.match(evalGui({ runs: run(bad) }).why, /^re-run needed: /, String(bad));
+});
+
+test("D481 (macrev2-1310-4): hashed records stay under the annotation limit and compare with the gate's own selection", () => {
+  const M = GM;
+  // The 3,000-file capped list: every class of the maps is required, and the run records "all@<hash>".
+  const many = Array.from({ length: R.FILE_LIST_LIMIT }, (_, i) => file(`docs/${i}.md`));
+  const full = R.requiredGuiClasses([], [guiMap], { truncated: true });
+  const allRec = M.makeRecord(full, full);
+  assert.match(allRec, /^all@[0-9a-f]{64}$/);
+  assert.ok(full.join(",").length > 4096, "the plain list would be truncated by GitHub");
+  const cap = (guiRecord) => evalGui({ files: many, runs: [...greenCi, guiRun("success", 50, "completed", { jobs: guiJobs, guiRecord, guiAbsent: "none" })] });
+  assert.equal(cap(allRec).state, R.SUCCESS, "a complete capped run passes");
+  assert.match(cap(full.join(",").slice(0, 4096)).why, /^re-run needed: /, "a truncated plain record holds");
+  assert.match(cap(`all@${"0".repeat(64)}`).why, /^re-run needed: PR GUI run's hashed class set/, "another full set holds");
+  assert.match(cap(M.makeRecord(full.slice(1), full)).why, /^re-run needed: /, "one class short holds");
+  // A long selection that is not the full set: "sha256:<hash>:<count>" of exactly the required set.
+  const big = Array.from({ length: 160 }, (_, i) => `ZzLongGeneratedClassNameNumber${String(i).padStart(3, "0")}Tests`);
+  const extra = { ...guiMap, areas: [{ area: "cli-big", paths: ["cli/**"], classes: { "app-integration": big } }] };
+  const req = R.requiredGuiClasses(["cli/x.go"], [guiMap, extra]);
+  const hashRec = M.makeRecord(req, R.requiredGuiClasses([], [guiMap, extra], { truncated: true }));
+  assert.match(hashRec, /^sha256:[0-9a-f]{64}:160$/);
+  const ev = (guiRecord) => evalGui({ files: [file("cli/x.go")], maps: [guiMap, extra], runs: [...greenCi, guiRun("success", 50, "completed", { jobs: guiJobs, guiRecord, guiAbsent: "none" })] });
+  assert.equal(ev(hashRec).state, R.SUCCESS);
+  assert.match(ev(hashRec.replace(/:160$/, ":159")).why, /^re-run needed: /);
+  assert.match(ev(M.makeRecord(req.slice(1), [])).why, /^re-run needed: /, "a different set's hash holds");
+  for (const r of [allRec, hashRec, M.makeAbsent(big.map((c) => `app-integration:${c}`))]) assert.ok(r.length <= M.RECORD_MAX && r.length < 4096);
+});
+
 test("D481: only a run bound to this PR's exact head, branch and repository, dispatched by the trusted account, counts", () => {
-  const ok = { jobs: guiJobs, guiRecord: ringRecord };
+  const ok = { jobs: guiJobs, guiRecord: ringRecord, guiAbsent: "none" };
   for (const [why, over] of [
     ["another PR in the title", { display_title: `desktop PR GUI #8 @ ${H}` }],
     ["another head in the title", { display_title: `desktop PR GUI #7 @ ${OLD}` }],
@@ -1748,7 +1792,7 @@ test("D481: PRs with no mapped class, drafts and maps-off are unaffected; a PR G
   assert.match(evalGui({ statuses: [] }).why, /^waiting for mac-compile at this head/);
   // The PR's pull_request desktop run failed: a newer green PR GUI run (same workflow) must not displace it in ciState.
   const prDesktopRed = run(".github/workflows/desktop.yml", "failure", 40);
-  const r = evalGui({ runs: [...greenCi, prDesktopRed, guiRun("success", 50, "completed", { jobs: guiJobs, guiRecord: ringRecord })] });
+  const r = evalGui({ runs: [...greenCi, prDesktopRed, guiRun("success", 50, "completed", { jobs: guiJobs, guiRecord: ringRecord, guiAbsent: "none" })] });
   assert.equal(r.state, R.FAILURE);
   assert.match(r.why, /desktop\.yml failure/);
   // ... and a failed PR GUI run is reported as such, not as a desktop CI failure; an unrequired one is ignored.

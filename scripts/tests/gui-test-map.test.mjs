@@ -4,25 +4,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as M from "../merge-gates/gui-map.mjs";
-import { FILE_LIST_LIMIT } from "../merge-gates/rules.mjs";
+import * as R from "../merge-gates/rules.mjs";
+const { FILE_LIST_LIMIT } = R;
 
 const root = new URL("../..", import.meta.url).pathname;
 const map = M.parseMap(readFileSync(join(root, M.MAP_PATH), "utf8"));
 const partition = JSON.parse(readFileSync(join(root, "desktop/native/tools/ci/native-test-partition.json"), "utf8")).packages["app-integration"];
-// The XCTestCase classes declared under a directory (same declaration shape as native_test_partition.py / plan.mjs).
-const CLASS_RE = /^[ \t]*(?:@[A-Za-z0-9_]+(?:\([^)]*\))?[ \t]+)*(?:(?:final|open|public|internal|private|fileprivate) )*class ([A-Za-z0-9_]+)[ \t]*:[ \t]*[A-Za-z0-9_., ]*XCTestCase/gm;
-function declared(dir) {
-  const out = new Set();
-  for (const e of readdirSync(join(root, dir), { recursive: true, withFileTypes: true })) {
-    if (!e.isFile() || !e.name.endsWith(".swift")) continue;
-    for (const m of readFileSync(join(e.parentPath ?? e.path, e.name), "utf8").matchAll(CLASS_RE)) out.add(m[1]);
-  }
-  return out;
-}
+// The same declaration check gui-scope and the gate's evidence use (gui-map.mjs declaredClasses).
+const declaredAll = M.declaredClasses(root, map.packages);
+const declared = (dir) => new Set([...declaredAll].filter((q) => map.packages[q.slice(0, q.indexOf(":"))] === dir).map((q) => q.slice(q.indexOf(":") + 1)));
 function tracked() {
   try { return execFileSync("git", ["ls-files", "-z"], { cwd: root, encoding: "utf8", maxBuffer: 64 << 20 }).split("\0").filter(Boolean); }
   catch { return readdirSync(root, { recursive: true }).map(String).filter((p) => !p.startsWith(".git/") && !p.includes("node_modules/")); }
@@ -114,7 +108,8 @@ test("CLI: reads PR file rows (renames too), unions maps, fails on an invalid ma
   try {
     const renamed = cli([{ filename: "desktop/native/x.swift", previous_filename: "desktop/native/ModelPlanDock/Native/DockInstrumentRenderer.swift" }], shipped);
     assert.ok(renamed.all.includes("app-integration:D65ZeroQuotaTests") && !renamed.truncated);
-    assert.deepEqual(cli([{ filename: "docs/a.md", previous_filename: null }], shipped), { gui: "none", all: [], truncated: false });
+    assert.deepEqual(cli([{ filename: "docs/a.md", previous_filename: null }], shipped),
+      { gui: "none", all: [], present: [], absent: [], record: "none", absentRecord: "none", truncated: false });
     const many = Array.from({ length: FILE_LIST_LIMIT }, (_, i) => ({ filename: `docs/${i}.md` }));
     const cut = cli(many, shipped);
     assert.ok(cut.truncated && cut.all.length > 50, "a cut-off list selects every mapped class");
@@ -174,10 +169,64 @@ print(json.dumps(out))`;
   }
 });
 
-test("desktop.yml records the selection under the title the gate reads", () => {
+test("desktop.yml records the selection under the titles the gate reads; record formats parse", () => {
   const desktop = readFileSync(join(root, ".github/workflows/desktop.yml"), "utf8");
-  assert.ok(desktop.includes(`echo "::notice title=${M.RECORD_TITLE}::\${all:-none}"`));
-  assert.deepEqual(M.parseRecord("none"), []);
-  assert.deepEqual(M.parseRecord("app-integration:A,settings:B"), ["app-integration:A", "settings:B"]);
-  for (const bad of ["", "A", "app-integration:A,", "x:A B", null]) assert.equal(M.parseRecord(bad), null, String(bad));
+  assert.ok(desktop.includes(`echo "::notice title=${M.RECORD_TITLE}::$(jq -r .record <<<"$sel")"`));
+  assert.ok(desktop.includes(`echo "::notice title=${M.ABSENT_TITLE}::$(jq -r .absentRecord <<<"$sel")"`));
+  assert.match(desktop, /gui-map\.mjs select --files "\$RUNNER_TEMP\/d481-files\.jsonl" "\$\{maps\[@\]\}" --root \./);
+  const h = "a".repeat(64);
+  assert.deepEqual(M.parseRecord("none"), { list: [] });
+  assert.deepEqual(M.parseRecord("app-integration:A,settings:B"), { list: ["app-integration:A", "settings:B"] });
+  assert.deepEqual(M.parseRecord(`all@${h}`), { all: h });
+  assert.deepEqual(M.parseRecord(`sha256:${h}:12`), { hash: h, count: 12 });
+  for (const bad of ["", "A", "app-integration:A,", "x:A B", null, "all@abc", `sha256:${h}`]) assert.equal(M.parseRecord(bad), null, String(bad));
+  assert.deepEqual(M.parseAbsent("none"), { list: [] });
+  assert.deepEqual(M.parseAbsent("many:3"), { many: 3 });
+  assert.equal(M.parseAbsent("many:0"), null);
+  assert.equal(M.setHash(["b:X", "a:Y", "a:Y"]), M.setHash(["a:Y", "b:X"]), "sorted and unique");
+});
+
+// macrev2-1310-1/-4 round 2: the evidence path selector (gui-scope, --root at the head) -> notice records -> gate.
+test("round trip: the capped 3,000-file run records all@<hash> under the limit and passes; classes missing at the head hold", () => {
+  const dir = mkdtempSync(join(tmpdir(), "d481-rt-"));
+  const gate = (out, required, full) => {
+    const H = "c".repeat(40), me = { login: "guanbear", id: 11829005 };
+    const pr = { number: 7, head: { sha: H, ref: "b" }, base: { repo: { full_name: "o/r" } } };
+    const run = { id: 1, path: ".github/workflows/desktop.yml", event: "workflow_dispatch", display_title: `desktop PR GUI #7 @ ${H}`, head_sha: H,
+      head_branch: "b", head_repository: { full_name: "o/r" }, actor: me, triggering_actor: me, status: "completed", conclusion: "success",
+      jobs: [{ name: "gui-scope", conclusion: "success" }, { name: "native (macos-latest) / native (macos-latest)", conclusion: "success" }],
+      guiRecord: out.record, guiAbsent: out.absentRecord };
+    return R.prGuiState([run], pr, required, full);
+  };
+  const cli = (rows, rootDir) => {
+    writeFileSync(join(dir, "files.jsonl"), rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
+    const r = spawnSync(process.execPath, [join(root, "scripts/merge-gates/gui-map.mjs"), "select", "--files", join(dir, "files.jsonl"), "--map", join(root, M.MAP_PATH), "--root", rootDir], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    return JSON.parse(r.stdout);
+  };
+  try {
+    const full = M.mappedClasses([], [map], { truncated: true });
+    const capped = cli(Array.from({ length: FILE_LIST_LIMIT }, (_, i) => ({ filename: `docs/${i}.md` })), root);
+    assert.ok(capped.truncated);
+    assert.match(capped.record, /^all@[0-9a-f]{64}$/);
+    assert.ok(capped.record.length < 4096 && capped.absentRecord === "none");
+    assert.equal(gate(capped, full, full).state, "success", "a complete capped run passes");
+    assert.equal(gate({ ...capped, record: full.join(",").slice(0, 4096) }, full, full).state, "pending", "the old truncated plain record holds");
+    // A head that predates most ring classes: a checkout whose app-integration tests declare only D65ZeroQuotaTests.
+    const head = join(dir, "head");
+    const tests = join(head, map.packages["app-integration"]);
+    mkdirSync(tests, { recursive: true });
+    writeFileSync(join(tests, "D65ZeroQuotaTests.swift"), "import XCTest\nfinal class D65ZeroQuotaTests: XCTestCase {}\n");
+    const ring = cli([{ filename: "desktop/native/ModelPlanDock/Native/DockInstrumentRenderer.swift" }], head);
+    assert.equal(ring.gui, "D65ZeroQuotaTests", "only the class present at the head is passed to the Mac");
+    assert.equal(ring.record, "app-integration:D65ZeroQuotaTests");
+    assert.ok(ring.absent.length > 10 && !ring.absent.includes("app-integration:D65ZeroQuotaTests"));
+    const required = M.mappedClasses(["desktop/native/ModelPlanDock/Native/DockInstrumentRenderer.swift"], [map]);
+    const held = gate(ring, required, full);
+    assert.equal(held.state, "pending", "the present class ran green; the absent ones never count as covered");
+    assert.match(held.why, /^merge main first: class /);
+    const fine = cli([{ filename: "desktop/native/ModelPlanDock/Native/DockInstrumentRenderer.swift" }], root);
+    assert.equal(fine.absentRecord, "none");
+    assert.equal(gate(fine, required, full).state, "success");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

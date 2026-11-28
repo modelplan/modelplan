@@ -518,6 +518,7 @@ test("D481: a pr+sha dispatch is the PR GUI leg: exact head on its own branch, m
     const rec = /^::notice title=D481 PR GUI classes::(.+)$/m.exec(ring.err)?.[1] ?? "";
     assert.match(rec, /^app-integration:[A-Za-z0-9_]+(,[a-z-]+:[A-Za-z0-9_]+)*$/);
     assert.ok(rec.split(",").includes("app-integration:D65ZeroQuotaTests"));
+    assert.match(ring.err, /^::notice title=D481 PR GUI absent classes::none$/m, "every selected class is declared at this head");
     assert.match(go({ FILES: rows("docs/mac-ci.md") }).err, /^::notice title=D481 PR GUI classes::none$/m, "no class: recorded as none");
     assert.equal(go({ FILES: rows("docs/mac-ci.md", "cli/main.go") }).out, "run=false classes=none", "no mapped class: nothing runs");
     // main's map is unioned in; classes of a whole-run package only (settings) still run the leg, narrowed to none.
