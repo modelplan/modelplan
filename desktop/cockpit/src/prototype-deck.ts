@@ -43,7 +43,7 @@ const SEG_CHEVRON='<svg class="ch" viewBox="0 0 4 7" width="4" height="7" aria-h
 const SEG_OVERVIEW='<svg class="ic" viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><path d="M2 8.5V5.5M5 8.5V2M8 8.5V4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
 const cockpitPageRegistry=Object.freeze([Object.freeze({module:overview,key:'host.pageOverview'}),Object.freeze({module:plans,key:'host.pageSubscription'}),Object.freeze({module:tune,key:'host.pageEffort'}),Object.freeze({module:where,key:'host.pageBreakdown'})]);
 export const cockpitPageIds=Object.freeze(cockpitPageRegistry.map(p=>p.module.id));
-export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boolean,fixture:PrototypeDetailsFixture=unavailablePrototypeDetailsFixture(),redBelow:()=>number=()=>effectiveRedBelow(undefined),reportPins:(ids:string[])=>void=()=>{},onSettings:()=>boolean=()=>false,onRange?:(range:CockpitRange)=>boolean,onRefresh:(key:string)=>boolean=()=>false,appRange?:()=>CockpitRange,isRefreshing:()=>boolean=()=>false,onOpenCompare:()=>boolean=()=>false){
+export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boolean,fixture:PrototypeDetailsFixture=unavailablePrototypeDetailsFixture(),redBelow:()=>number=()=>effectiveRedBelow(undefined),reportPins:(ids:string[])=>void=()=>{},onSettings:()=>boolean=()=>false,onRange?:(range:CockpitRange)=>boolean,onRefresh:(key:string)=>boolean=()=>false,appRange?:()=>CockpitRange,isRefreshing:()=>boolean=()=>false,onOpenCompare:()=>boolean=()=>false,beforeRedraw:()=>void=()=>{}){
  const scale=root.querySelector<HTMLElement>('.fd-scale')!,channels=root.querySelector<HTMLElement>('.fd-chs')!,mfd=root.querySelector<HTMLElement>('.dk-mfd')!;
  let details=fixture;const fixturePublication=fixture.publication!==null;fixture=unavailablePrototypeDetailsFixture();
  let publicationKey:string|null=null;
@@ -238,7 +238,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
  // G3-171: one source for the range. The app's (the header's) range is read at every paint; the copy below is only the
  // fallback of a deck mounted without an app (tests).
  const rangeNow=():CockpitRange=>appRange?.()??uiRangeLocal;const pages=cockpitPageRegistry,modules=pages.map(p=>p.module);let uiWhere='proj',uiProject:string|null=null,uiRangeLocal:CockpitRange=INITIAL_RANGE,painted:CockpitRange|null=null,uiChart='bars',uiStack=true,uiModels:'list'|'chart'='list',listPick:string|null=null,uiSubTab='now',uiCycle:string|null=null,gridFill:{w:number;h:number}|null=null;
- const buttons=pages.map((item,i)=>{const b=node('button','pk'),caption=node('span'),led=node('i','pk-led');b.type='button';b.dataset.mfd='page:'+modules[i].id;b.dataset.mat='part';b.append(caption,led);b.onclick=e=>{if(!e.isTrusted)return;alertsView=null;if(compare){delete previews[compare.modelId];compare=null;}returnPage=null;tuneModel=null;selected=i;paint();};bar.append(b);return {b,caption};});
+ const buttons=pages.map((item,i)=>{const b=node('button','pk'),caption=node('span'),led=node('i','pk-led');b.type='button';b.dataset.mfd='page:'+modules[i].id;b.dataset.mat='part';b.append(caption,led);b.onclick=e=>{if(!e.isTrusted)return;alertsView=null;if(compare){delete previews[compare.modelId];compare=null;}returnPage=null;tuneModel=null;selected=i;beforeRedraw();paint();};bar.append(b);return {b,caption};});
  // D387 / D413: while a plugin screen is open (Calendar, Resources; D400: a HUD click opens the Models page, which is
  // not a screen) the Overview slot itself becomes the switch "‹ Overview │ icon + short name": the same 86 px grid cell, never wider, in the pressed key body. The left half returns
  // (as Escape does); the right half is the current screen, lit, and does nothing. One Tab stop: the arrows move between
@@ -248,7 +248,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
  segBack.type='button';segBack.dataset.mfd='seg:overview';segBack.setAttribute('role','tab');
  segCur.type='button';segCur.dataset.mfd='seg:screen';segCur.setAttribute('role','tab');
  seg.append(segBack,sepEl,segCur);bar.append(seg);
- const toOverview=()=>{if(screenView!==null){closeScreenHook?.();screenView=null;}alertsView=null;if(compare){delete previews[compare.modelId];compare=null;}returnPage=null;tuneModel=null;selected=0;paint();buttons[0]?.b.focus({preventScroll:true});};
+ const toOverview=()=>{if(screenView!==null){closeScreenHook?.();screenView=null;}alertsView=null;if(compare){delete previews[compare.modelId];compare=null;}returnPage=null;tuneModel=null;selected=0;beforeRedraw();paint();buttons[0]?.b.focus({preventScroll:true});};
  segBack.onclick=e=>{if(e.isTrusted)toOverview();};
  // Roving tab stop: the half that has focus is the switch's one Tab stop.
  for(const [a,b] of [[segBack,segCur],[segCur,segBack]] as const)a.onfocus=()=>{a.tabIndex=0;b.tabIndex=-1;};

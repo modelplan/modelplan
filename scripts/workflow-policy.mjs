@@ -90,7 +90,11 @@ export const REVIEW_LABEL_PATH = ".github/workflows/review-label.yml";
 export const MAC_COMPILE_TRIGGER_PATH = ".github/workflows/mac-compile-trigger.yml";
 export const MAC_COMPILE_ROUTE = "runs-on: [self-hosted, macOS, ARM64, modelplan-compile]";
 export const MAC_COMPILE_GATE = "github.repository == 'modelplan/modelplan' && github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.pull_requests[0].number) || (github.event_name == 'workflow_dispatch' && github.actor_id == '11829005'))";
-export const MAC_COMPILE_IF = `if: \${{ needs.plan.outputs.run == 'true' && ${MAC_COMPILE_GATE} }}`;
+export const MAC_COMPILE_IF = `if: \${{ needs.plan.outputs.run == 'true' && needs.plan.outputs.pool == 'owner' && ${MAC_COMPILE_GATE} }}`;
+// D486 (owner 2026-11-28): the hosted overflow pool. One job, compile-hosted, on exactly this GitHub-hosted route, under
+// the same gate with pool hosted, read-only like the owner job. The plan job sets pool (owner for every workflow_run).
+export const MAC_COMPILE_HOSTED_ROUTE = "runs-on: macos-15";
+export const MAC_COMPILE_HOSTED_IF = `if: \${{ needs.plan.outputs.run == 'true' && needs.plan.outputs.pool == 'hosted' && ${MAC_COMPILE_GATE} }}`;
 
 // Runner acceptance smoke (owner D353, 2026-11-20). Only runner-smoke.yml may take a runner by its temporary smoke
 // label, with exactly this line, in one job gated to the owner on main's definition. It starts only from
@@ -152,6 +156,15 @@ export function macCompileProblems(text) {
   const routed = jobs.filter((j) => j.lines.some((l) => l.trim() === MAC_COMPILE_ROUTE));
   if (routed.length !== 1 || text.split("\n").filter((l) => l.trim() === MAC_COMPILE_ROUTE).length !== 1) problems.push("mac-compile.yml has exactly one compile-runner job");
   else if (routed[0].lines.filter((l) => /^    if:/.test(l)).join("\n") !== "    " + MAC_COMPILE_IF) problems.push("the compile-runner job's condition must be exactly MAC_COMPILE_IF");
+  const hosted = jobs.filter((j) => j.name === "compile-hosted");
+  const otherMac = jobs.filter((j) => j.name !== "compile-hosted" && j.lines.some((l) => /^    runs-on:.*macos/i.test(l) && l.trim() !== MAC_COMPILE_ROUTE));
+  if (hosted.length !== 1 || otherMac.length) problems.push("mac-compile.yml has exactly one hosted compile job, compile-hosted");
+  else {
+    const h = hosted[0].lines;
+    if (h.filter((l) => /^    runs-on:/.test(l)).map((l) => l.trim()).join("\n") !== MAC_COMPILE_HOSTED_ROUTE) problems.push("compile-hosted runs exactly on " + MAC_COMPILE_HOSTED_ROUTE);
+    if (h.filter((l) => /^    if:/.test(l)).join("\n") !== "    " + MAC_COMPILE_HOSTED_IF) problems.push("compile-hosted's condition must be exactly MAC_COMPILE_HOSTED_IF");
+    if (!h.some((l) => l === "    permissions:") || !h.some((l) => l === "      contents: read")) problems.push("compile-hosted needs job permissions: contents: read");
+  }
   return problems;
 }
 

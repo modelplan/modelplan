@@ -13,7 +13,7 @@ import { client } from "./github.mjs";
 import * as G from "./git.mjs";
 import { HOSTED_WORKFLOWS } from "./hosted.mjs";
 import { ABSENT_TITLE, MAP_PATH, RECORD_TITLE, parseMap } from "./gui-map.mjs";
-import { CONTEXT, PR_GUI_TITLE, prGuiRunScope, DESKTOP_WORKFLOW, FAILURE, dataSyncRunId, parseFallbackUntil, parseGlmTiers, cancelledRunSuperseded, description, evaluateGroup, evaluatePr, queueRunScope, feed, isTrain, parseDesignConf, supersededPrs, TIER_TABLE, tiersFrom, trainMembers } from "./rules.mjs";
+import { CONTEXT, GUI_COVER_TITLE, GUI_DEFER_JOB, parseCoverRecord, PR_GUI_TITLE, prGuiRunScope, DESKTOP_WORKFLOW, FAILURE, dataSyncRunId, parseFallbackUntil, parseGlmTiers, cancelledRunSuperseded, description, evaluateGroup, evaluatePr, queueRunScope, feed, isTrain, parseDesignConf, supersededPrs, TIER_TABLE, tiersFrom, trainMembers } from "./rules.mjs";
 
 const env = process.env;
 const argv = process.argv.slice(2);
@@ -139,6 +139,23 @@ async function readPrGuiJobs(pr, runs) {
   } catch (e) { log({ run: r.id, jobs: `unreadable: ${String(e).slice(0, 120)}` }); }
 }
 
+// D488: a group whose gui-defer job says a later group's GUI leg covers it names that run in a notice annotation
+// (GUI_COVER_TITLE). Read the run and its jobs, and prove with git that its commit contains this group commit; the rules
+// (guiCoverState) check the rest. Anything unreadable returns null, which never passes.
+async function readGuiCover(groupSha, jobs) {
+  const job = (jobs ?? []).find((j) => j.name === GUI_DEFER_JOB && j.conclusion === "success");
+  if (!job) return null;
+  try {
+    const notes = (await gh.all(`/check-runs/${job.id}/annotations`, null, 100)).filter((a) => a.title === GUI_COVER_TITLE && a.annotation_level === "notice");
+    const record = notes.length === 1 ? parseCoverRecord(notes[0].message) : null;
+    if (!record) return log({ group: groupSha, guiCover: `no single valid ${GUI_COVER_TITLE} record` }), null;
+    const [run, runJobs] = await Promise.all([gh.get(`/actions/runs/${record.runId}`), gh.all(`/actions/runs/${record.runId}/jobs?filter=latest`, "jobs", 500)]);
+    const contains = G.ensure(cwd, run.head_sha) && G.isAncestor(cwd, groupSha, run.head_sha) && run.head_sha !== groupSha;
+    log({ group: groupSha, guiCover: record.runId, coverSha: run.head_sha, contains });
+    return { record, run, jobs: runJobs, contains };
+  } catch (e) { log({ group: groupSha, guiCover: `unreadable: ${String(e).slice(0, 120)}` }); return null; }
+}
+
 async function prResult(number) {
   const pr = await gh.get(`/pulls/${number}`);
   const head = pr.head.sha;
@@ -200,7 +217,8 @@ async function evaluateGroupAndPost(groupSha) {
   const desktopJobs = desktop ? await gh.all(`/actions/runs/${desktop.id}/jobs`, "jobs", 500) : null;
   if (desktop) desktop.jobs = desktopJobs;
   await readJobs(queueRuns.filter(queueRunScope(repo)).filter((r) => r !== desktop));
-  const result = evaluateGroup({ steps, queueRuns, queueStatuses: combined.statuses ?? [], queueCheckRuns, desktopJobs, repo });
+  const guiCover = desktopJobs ? await readGuiCover(groupSha, desktopJobs) : null;
+  const result = evaluateGroup({ steps, queueRuns, queueStatuses: combined.statuses ?? [], queueCheckRuns, desktopJobs, guiCover, groupSha, desktopRunId: desktop?.id ?? null, repo });
   await post(groupSha, { group: steps.map((s) => s.pr), ...result });
 }
 

@@ -54,13 +54,27 @@ import XCTest
     return window
   }
   private func wait(_ ms: Int) async throws { try await Task.sleep(for: .milliseconds(ms)) }
-  /// Polls every 10 ms for up to 2 s; the failure names what never happened.
+  /// Polls every 10 ms for up to 5 s (the product's real-time launch burn alone is 1.2 s); the failure names what never happened.
   private func until(_ what: String, file: StaticString = #filePath, line: UInt = #line, _ condition: @MainActor () -> Bool) async throws {
-    for _ in 0..<200 {
+    for _ in 0..<500 {
       if condition() { return }
       try await wait(10)
     }
     XCTFail("never happened: \(what)", file: file, line: line)
+  }
+  /// The entrance is over: shown, home, the clamp on the lug, the rack out and still.
+  private func settledAtHome(_ fixture: Fixture, _ window: NSWindow) -> Bool {
+    window.alphaValue == 1 && fixture.page.verificationBoom.pose?.closure == 1 && fixture.page.verificationRack.ext == 1 && !fixture.page.verificationRack.moving
+  }
+  /// Steps the manual rack clock one 60 Hz tick at a time (up to `seconds`) until the condition holds; never sleeps.
+  private func step(_ fixture: Fixture, seconds: Double = 10, until condition: @MainActor () -> Bool) {
+    for _ in 0..<Int(seconds * 60) where !condition() { fixture.page.verificationAdvanceRack(by: 1.0 / 60) }
+  }
+
+  /// The close's motion runs on the manual clock, but the window is discarded by a real-time task (the motion's length
+  /// plus one beat), so after the motion is stepped the discard is awaited, never asserted at once.
+  private func finishClose(_ fixture: Fixture) async throws {
+    try await until("the close discards the cockpit") { fixture.page.window == nil }
   }
 
   func testIdleAttachedSizeChangeRefreshesRackMask() throws {
@@ -121,11 +135,16 @@ import XCTest
     // macrev2-1207-1: the key detach opens the clamp first; the cockpit and the boom stay home until it is fully open.
     let home = window.frame
     let ticks = record(fixture, window)
+    // The driver runs on the manual clock, one 60 Hz tick at a time: a stalled hosted runner cannot skip the 0.14 s
+    // clamp release between two real ticks.
+    fixture.page.verificationManualRackClock = 1_000
+    defer { fixture.page.verificationManualRackClock = nil }
     fixture.page.setAttached(false)
     XCTAssertEqual(fixture.page.verificationBoom.clampTarget, 0, "detaching: the clamp opens")
-    try await until("the cockpit has landed and the boom is in") {
-      fixture.page.verificationRack.panel == nil && !fixture.page.verificationRack.moving
+    for _ in 0..<600 where fixture.page.verificationRack.panel != nil || fixture.page.verificationRack.moving {
+      fixture.page.verificationAdvanceRack(by: 1.0 / 60)
     }
+    XCTAssertNil(fixture.page.verificationRack.panel, "the boom is in"); XCTAssertFalse(fixture.page.verificationRack.moving)
     assertClampOpensBeforeDeparture(ticks.samples, home: home, label: "key detach")
     fixture.page.verificationRackDrawn = nil
     XCTAssertEqual(failures, [])
@@ -141,8 +160,11 @@ import XCTest
     }
     let home = window.frame
     let ticks = record(fixture, window)
+    fixture.page.verificationManualRackClock = 1_000
+    defer { fixture.page.verificationManualRackClock = nil }
     fixture.page.requestClose()
-    try await wait(900)
+    step(fixture) { fixture.page.verificationRack.ext == 0 && !fixture.page.verificationRack.moving }
+    try await finishClose(fixture)
     XCTAssertNil(fixture.page.window, "closed")
     assertClampOpensBeforeDeparture(ticks.samples, home: home, label: "icon close")
     fixture.page.verificationRackDrawn = nil
@@ -214,15 +236,23 @@ import XCTest
     }
     let home = window.frame
     let ticks = record(fixture, window)
+    // Manual driver clock: the release hold is stepped tick by tick, never skipped by a stalled runner.
+    fixture.page.verificationManualRackClock = 1_000
+    defer { fixture.page.verificationManualRackClock = nil }
     fixture.page.requestClose()
-    try await until("the close's release hold is running") {
+    var holding = false
+    for _ in 0..<60 where !holding {
+      fixture.page.verificationAdvanceRack(by: 1.0 / 60)
       let closure = fixture.page.verificationBoom.pose?.closure ?? 0
-      return closure > 0 && closure < 1
+      holding = closure > 0 && closure < 1
     }
+    XCTAssertTrue(holding, "the close's release hold is running")
     fixture.page.open()
-    try await until("the clamp is closed on the lug again") {
-      fixture.page.verificationBoom.pose?.closure == 1 && !fixture.page.verificationRack.moving
+    for _ in 0..<600 where fixture.page.verificationBoom.pose?.closure != 1 || fixture.page.verificationRack.moving {
+      fixture.page.verificationAdvanceRack(by: 1.0 / 60)
     }
+    XCTAssertEqual(fixture.page.verificationBoom.pose?.closure, 1, "the clamp is closed on the lug again")
+    XCTAssertFalse(fixture.page.verificationRack.moving)
     XCTAssertEqual(fixture.page.window?.frame.origin, home.origin, "still home")
     for (index, sample) in ticks.samples.enumerated() where sample.slide < 1 || sample.frame.origin != home.origin {
       XCTAssertEqual(sample.closure, 0, "tick \(index) moved with the clamp \(sample.closure) not open")
@@ -290,7 +320,7 @@ import XCTest
       try await wait(20)
     }
     XCTAssertGreaterThan(sampled, 5, "the rack was on screen while sampled")
-    try await wait(300)
+    try await until("the open is settled at the closed home") { window.frame == home && !fixture.page.verificationRack.moving }
     XCTAssertEqual(window.frame, home)
     let layout = try XCTUnwrap(fixture.page.verificationLayout)
     XCTAssertEqual(layout.rackMaskDrop, 0)
@@ -370,7 +400,7 @@ import XCTest
     // a fixed wall-clock instant: a busy runner's main thread can delay the first 60 Hz tick past 50 ms (run 44887387735).
     try await until("the rack's visible part is extending") { fixture.page.verificationRack.ext > 0 }
     try await until("the cockpit comes out (D299)") { window.alphaValue > 0 }
-    try await wait(400)
+    try await until("the open is settled") { settledAtHome(fixture, window) }
     XCTAssertEqual(window.alphaValue, 1)
     XCTAssertEqual(window.frame, home, "settled at its attached place")
     XCTAssertEqual(window.frame.maxY, fixture.usable.maxY - 10, "10 pt below the menu bar")
@@ -387,14 +417,18 @@ import XCTest
     try await until("the clamp is closed on the lug") { fixture.page.verificationBoom.pose?.closure == 1 }
     var closes: [TimeInterval] = []
     fixture.page.verificationCloseStarted = { closes.append($0) }
+    // Manual driver clock: the close is stepped, not slept through.
+    fixture.page.verificationManualRackClock = 1_000
+    defer { fixture.page.verificationManualRackClock = nil }
     fixture.page.requestClose()
     XCTAssertEqual(closes.count, 1)
     XCTAssertEqual(closes.first ?? 0, CockpitDockingBoom.clampTravel + 0.5, accuracy: 1e-9,
                    "the clamp opens (0.14 s, D439), the cockpit goes up (0.25 s), then the boom retracts (0.25 s)")
-    try await wait(300)
+    step(fixture, seconds: 10) { (fixture.page.window?.frame.minY ?? .infinity) > home.minY }
     XCTAssertNotNil(fixture.page.window)
     XCTAssertGreaterThan(fixture.page.window?.frame.minY ?? 0, home.minY, "the cockpit goes back up under the bar")
-    try await wait(700)
+    step(fixture) { fixture.page.verificationRack.ext == 0 && !fixture.page.verificationRack.moving }
+    try await finishClose(fixture)
     XCTAssertNil(fixture.page.window)
     XCTAssertEqual(failures, [])
   }
@@ -406,9 +440,14 @@ import XCTest
     let fixture = try make()
     defer { fixture.page.discard() }
     let window = try open(fixture)
-    try await wait(800)
+    try await until("the entrance is settled at home") {
+      window.alphaValue == 1 && fixture.page.verificationBoom.pose?.closure == 1 && !fixture.page.verificationRack.moving
+    }
     let home = try XCTUnwrap(fixture.home)
     XCTAssertEqual(window.frame, home)
+    // Manual driver clock: the detach and the put-back are stepped tick by tick, not slept through.
+    fixture.page.verificationManualRackClock = 1_000
+    defer { fixture.page.verificationManualRackClock = nil }
     var ignition: [Bool] = [], landing: CockpitDetachLanding.Plan?
     fixture.page.verificationIgnition = { ignition.append($0) }
     fixture.page.verificationLanding = { landing = $0 }
@@ -424,14 +463,17 @@ import XCTest
     let detachedLayout = try XCTUnwrap(fixture.page.verificationLayout)
     XCTAssertEqual(detachedLayout.profile, .full, "D444: a detached cockpit never switches layout")
     XCTAssertEqual(fixture.page.verificationShellState?.tier, .tall)
-    try await wait(300)
+    for _ in 0..<600 where window.frame == home { fixture.page.verificationAdvanceRack(by: 1.0 / 60) }
     XCTAssertEqual(ignition, [true], "still burning mid-move")
     XCTAssertNotEqual(window.frame, home); XCTAssertNotEqual(window.frame, plan.frame)
-    try await wait(600)
+    for _ in 0..<600 where window.frame != plan.frame { fixture.page.verificationAdvanceRack(by: 1.0 / 60) }
     XCTAssertEqual(window.frame, plan.frame, "landed")
     // D459: a detach is a launch, full thrust for the launch burn from the moment it leaves the boom (longer than the
     // 0.6 s move); then the parked cockpit's flame is out (D468: the page fades it away, no ignition).
     XCTAssertEqual(ignition, [true], "the launch burn outlasts the move")
+    // The ignition stays on while a motion runs, and on the manual clock nothing runs between our ticks: finish the
+    // rack's retract tick by tick, then wait only for the product's real-time 1.2 s burn timer.
+    step(fixture) { fixture.page.verificationRack.ext == 0 && !fixture.page.verificationRack.moving }
     try await until("the launch burn ends") { ignition == [true, false] }
     XCTAssertEqual(fixture.page.verificationRack.ext, 0, "the rack retracted into the icon")
     XCTAssertNil(fixture.page.verificationRack.panel)
@@ -440,7 +482,9 @@ import XCTest
     fixture.page.setAttached(true) // the strip key while detached (icon: the arm holding the rocket)
     XCTAssertEqual(ignition, [true, false, true], "lit at the press")
     XCTAssertFalse(fixture.page.isAttached, "flying home")
-    try await wait(2_600)
+    for _ in 0..<1_200 where !fixture.page.isAttached || fixture.page.verificationRack.moving || window.frame != home {
+      fixture.page.verificationAdvanceRack(by: 1.0 / 60)
+    }
     XCTAssertTrue(fixture.page.isAttached, "caught and latched")
     XCTAssertEqual(window.frame, home)
     XCTAssertEqual(fixture.page.verificationRack.ext, 1)
@@ -458,12 +502,11 @@ import XCTest
     var lines: [String] = []
     CockpitTimingLog.verificationLine = { lines.append($0) }
     _ = try open(fixture)
-    try await wait(100)
     let home = try XCTUnwrap(fixture.home)
     XCTAssertFalse(lines.contains { $0.hasPrefix("open stage=animation-complete") })
     fixture.page.titleDrag(.began, point: CGPoint(x: home.minX + 120, y: home.maxY - 16))
     XCTAssertEqual(lines.filter { $0.hasPrefix("open stage=animation-complete") }.count, 1)
-    try await wait(900)
+    try await until("the drag's motion is over") { !fixture.page.verificationRack.moving }
     XCTAssertEqual(lines.filter { $0.hasPrefix("open stage=animation-complete") }.count, 1)
   }
 
@@ -471,7 +514,7 @@ import XCTest
     let fixture = try make()
     defer { fixture.page.discard() }
     let window = try open(fixture)
-    try await wait(800)
+    try await until("the entrance is settled at home") { settledAtHome(fixture, window) }
     let home = try XCTUnwrap(fixture.home)
     var ignition: [Bool] = []
     fixture.page.verificationIgnition = { ignition.append($0) }
@@ -488,8 +531,11 @@ import XCTest
     XCTAssertEqual(fixture.page.verificationRack.target, 0, "tear-off: the rack retracts into the icon")
     // D459: tearing the cockpit off the boom is a launch: full thrust for the launch burn, then out (parked: flame out, D468).
     XCTAssertEqual(ignition, [true], "the tear-off lights the launch burn")
-    try await until("the launch burn ends") { ignition == [true, false] }
+    try await until("the launch burn ends") { ignition == [true, false] && !fixture.page.verificationRack.moving }
     ignition = []
+    // Manual driver clock for the put back: the ride home is stepped, not slept through.
+    fixture.page.verificationManualRackClock = 1_000
+    defer { fixture.page.verificationManualRackClock = nil }
     let near = CGPoint(x: grab.x + 10, y: grab.y - 20)
     fixture.page.titleDrag(.moved, point: near)
     XCTAssertTrue(fixture.page.inCatchZone(window.frame))
@@ -501,7 +547,7 @@ import XCTest
     XCTAssertEqual(ignition, [true, false])
     fixture.page.titleDrag(.moved, point: near)
     fixture.page.titleDrag(.ended, point: near)
-    try await wait(1_200)
+    step(fixture) { fixture.page.isAttached && !fixture.page.verificationRack.moving && window.frame == home }
     XCTAssertTrue(fixture.page.isAttached, "released in the zone: straight up and latched")
     XCTAssertEqual(window.frame, home)
     XCTAssertEqual(ignition.last, false, "out once latched")
@@ -516,13 +562,13 @@ import XCTest
     let fixture = try make()
     defer { fixture.page.discard() }
     let window = try open(fixture)
-    try await wait(800)
+    try await until("the entrance is settled at home") { settledAtHome(fixture, window) }
     let home = try XCTUnwrap(fixture.home)
     XCTAssertEqual(window.frame, home)
 
     // Long: the strip key's put back after a key detach (a flight of 0.82 s or more).
     fixture.page.setAttached(false)
-    try await wait(1_000)
+    try await until("retracted after the detach") { fixture.page.verificationRack.ext == 0 && !fixture.page.verificationRack.moving && window.frame != home }
     XCTAssertEqual(fixture.page.verificationRack.ext, 0, "retracted after the detach")
     let long = try await samplePutBack(fixture, window, home, "key put back") {
       fixture.page.setAttached(true)
@@ -536,7 +582,7 @@ import XCTest
     fixture.page.titleDrag(.began, point: grab)
     fixture.page.titleDrag(.moved, point: CGPoint(x: grab.x, y: grab.y - 200))
     XCTAssertFalse(fixture.page.isAttached)
-    try await wait(700)
+    try await until("retracted after the tear-off") { fixture.page.verificationRack.ext == 0 && !fixture.page.verificationRack.moving }
     XCTAssertEqual(fixture.page.verificationRack.ext, 0, "retracted after the tear-off")
     let near = CGPoint(x: grab.x + 10, y: grab.y - 20)
     let short = try await samplePutBack(fixture, window, home, "drag released in the zone") {
@@ -680,7 +726,7 @@ import XCTest
     let fixture = try make(reduceMotion: true)
     defer { fixture.page.discard() }
     let window = try open(fixture)
-    try await wait(400)
+    try await until("the entrance is settled") { window.alphaValue == 1 && !fixture.page.verificationRack.moving }
     let layout = try XCTUnwrap(fixture.page.verificationLayout)
     XCTAssertEqual(window.frame, try XCTUnwrap(fixture.home), "attached at home, the whole window (hull and flame) on screen")
     XCTAssertTrue(fixture.usable.contains(window.frame), "attached, the whole flame is inside the visible frame")
@@ -728,7 +774,7 @@ import XCTest
     let fixture = try make(reduceMotion: true)
     defer { fixture.page.discard() }
     let window = try open(fixture)
-    try await wait(400)
+    try await until("the entrance is settled") { window.alphaValue == 1 && !fixture.page.verificationRack.moving }
     let page = fixture.page, layout = try XCTUnwrap(page.verificationLayout), strip = layout.passThroughHeight
     let f = window.frame
     let onStrip = CGPoint(x: f.midX, y: f.minY + 1), onHull = CGPoint(x: f.midX, y: f.minY + layout.hullBottomInset + 40)
