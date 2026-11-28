@@ -19,7 +19,9 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
@@ -64,6 +66,12 @@ type usageFile struct {
 	Size         int64         `json:"size"`
 	Modified     int64         `json:"modified"`
 	Records      []usageRecord `json:"records"`
+	// Cutoff: the recording-day start under which this file was scanned. A zone change can
+	// make additional responses eligible even when the previous scan already found records.
+	Cutoff time.Time `json:"cutoff,omitempty"`
+	// Earliest retention day represented by this cached scan. Pruning advances it;
+	// a rollback before it must re-read the file even when other records remain.
+	RetentionFrom string `json:"retentionFrom,omitempty"`
 }
 type accountingLedger struct {
 	Version int                  `json:"version"`
@@ -130,6 +138,41 @@ func usageHash(parts ...any) string {
 	return hex.EncodeToString(h[:16])
 }
 
+// Sampling 11-22 (1146 A3): scan fingerprints of files whose responses all predate the
+// retention window. In memory only, capped, so a long history cannot grow them without bound;
+// the key carries the cache, file metadata, grant epoch, eligibility floor, recording-day start,
+// and retention boundary, so a clock or policy change invalidates the remembered scan.
+var (
+	accountingScanMu sync.Mutex
+	accountingScans  = map[string]bool{}
+)
+
+const accountingScanCap = 4096
+
+func accountingScanFingerprint(cache, source, path string, epoch *GrantEpoch, size, modified int64, start, floor time.Time, retention string) string {
+	epochKey := "<none>"
+	if epoch != nil {
+		epochKey = epoch.StoreEpoch + "/" + strconv.FormatUint(epoch.RevokedGeneration, 10)
+	}
+	return usageHash(cache, "\x00", source, "\x00", path, "\x00", size, "\x00", modified, "\x00", epochKey,
+		"\x00", start.UTC().Format(time.RFC3339Nano), "\x00", floor.UTC().Format(time.RFC3339Nano), "\x00", retention)
+}
+
+func accountingScanRemembered(key string) bool {
+	accountingScanMu.Lock()
+	defer accountingScanMu.Unlock()
+	return accountingScans[key]
+}
+
+func accountingScanRemember(key string) {
+	accountingScanMu.Lock()
+	defer accountingScanMu.Unlock()
+	if len(accountingScans) >= accountingScanCap {
+		accountingScans = map[string]bool{}
+	}
+	accountingScans[key] = true
+}
+
 // A snapshot replaces a file's prior contribution when a stream is appended or rewritten.
 // This also lets a later Claude streaming block replace its earlier, smaller usage.
 func observeAccounting(cache, source string, paths []string, now time.Time) error {
@@ -153,6 +196,7 @@ func observeAccounting(cache, source string, paths []string, now time.Time) erro
 	}
 	floor := LoadCleared(cache).floor(source)
 	start := accountingLiveStart(cache, now)
+	retention := windowFrom(now, 35)
 	changed := false
 	for _, path := range paths {
 		fi, err := os.Stat(path)
@@ -161,7 +205,15 @@ func observeAccounting(cache, source string, paths []string, now time.Time) erro
 		}
 		key := fileKey(path)
 		old, exists := l.Files[key]
-		if exists && old.LiveObserved && old.Source == source && sameEpoch(old.Epoch, epoch) && old.Tiered && !old.Pending && old.Size == fi.Size() && old.Modified == fi.ModTime().UnixNano() {
+		if exists && old.LiveObserved && old.Source == source && sameEpoch(old.Epoch, epoch) && old.Tiered && !old.Pending && old.Size == fi.Size() && old.Modified == fi.ModTime().UnixNano() && old.Cutoff.Equal(start) && old.RetentionFrom != "" && retention >= old.RetentionFrom {
+			continue
+		}
+		// Sampling 11-22 (1146 A3): a selected file whose responses all predate the retention
+		// window is parsed once per process. The ledger cannot keep its entry (archived history
+		// is unbounded), so its scan fingerprint lives outside it, bounded; a change to the
+		// file's metadata, the grant, eligibility or retention boundary invalidates it.
+		fingerprint := accountingScanFingerprint(cache, source, path, epoch, fi.Size(), fi.ModTime().UnixNano(), start, floor, windowFrom(now, 35))
+		if !exists && accountingScanRemembered(fingerprint) {
 			continue
 		}
 		// Only the bytes appended since the last observation are parsed (accounting_cursor.go).
@@ -201,7 +253,10 @@ func observeAccounting(cache, source string, paths []string, now time.Time) erro
 		}
 		records := make([]usageRecord, 0, len(p.records)) // p.records stays with the live cursor
 		for _, r := range p.records {
-			if day(r.At) >= windowFrom(now, 35) && !r.At.Before(floor) && (known[r.Key] || !r.At.Before(start)) && !r.At.After(now) {
+			// Sampling 11-22 (1146 A1): the future-time filter applies only to responses never
+			// recorded under the current grant; an already recorded live response survives a
+			// clock correction that momentarily puts it ahead of the wall clock.
+			if day(r.At) >= windowFrom(now, 35) && !r.At.Before(floor) && (known[r.Key] || (!r.At.Before(start) && !r.At.After(now))) {
 				records = append(records, r)
 			}
 		}
@@ -218,7 +273,7 @@ func observeAccounting(cache, source string, paths []string, now time.Time) erro
 				records = append(records, r)
 			}
 		}
-		next := usageFile{LiveObserved: true, Tiered: true, Pending: pending, Source: source, Epoch: epoch, Size: fi.Size(), Modified: fi.ModTime().UnixNano(), Records: records, Session: usageHash(p.session), Parent: p.parent, Started: p.started}
+		next := usageFile{LiveObserved: true, Tiered: true, Pending: pending, Source: source, Epoch: epoch, Size: fi.Size(), Modified: fi.ModTime().UnixNano(), Records: records, Session: usageHash(p.session), Parent: p.parent, Started: p.started, Cutoff: start, RetentionFrom: retention}
 		// Re-reading a pending file changes nothing until the clock passes its response; an
 		// identical entry is not a change, so the ledger is not rewritten meanwhile.
 		if len(records) == 0 {
@@ -228,6 +283,12 @@ func observeAccounting(cache, source string, paths []string, now time.Time) erro
 			changed = true
 		}
 		l.Files[key] = next
+		// The retention below keeps no entry for a file this old, so an all-archived scan is
+		// remembered outside the ledger instead (1146 A3): the next observation skips the parse
+		// and the ledger stops being rewritten every scheduled pass.
+		if len(records) == 0 && !pending && day(fi.ModTime()) < windowFrom(now, 35) {
+			accountingScanRemember(fingerprint)
+		}
 	}
 	// Retain no expired or revoked observations, even from files no longer present.
 	a = consent.Capture()
@@ -246,6 +307,9 @@ func observeAccounting(cache, source string, paths []string, now time.Time) erro
 		}
 		if len(records) != len(f.Records) {
 			changed = true
+			if f.LiveObserved && (f.RetentionFrom == "" || retention > f.RetentionFrom) {
+				f.RetentionFrom = retention
+			}
 		}
 		f.Records = records
 		if len(records) == 0 && f.LiveObserved && day(time.Unix(0, f.Modified)) >= windowFrom(now, 35) {
