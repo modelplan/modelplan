@@ -39,7 +39,7 @@ async function open(page,locale,history=false){
 
 for(const locale of ['zh-CN','en'])test(`G3-109 six columns: no raw key, no overflow (${locale})`,async({page})=>{
  await open(page,locale);
- await expect(page.locator('.u11-engine-table .eng-cols > .ec[data-col]')).toHaveCount(6);
+ await expect(page.locator('.u11-engine-table .eng-cols > .ec[data-col]')).toHaveCount(locale==='en'?5:6);
  const texts=await page.locator('.u11-engine-table .qtxt').evaluateAll(list=>list.map(e=>{const col=e.closest('.ec').getBoundingClientRect(),r=e.getBoundingClientRect();
   return {text:e.textContent,sw:e.scrollWidth,cw:e.clientWidth,short:e.dataset.short,small:e.dataset.small,fits:e.scrollWidth<=e.clientWidth+1,inside:r.left>=col.left-1&&r.right<=col.right+1};}));
  expect(texts.length).toBeGreaterThan(0);

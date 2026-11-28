@@ -32,7 +32,7 @@ const total=s=>s.subs.length+s.all+s.plugins.length;
 const sub=(page,i)=>page.locator('.eng-keys .ek[data-sub]').nth(i);
 const plugin=(page,id)=>page.locator(`.eng-keys .pl-key[data-plugin="${id}"]`);
 
-test('G3-174 G3-212 exactly one key of the strip is lit at any time: a subscription, All, Calendar or Resources',async({page})=>{
+test('G3-174 G3-212 exactly one key of the strip is lit at any time: a subscription, All, or Resources',async({page})=>{
  await open(page);
  let s=await lit(page);expect(s.all,'All is lit on first open').toBe(1);expect(total(s)).toBe(1);
  const subs=await page.locator('.eng-keys .ek[data-sub]').count();expect(subs).toBeGreaterThan(1);
@@ -40,15 +40,15 @@ test('G3-174 G3-212 exactly one key of the strip is lit at any time: a subscript
   await sub(page,i).click();s=await lit(page);
   expect(total(s),`subscription key ${i} alone`).toBe(1);expect(s.subs).toHaveLength(1);
  }
- for(const id of ['calendar','resources']){
+ for(const id of ['resources']){
   await plugin(page,id).click();s=await lit(page);
   expect(s,`${id} alone is lit and pressed`).toEqual({subs:[],all:0,plugins:[id]});
   await expect(plugin(page,id)).toHaveAttribute('aria-pressed','true');
  }
- // Pressing the other plugin moves the light, it never adds one.
- await plugin(page,'calendar').click();s=await lit(page);expect(s.plugins).toEqual(['calendar']);expect(total(s)).toBe(1);
+ // D466: the calendar is the 5th page, not a plugin key; the lit Resources key is the only light, none is added. Columns per page: zh 6, en 5.
+ s=await lit(page);expect(s.plugins).toEqual(['resources']);expect(total(s)).toBe(1);
  await page.locator('.ek[data-all]').click();s=await lit(page);expect(s).toEqual({subs:[],all:1,plugins:[]});
- await expect(plugin(page,'calendar')).toHaveAttribute('aria-pressed','false');
+ await expect(plugin(page,'resources')).toHaveAttribute('aria-pressed','false');
 });
 
 test('G3-212 CKP-ENG-21 a plugin key is a screen key: it posts no scope change, and pressing it again closes the screen',async({page})=>{
@@ -66,7 +66,7 @@ test('G3-212 CKP-ENG-21 a plugin key is a screen key: it posts no scope change, 
 test('CKP-ENG-21 re-pressing the selected subscription key from a plugin screen only brings the subscription back (D401)',async({page})=>{
  await open(page);
  await sub(page,0).click();const ref=(await lit(page)).subs[0];
- await plugin(page,'calendar').click();
+ await plugin(page,'resources').click();
  await sub(page,0).click();
  expect(await lit(page)).toEqual({subs:[ref],all:0,plugins:[]});
  await expect(page.locator('.pl-screen')).toHaveCount(0);
@@ -81,7 +81,7 @@ test('CKP-SHELL-50 G3-175 the number keys select: 0 is All, 1..n the nth subscri
   await page.keyboard.press(String(i));
   const s=await lit(page);expect(s.subs,`key ${i}`).toEqual([await sub(page,i-1).getAttribute('data-sub')]);expect(total(s)).toBe(1);
  }
- await plugin(page,'calendar').click();
+ await plugin(page,'resources').click();
  await page.keyboard.press('2');
  await expect(page.locator('.pl-screen')).toHaveCount(0);
  expect(await lit(page),'a number key closes the plugin screen and selects that subscription').toEqual({subs:[await sub(page,1).getAttribute('data-sub')],all:0,plugins:[]});

@@ -29,7 +29,7 @@ const read=page=>page.evaluate(()=>{
 
 for(const tier of ['tall'])test(`D377 ${tier}: one nozzle per column, plugin columns included, same size and art`,async({page})=>{
  await open(page,{tier});const v=await read(page);
- expect(v.plugins).toBeGreaterThanOrEqual(2);
+ expect(v.plugins).toBeGreaterThanOrEqual(1);
  expect(v.bells.length).toBe(v.cols.length);
  for(const [i,b] of v.bells.entries()){
   expect(Math.abs(b.x-v.cols[i].x)).toBeLessThan(0.6);

@@ -21,7 +21,7 @@ function dataWith(count) {
  data.projection.rows=[data.projection.rows[0],...Array.from({length:count-1},(_,i)=>{const row=structuredClone(seed);row.id=`tool-${i+2}`;row.name={en:`Tool ${i+2}`,zh:`工具 ${i+2}`};row.order=i+2;return row;})];
  return data;
 }
-async function open(page,{count=3,locale='en',plugins=both,push=calendar()}={}) {
+async function open(page,{count=3,locale='en',plugins=both,push=null}={}) {
  await page.clock.setFixedTime(new Date(NOW));
  await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
@@ -46,7 +46,7 @@ const clipped=(page,id)=>page.evaluate(id=>{
  }
  return bad;},id);
 
-for(const [locale,tags] of [['en',['CPU','Memory','Disk']],['zh-CN',null]])for(const count of [2,5])
+for(const [locale,tags] of [['en',['CPU','Memory','Disk']],['zh-CN',null]])for(const count of [2,4])
 test(`G3-142 CKP-PLG-64 the Resources column on first render shows CPU, memory and disk tags in order, none clipped (${locale}, ${count} subscriptions)`,async({page})=>{
  await open(page,{locale,count,push:null,plugins:{version:1,entries:[{id:'calendar',enabled:false,pinned:false}],settings:{}}});
  const c=col(page,'resources');await expect(c).toHaveCount(1);
@@ -61,48 +61,8 @@ test(`G3-142 CKP-PLG-64 the Resources column on first render shows CPU, memory a
  await expect(c).not.toContainText('--');
 });
 
-// Owner build-6 report 2026-11-27 #7: calendar column text clipped; fix in the band redesign.
-test('G3-148 the Calendar column writes names, not two-letter codes, with a big now time and two different rows',{annotation:{type:'bug',description:'owner build-6 report 2026-11-27 #7: calendar column text clipped; fix in the band redesign'}},async({page})=>{
- test.fail(true,'owner build-6 report 2026-11-27 #7: calendar column text clipped; fix in the band redesign');
- await open(page);
- const c=col(page,'calendar'),s=c.locator('.pl-draw .cal');
- await expect(s.locator('.cal-nt')).toHaveText('11:20');
- const chips=await s.locator('.cal-ch').allTextContents();
- expect(chips.length).toBeGreaterThan(0);
- for(const t of chips)expect(t,'a full name, a kind and a time').toMatch(/^(Claude|Codex|GLM) 5h \d\d:\d\d$/);
- expect(chips.join(' ')).not.toMatch(/\b(CL|CX|GL|CU)\b/);
- const [label,value]=[await c.locator('.pl-foot-l').textContent(),await c.locator('.pl-foot-v').textContent()];
- expect(label).not.toBe(value);expect(value,'the bottom line is not the now time again').not.toContain('11:20');
- expect(new Set(chips).size,'no reset chip repeats').toBe(chips.length);
- expect(await clipped(page,'calendar')).toEqual([]);
-});
-
-for(const [locale,next,running] of [['en','Next peak','GLM peak on'],['zh-CN','下个高峰','GLM 高峰中']])
-test(`CKP-PLG-55 the Calendar column reads now, next peak and next reset; a running peak takes the bottom line (${locale})`,async({page})=>{
- const {send,receive}=await open(page,{locale});
- const c=col(page,'calendar');
- // Now: the now line and its time. Next peak: the bottom line. Next reset: the first reset chip.
- await expect(c.locator('.cal-nl')).toHaveCount(1);await expect(c.locator('.cal-nt')).toHaveText('11:20');
- await expect(c.locator('.pl-foot-l')).toHaveAttribute('data-full',next);
- await expect(c.locator('.cal-ch').first()).toContainText('12:30');
- // Inside the running peak the bottom line names it instead.
- expect(await receive(send('tick',{nowUnixMs:String(L(0,23)),reason:'deadline'}))).toBe(true);
- await expect(c.locator('.pl-foot-l')).toContainText(running.split(' ')[0]);
- if(locale==='zh-CN')await expect(c.locator('.pl-foot-l')).toHaveText(running);
-});
-
-test('CKP-PLG-62 the Calendar column shows the next 12 hours only; later peaks and resets stay off it',async({page})=>{
- await open(page,{push:calendar({peaks:[{sub:2,from:L(1,1),to:L(1,6),tentative:false}],resets:[{sub:0,at:L(1,0,30),kind:'5h'},{sub:1,at:L(0,14,10),kind:'5h'}]})});
- const s=col(page,'calendar').locator('.pl-draw .cal');
- await expect(s.locator('.cal-pk'),'a peak that starts after 23:20 is not drawn').toHaveCount(0);
- await expect(s.locator('.cal-ch')).toHaveText(['Codex 5h 14:10']);
-});
-
-test('CKP-PLG-62 without peak rules the column is the D293 cells form: reset chips and a note, no peak blocks',async({page})=>{
- await open(page,{push:calendar({peakRules:'no',subs:[subs[1]],peaks:[],resets:[{sub:0,at:L(0,14,10),kind:'5h'}]})});
- const c=col(page,'calendar');
- await expect(c.locator('.cal-pk')).toHaveCount(0);await expect(c.locator('.cal-ch')).toHaveCount(1);await expect(c.locator('.cal-note')).toHaveCount(1);
-});
+// D466: the Calendar column is gone (the calendar is the 5th page, covered by d466-band-calendar.spec.mjs), so the
+// column wording, now/peak/reset rows and 12-hour window specs that lived here moved with it.
 
 for(const locale of ['en','zh-CN'])test(`G3-149 every plugin column hangs a nozzle under the hull, centred on its column (${locale})`,async({page})=>{
  await open(page,{locale});
@@ -112,7 +72,7 @@ for(const locale of ['en','zh-CN'])test(`G3-149 every plugin column hangs a nozz
   const bells=[...document.querySelectorAll('.ck-base .bz')].map(b=>{const r=b.querySelector('.bz-line').getBoundingClientRect();return {x:r.left+r.width/2,w:r.width,plugin:/\bplugin\b/.test(b.className)};});
   return {cols,bells};});
  expect(v.bells).toHaveLength(v.cols.length);
- expect(v.cols.filter(c=>c.plugin).length).toBeGreaterThanOrEqual(2);
+ expect(v.cols.filter(c=>c.plugin).length).toBeGreaterThanOrEqual(1);
  for(const [i,b] of v.bells.entries()){expect(Math.abs(b.x-v.cols[i].x)).toBeLessThan(1);expect(b.w).toBeGreaterThan(40);expect(b.plugin).toBe(!!v.cols[i].plugin);}
 });
 
