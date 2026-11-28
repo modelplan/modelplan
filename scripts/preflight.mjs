@@ -128,7 +128,8 @@ function main() {
     if (c.kind === "note") { console.log(`NOTE  ${c.name}: ${c.note}`); continue; }
     if (c.clean) rmSync(resolve(root, c.clean), { recursive: true, force: true });
     const label = `${c.name}: ${[c.cmd, ...c.args].join(" ")}`;
-    const r = spawnSync(c.cmd, c.args, { cwd: resolve(root, c.cwd ?? "."), encoding: "utf8" });
+    const args = c.args[0] === "--test" ? ["--test", "--test-concurrency=1", ...c.args.slice(1)] : c.args; // never parallel
+    const r = spawnSync(c.cmd, args, { cwd: resolve(root, c.cwd ?? "."), encoding: "utf8" });
     if (r.status === 0) { console.log(`PASS  ${label}`); ran.push(label); }
     else {
       failed++;
