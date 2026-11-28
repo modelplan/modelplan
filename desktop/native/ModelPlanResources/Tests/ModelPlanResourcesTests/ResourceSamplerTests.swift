@@ -28,6 +28,66 @@ final class ResourceHistoryAndFeedTests: XCTestCase {
         XCTAssertEqual(samples[0]["memTotal"] as? Int, Int(32 * GB))
         XCTAssertEqual(samples[0]["cpuUser"] as? Double, 19)
         XCTAssertTrue(JSONSerialization.isValidJSONObject(payload))
+        // D407: the network rates go as a pair, only when the reader has them.
+        var withNetwork = sample(at: 0); withNetwork.netIn = 1_200_000; withNetwork.netOut = 86_000
+        let row = try XCTUnwrap((ResourcePagePayload.data([withNetwork])["samples"] as? [[String: Any]])?.first)
+        XCTAssertEqual(row["netIn"] as? Int, 1_200_000); XCTAssertEqual(row["netOut"] as? Int, 86_000)
+        XCTAssertEqual(row.count, 16)
+        var half = sample(at: 0); half.netIn = 5
+        XCTAssertNil((ResourcePagePayload.data([half])["samples"] as? [[String: Any]])?.first?["netIn"], "never half a pair")
+    }
+
+    /// D413: the 1-hour view's one-minute folds: mean and the raw peak, at most an hour, cleared with the history.
+    func testMinuteFoldsKeepTheRawPeakForAnHourInMemory() throws {
+        var history = ResourceHistory(), feed = ResourcePageFeed()
+        // 5 s readings for 70 minutes.
+        for t in stride(from: 0.0, to: 4200, by: 5) { history.append(cpu(20, at: t)) }
+        XCTAssertEqual(history.minutes.count, ResourceHistory.minuteCapacity, "an hour of closed minutes")
+        // Fold boundary and eviction: exactly the 60 whole minutes before the open one, contiguous, oldest first.
+        let newest = try XCTUnwrap(history.samples.last)
+        let open = newest.unixMs - newest.unixMs % 60_000
+        XCTAssertEqual(history.minutes.first?.unixMs, open - 60 * 60_000, "the oldest closed minute holds the hour's start")
+        XCTAssertEqual(history.minutes.last?.unixMs, open - 60_000, "the open minute is not folded yet")
+        XCTAssertEqual(Set(zip(history.minutes, history.minutes.dropFirst()).map { $1.unixMs - $0.unixMs }), [60_000])
+        XCTAssertTrue(history.minutes.allSatisfy { $0.count == 12 }, "every closed minute folds its twelve 5 s readings")
+        XCTAssertLessThanOrEqual(history.samples.count, ResourceHistory.capacity, "raw samples stay ten minutes")
+        var short = ResourceHistory()
+        for t in stride(from: 0.0, to: 400, by: 5) { short.append(cpu(t == 185 ? 96 : 20, at: t)) }
+        let spike = try XCTUnwrap(short.minutes.first { $0.cpuPeak > 90 })
+        XCTAssertEqual(spike.cpuPeak, 96, accuracy: 0.001, "the peak keeps the 5 s reading")
+        XCTAssertLessThan(spike.cpu, 30, "the mean folds it")
+        XCTAssertEqual(spike.count, 12)
+        XCTAssertNil(feed.minutes(history, running: false))
+        XCTAssertEqual(feed.minutes(history, running: true)?.count, 60, "all minutes when the column starts")
+        XCTAssertNil(feed.minutes(history, running: true), "nothing until a new minute closes")
+        // macrevc-1225-2: the page stops (the host's push sees running false first) and a new one starts in the same
+        // minute: it gets the hour again.
+        XCTAssertNil(feed.next(history, running: false))
+        XCTAssertNotNil(feed.next(history, running: true))
+        XCTAssertEqual(feed.minutes(history, running: true)?.count, 60, "a restarted page gets the whole hour at once")
+        let body = ResourcePagePayload.data([cpu(20, at: 4200)], minutes: history.minutes)
+        let rows = try XCTUnwrap(body["minutes"] as? [[String: Any]])
+        XCTAssertEqual(rows.count, 60); XCTAssertEqual(Set(rows[0].keys), ["t", "cpu", "cpuPeak", "memory", "memoryPeak", "disk", "diskPeak"])
+        XCTAssertTrue(JSONSerialization.isValidJSONObject(body))
+        XCTAssertNil(ResourcePagePayload.data([cpu(20, at: 0)], minutes: [])["minutes"], "no minutes key when there are none")
+        history.removeAll()
+        XCTAssertTrue(history.minutes.isEmpty, "turning the plugin off drops the hour too")
+    }
+
+    /// D413: right after launch there is no closed minute (the page folds the open one itself); the first closes at the
+    /// first minute boundary and the feed sends it then.
+    func testTheFirstMinuteAfterLaunch() {
+        var history = ResourceHistory(), feed = ResourcePageFeed()
+        let start: Int64 = 1_795_000_040_000  // 20 s into a minute
+        XCTAssertEqual(start % 60_000, 20_000)
+        func at(_ ms: Int64) -> ResourceSample { var s = cpu(20, at: Double(ms - start) / 1000); s.unixMs = ms; return s }
+        for ms in stride(from: start, to: start + 40_000, by: 5_000) { history.append(at(ms)) }
+        XCTAssertTrue(history.minutes.isEmpty, "the launch minute is still open")
+        XCTAssertNil(feed.minutes(history, running: true), "nothing to send before a minute closes")
+        history.append(at(start + 40_000))
+        XCTAssertEqual(history.minutes.map(\.unixMs), [start - 20_000], "the launch minute closes at the boundary")
+        XCTAssertEqual(history.minutes.first?.count, 8, "a partial first minute keeps only what was read")
+        XCTAssertEqual(feed.minutes(history, running: true)?.count, 1)
     }
 
     func testFeedSendsTheHistoryOnStartThenOnlyNewSamples() {

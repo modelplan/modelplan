@@ -125,6 +125,7 @@ private actor D41Engine: EngineClient {
         show(sheet)
         let line = try XCTUnwrap(view("scope.firstRun.reads.claude", in: sheet) as? NSTextField)
         XCTAssertEqual(line.stringValue, FirstRunCopy.keychainLine.english)
+        XCTAssertNil(view("scope.firstRun.prereq.claude", in: sheet), "build 5: the Keychain instruction is shown once, not again as a prerequisite line")
         XCTAssertNotNil(view("scope.firstRun.keychain.allow", in: sheet), "FR-9-11: Allow sits on the Claude Code row")
         XCTAssertNotNil(view("scope.firstRun.keychain.later", in: sheet), "and so does Later")
         let box = try XCTUnwrap(view("scope.firstRun.tool.claude", in: sheet) as? NSButton)

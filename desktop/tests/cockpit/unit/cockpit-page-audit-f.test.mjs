@@ -8,7 +8,7 @@ import {positionalRemap,refreshComparison,comparisonInput} from '../../../cockpi
 import {fieldModel} from '../../../cockpit/.tmp/compiled/src/field-model.js';
 import {frontierPoints,frontierSvg} from '../../../cockpit/study/rocket-r1/mfd-pages/frontier.js';
 import {comparison} from '../../../cockpit/study/rocket-r1/mfd-pages/views.js';
-import {overviewBars,heatCells} from '../../../cockpit/study/rocket-r1/mfd-pages/overview.js';
+import {overviewBars} from '../../../cockpit/study/rocket-r1/mfd-pages/overview.js';
 import {md} from '../../../cockpit/study/rocket-r1/mfd-pages/fmt.js';
 import {setLanguage} from '../../../cockpit/study/rocket-r1/i18n.js';
 import '../../../cockpit/study/rocket-r1/strings/mfd.js';
@@ -94,6 +94,4 @@ test('audit F 6: daily bars and heatmap cells keep their calendar dates across t
  const svg=overviewBars(d,view,list),tipOf=total=>svg.match(new RegExp(`data-total="${total}"[^>]*data-tip="([^"\\n&]*)`))?.[1];
  assert.ok(tipOf(3000000).startsWith(label([9,31])),tipOf(3000000));
  assert.ok(tipOf(2000000).startsWith(label([10,1])),tipOf(2000000));
- const {cells}=heatCells(d,view,list),dateOf=total=>md(cells.find(c=>c.total===total).at,view);
- assert.equal(dateOf(3e6),label([9,31]));assert.equal(dateOf(2e6),label([10,1]));assert.equal(dateOf(1e6),label([10,2]));
 });

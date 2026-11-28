@@ -197,6 +197,15 @@ do {
         s.cards=[];try expect(DockNoticeProjection.selected(for:s,at:now)?.tone == .white,"credits are white")
         s.creditsKnown=false;try expect(DockNoticeProjection.selected(for:s,at:now)==nil,"unknown credits not fabricated")
     }
+    try test("D428 only a reset credit is banked: direct and legacy no-kind announcements are not") {
+        var s=fresh("a",.critical)
+        var credit=reset();credit.kind = .resetCredit
+        s.reset=credit;try expect(DockNoticeProjection.selected(for:s,at:now)?.banked == true,"announced reset credit is banked")
+        var direct=reset();direct.kind = .directReset
+        s.reset=direct;try expect(DockNoticeProjection.selected(for:s,at:now)?.banked == false,"announced direct reset is not banked")
+        s.reset=reset();try expect(DockNoticeProjection.selected(for:s,at:now)?.banked == false,"legacy no-kind announcement defaults to direct, not banked")
+        s.reset=reset(confirmed:true);try expect(DockNoticeProjection.selected(for:s,at:now)?.banked == false,"a confirmed direct reset is not banked")
+    }
     try test("notice UTC expiry boundaries and unknown/future readings") {
         var s=fresh("a");s.reset=reset()
         try expect(DockNoticeProjection.selected(for:s,at:now.addingTimeInterval(48*3600-100))==nil,"announcement expires at deadline")
@@ -307,17 +316,42 @@ do {
         let week=DockQuotaWindowInput(id:"week",period:.week,label:"Weekly",remainingPercent:20,resetsAt:now.addingTimeInterval(302400),durationSeconds:604800)
         var input=DockInstrumentInput(id:"sub",name:"Synthetic",windows:[week,five]);input.dataState = .fresh
         var result=try DockInstrumentProjection.evaluate(input,now:now)
-        try expect(result.outer?.windowID=="5h" && result.inner?.windowID=="week","shortest outer, weekly inner")
+        try expect(result.outer?.windowID=="week" && result.inner?.windowID=="5h","D399: weekly outer, 5-hour inner")
         try expect(result.readout=="20%" && result.selectedWindowID=="week" && result.litTimePoints(positions:37)==19,"selected tightest quota, clock actual time")
         input.selectedWindowID="5h";input.showUsedPercent=true;result=try DockInstrumentProjection.evaluate(input,now:now)
         try expect(result.readout=="20%" && result.status == .normal && result.litTimePoints(positions:37)==23,"used display does not invert status; clock lights time elapsed (D129)")
-        try expect(result.outer?.windowID=="5h" && result.inner?.windowID=="week","pin never swaps quota rings")
+        try expect(result.outer?.windowID=="week" && result.inner?.windowID=="5h","pin never swaps quota rings")
         input.windows=[week]; result=try DockInstrumentProjection.evaluate(input,now:now)
         try expect(result.outer?.windowID=="week" && result.inner==nil,"one weekly window uses the outer ring only")
         let day=DockQuotaWindowInput(id:"day",period:.day,label:"Day",remainingPercent:50,resetsAt:nil,durationSeconds:nil)
         let month=DockQuotaWindowInput(id:"month",period:.month,label:"Month",remainingPercent:30,resetsAt:nil,durationSeconds:nil)
         input.windows=[month,day,five];result=try DockInstrumentProjection.evaluate(input,now:now)
-        try expect(result.outer?.windowID=="5h" && result.inner?.windowID=="month","when weekly is absent the inner ring uses the longest remaining window")
+        try expect(result.outer?.windowID=="month" && result.inner?.windowID=="5h","D399: when weekly is absent the outer ring uses the longest window and the inner ring the shortest")
+    }
+    try test("D399 urgency shows on the inner ring by colour and brightness, not by position") {
+        func reading(five:Double,week:Double) throws -> DockInstrumentReading {
+            let a=DockQuotaWindowInput(id:"5h",period:.fiveHour,label:"5h",remainingPercent:five,resetsAt:nil,durationSeconds:nil)
+            let b=DockQuotaWindowInput(id:"week",period:.week,label:"Weekly",remainingPercent:week,resetsAt:nil,durationSeconds:nil)
+            var i=DockInstrumentInput(id:"s",name:"Synthetic",windows:[a,b]);i.dataState = .fresh
+            return try DockInstrumentProjection.evaluate(i,now:now)
+        }
+        let urgent=try reading(five:10,week:90), calm=try reading(five:90,week:90)
+        try expect(urgent.outer?.windowID=="week" && urgent.inner?.windowID=="5h","urgent 5 h keeps its inner position")
+        try expect(urgent.inner?.status == .critical && urgent.outer?.status == .normal,"urgent 5 h ring takes its own status colour")
+        try expect(urgent.readout=="10%" && urgent.selectedWindowID=="5h","the centre number stays the window with least remaining")
+        try expect(DockRingBrightness.arcOpacity(base:0.85,status:.critical,isInner:true)==1 && DockRingBrightness.arcOpacity(base:0.85,status:.warning,isInner:true)==1,"urgent inner arcs draw at full brightness")
+        try expect(DockRingBrightness.arcOpacity(base:0.85,status:.normal,isInner:true)==0.85 && DockRingBrightness.arcOpacity(base:0.85,status:.critical,isInner:false)==0.85,"calm inner and any outer arcs keep the recipe brightness")
+        try expect(calm.inner?.status == .normal,"a calm 5 h ring stays normal")
+        let low=try reading(five:90,week:10)
+        try expect(low.outer?.status == .critical && low.inner?.status == .normal && low.selectedWindowID=="week","a tight weekly shows on the outer ring and the centre")
+    }
+    try test("D399 a single-window subscription shows one ring") {
+        for period in [DockQuotaPeriod.fiveHour,.week] {
+            let w=DockQuotaWindowInput(id:"only",period:period,label:"Only",remainingPercent:40,resetsAt:nil,durationSeconds:nil)
+            var i=DockInstrumentInput(id:"s",name:"Synthetic",windows:[w]);i.dataState = .fresh
+            let r=try DockInstrumentProjection.evaluate(i,now:now)
+            try expect(r.outer?.windowID=="only" && r.inner==nil,"one window is the outer ring alone")
+        }
     }
     try test("B06 boundary status and unknown/stale/passed resets are not invented fuel") {
         for (r,expected) in [(0.0,DockQuotaStatus.critical),(25.0,.critical),(25.01,.warning),(26.0,.warning),(50.0,.warning),(50.01,.normal),(51.0,.normal),(100.0,.normal)] {
@@ -364,15 +398,15 @@ do {
             let rem=try reading(r,used:false),used=try reading(r,used:true)
             let remOuter:Double=rem.outer?.fraction ?? -1, remInner:Double=rem.inner?.fraction ?? -1
             let usedOuter:Double=used.outer?.fraction ?? -1, usedInner:Double=used.inner?.fraction ?? -1
-            let remTruth:Double=used.outer?.remainingFraction ?? -1
-            try expect(abs(remOuter-r/100)<1e-9 && abs(remInner-(100-r)/100)<1e-9,"remaining mode arcs = remaining")
-            try expect(abs(usedOuter-(1-r/100))<1e-9 && abs(usedInner-r/100)<1e-9,"used mode arcs = used")
+            let remTruth:Double=used.inner?.remainingFraction ?? -1
+            try expect(abs(remInner-r/100)<1e-9 && abs(remOuter-(100-r)/100)<1e-9,"remaining mode arcs = remaining")
+            try expect(abs(usedInner-(1-r/100))<1e-9 && abs(usedOuter-r/100)<1e-9,"used mode arcs = used")
             try expect(rem.outer?.status==used.outer?.status && rem.inner?.status==used.inner?.status && rem.status==used.status,"colours identical across modes")
-            try expect(rem.outer?.remainingFraction==used.outer?.remainingFraction && abs(remTruth-r/100)<1e-9,"remaining truth identical across modes")
+            try expect(rem.inner?.remainingFraction==used.inner?.remainingFraction && abs(remTruth-r/100)<1e-9,"remaining truth identical across modes")
         }
         let empty=try reading(0,used:true),full=try reading(100,used:true)
-        try expect(empty.outer?.fraction==1 && empty.outer?.status == .critical && empty.outer?.remainingFraction==0,"0% remaining: full used arc, still critical and used-up")
-        try expect(full.outer?.fraction==0 && full.outer?.status == .normal && full.outer?.remainingFraction==1,"100% remaining: empty used arc, still normal")
+        try expect(empty.inner?.fraction==1 && empty.inner?.status == .critical && empty.inner?.remainingFraction==0,"0% remaining: full used arc, still critical and used-up")
+        try expect(full.inner?.fraction==0 && full.inner?.status == .normal && full.inner?.remainingFraction==1,"100% remaining: empty used arc, still normal")
         let unknown=DockQuotaArc(windowID:"x",fraction:nil,status:.unknown)
         try expect(unknown.remainingFraction==nil,"unknown stays unknown")
     }
@@ -385,7 +419,7 @@ do {
                     input.showUsedPercent = used
                     let reading = try DockInstrumentProjection.evaluate(input,now:now,redBelow:threshold)
                     let expected:DockQuotaStatus = remaining <= threshold ? .critical:.warning
-                    try expect(reading.status == expected && reading.outer?.status == expected,"readout mode never changes inclusive remaining threshold on the five-hour outer ring")
+                    try expect(reading.status == expected && reading.outer?.status == expected,"readout mode never changes inclusive remaining threshold on a single-window ring")
                 }
             }
         }

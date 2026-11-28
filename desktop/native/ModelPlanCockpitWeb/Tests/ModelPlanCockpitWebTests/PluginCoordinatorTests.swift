@@ -99,6 +99,22 @@ final class PluginCoordinatorTests: XCTestCase {
     await coordinator.shutdown(); await client.stop()
   }
 
+  /// D376: the page's right-click Remove reaches the app as one valid id; an invalid one is dropped.
+  @MainActor func testPluginCloseIntentReachesTheAppOnlyWithAValidID() async {
+    var pages: [PluginPage] = []
+    let coordinator = EngineCockpitCoordinator { _ in let page = PluginPage(); pages.append(page); return page }
+    let client = HeldClient(); coordinator.bind(client: client)
+    var closed: [String] = []
+    coordinator.onPluginClose = { closed.append($0) }
+    coordinator.pluginsJSON = state
+    await coordinator.consume(.context(delivery()))
+    coordinator.open()
+    pages[0].onIntent?(.pluginClose("placeholder"))
+    pages[0].onIntent?(.pluginClose("Bad id"))
+    XCTAssertEqual(closed, ["placeholder"])
+    await coordinator.shutdown(); await client.stop()
+  }
+
   @MainActor func testRunningSetDrivesReadingsAndEndsWithThePageAndAtAClear() async {
     var pages: [PluginPage] = []
     let coordinator = EngineCockpitCoordinator { _ in let page = PluginPage(); pages.append(page); return page }

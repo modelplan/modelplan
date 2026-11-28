@@ -106,6 +106,25 @@ extension BridgeTests {
                          "0 is not false")
   }
 
+  /// D376 / CKP-PLG-54: the key's right-click Remove is a page action that carries one plugin id and needs the focused page.
+  func testPluginCloseNeedsFocusAndOneValidID() throws {
+    let state = CockpitBridgeState(context: try context())
+    let load = try ready(state)
+    _ = try state.setVisibility(.init(visible: true, occluded: false, key: true))
+    XCTAssertThrowsError(try state.accept(reply(load, "action", 2, extra: ["action": "pluginClose", "id": "calendar"]), source: source),
+                         "not before the host sent its plugin state")
+    _ = try state.setPlugins(pluginsBody)
+    _ = try state.setVisibility(.init(visible: true, occluded: false, key: false))
+    XCTAssertThrowsError(try state.accept(reply(load, "action", 3, extra: ["action": "pluginClose", "id": "calendar"]), source: source),
+                         "a close needs the focused page")
+    _ = try state.setVisibility(.init(visible: true, occluded: false, key: true))
+    XCTAssertEqual(try state.accept(reply(load, "action", 4, extra: ["action": "pluginClose", "id": "calendar"]), source: source),
+                   .action(.pluginClose("calendar")))
+    XCTAssertThrowsError(try state.accept(reply(load, "action", 5, extra: ["action": "pluginClose", "id": "Bad id"]), source: source))
+    XCTAssertThrowsError(try state.accept(reply(load, "action", 6, extra: ["action": "pluginClose", "id": ["calendar"]]), source: source))
+    XCTAssertThrowsError(try state.accept(reply(load, "action", 7, extra: ["action": "pluginClose"]), source: source))
+  }
+
   /// The one nested reply value is scanned with bounds before JSONSerialization can collapse duplicate keys.
   func testNestedPluginsReplyIsBounded() throws {
     let state = CockpitBridgeState(context: try context())

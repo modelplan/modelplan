@@ -1,0 +1,1 @@
+The Resources screen's network card keeps its graph when a single reading has no rates (a counter reset), and shows the empty state only when the whole range has none. The column's network row keeps the last known rate in the same case.

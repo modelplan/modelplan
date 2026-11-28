@@ -78,8 +78,8 @@
               "role": "session",
               "durationSeconds": 18000,
               "label": {
-                "en": "Session",
-                "zh": "会话"
+                "en": "Opus",
+                "zh": "Opus"
               },
               "limitKey": "main",
               "poolKey": "main",

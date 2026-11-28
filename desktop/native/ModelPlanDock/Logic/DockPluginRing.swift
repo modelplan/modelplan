@@ -83,11 +83,9 @@ public struct DockCardPluginStyle: Equatable, Sendable {
     public var red: Double, green: Double, blue: Double
     /// The faint segment after the fill (memory: cached).
     public var faintFill: Double?
-    /// A warning notch on the bar (CPU 70 %, disk 90 %).
-    public var notch: Double?
     public var tinted: Bool
-    public init(red: Double, green: Double, blue: Double, faintFill: Double? = nil, notch: Double? = nil, tinted: Bool = false) {
-        self.red = red; self.green = green; self.blue = blue; self.faintFill = faintFill; self.notch = notch; self.tinted = tinted
+    public init(red: Double, green: Double, blue: Double, faintFill: Double? = nil, tinted: Bool = false) {
+        self.red = red; self.green = green; self.blue = blue; self.faintFill = faintFill; self.tinted = tinted
     }
 }
 

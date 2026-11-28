@@ -116,7 +116,7 @@ import ModelPlanSettings
                    title: text.title, body: text.body)
     }
     /// A current reading of the event's row whose window restarted after the confirmation (direct resets only;
-    /// extra resets wait for the user to redeem them). An observation for the wording, never a confirmation.
+    /// banked resets wait for the user to redeem them). An observation for the wording, never a confirmation.
     static func localReadingRose(after event: EngineResetEvent, in composition: EngineDockMenuComposition) -> Bool {
         composition.accountMembers.members.contains { member in
             member.rowID == event.rowID && (event.planIDs.map { $0.contains(member.account.plan.id) } ?? true) &&

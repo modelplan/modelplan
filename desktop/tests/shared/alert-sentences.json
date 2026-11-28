@@ -221,6 +221,46 @@
    }
   },
   {
+   "name": "unreadable, Antigravity not running (G3-218)",
+   "input": {
+    "kind": "unreadable",
+    "subscription": {
+     "en": "Antigravity",
+     "zh": "Antigravity"
+    },
+    "cause": "runtime_missing",
+    "tool": "antigravity"
+   },
+   "en": {
+    "text": "Antigravity no reading · not running",
+    "short": "Antigravity no reading"
+   },
+   "zh": {
+    "text": "Antigravity 读不到 · 未运行",
+    "short": "Antigravity 读不到"
+   }
+  },
+  {
+   "name": "unreadable, runtime missing for another tool keeps not installed",
+   "input": {
+    "kind": "unreadable",
+    "subscription": {
+     "en": "Codex",
+     "zh": "Codex"
+    },
+    "cause": "runtime_missing",
+    "tool": "codex"
+   },
+   "en": {
+    "text": "Codex no reading · not installed",
+    "short": "Codex no reading"
+   },
+   "zh": {
+    "text": "Codex 读不到 · 未安装",
+    "short": "Codex 读不到"
+   }
+  },
+  {
    "name": "unreadable, sign-in expired",
    "input": {
     "kind": "unreadable",

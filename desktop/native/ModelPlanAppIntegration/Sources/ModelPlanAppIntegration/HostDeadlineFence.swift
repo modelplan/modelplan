@@ -32,6 +32,8 @@ struct HostDeadlineFence {
     private mutating func next() -> Ticket { generation &+= 1; return Ticket(generation: generation) }
     var isSuspended: Bool { if case .suspended = phase { return true }; return false }
     var isClosed: Bool { if case .closed = phase { return true }; return false }
+    /// True while a clear is to be followed by a recompute (a replacement), false for a withdrawal or pause.
+    var clearRecomputes: Bool { if case .clearing(_, let recompute) = phase { return recompute }; return false }
     func isCurrent(_ ticket: Ticket) -> Bool {
         guard ticket.generation == generation else { return false }
         switch phase { case .suspended, .closing, .closed: return false; default: return true }

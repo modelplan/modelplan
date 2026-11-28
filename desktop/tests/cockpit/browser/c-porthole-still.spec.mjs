@@ -3,9 +3,9 @@
 // (owner D39/D-H) only on an active, open page and never under Reduce Motion.
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
 import {appearance,commands,pageId,sample,shell} from '../fixture.mjs';
-const projections={'night-tall':'4ff2bad27654','day-tall':'52b72f54aee9','night-compact':'a92b7ce62cfe','day-compact':'28592ba812cd'};
+const projections={'night-tall':'4ff2bad27654','day-tall':'52b72f54aee9'};
 async function open(page,theme,tier){
-  await page.setViewportSize({width:636,height:tier==='tall'?890:640});
+  await page.setViewportSize({width:636,height:890});
   await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
   const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
   expect(await receive(send('load',{appearance:{...appearance,theme},shell:{...shell,tier}}))).toBe(true);
@@ -23,7 +23,7 @@ const state=page=>page.evaluate(()=>{
     covers:(r=>Math.abs(box.width-(r.width+48))<1&&Math.abs(box.height-(r.height+12))<1&&Math.abs(box.top-(r.top-12))<1&&Math.abs(box.left-(r.left-24))<1)(document.querySelector('.ck-portrow').getBoundingClientRect()),
     blend:getComputedStyle(field.querySelector('.ck-still-add')).mixBlendMode};
 });
-for(const theme of ['night','day'])for(const tier of ['tall','compact'])test(`porthole still ${theme} ${tier}`,async({page})=>{
+for(const theme of ['night','day'])for(const tier of ['tall'])test(`porthole still ${theme} ${tier}`,async({page})=>{
   await open(page,theme,tier);
   await expect(page.locator('.ck-field')).toHaveAttribute('data-still','ready');
   const s=await state(page);
@@ -33,14 +33,15 @@ for(const theme of ['night','day'])for(const tier of ['tall','compact'])test(`po
   const urls=await page.locator('.ck-still-layer').evaluateAll(es=>es.map(e=>getComputedStyle(e).backgroundImage.slice(5,-2)));
   for(const url of urls)expect((await page.request.get(url)).status(),url).toBe(200);
 });
-test('porthole still follows live theme and layout changes',async({page})=>{
+test('porthole still follows live theme changes; a short viewport keeps the one projection (D444)',async({page})=>{
   const {send,receive}=await open(page,'night','tall');
   await expect(page.locator('.ck-still')).toHaveAttribute('data-projection',projections['night-tall']);
   expect(await receive(send('appearance',{...appearance,theme:'day'}))).toBe(true);
   await expect(page.locator('.ck-still')).toHaveAttribute('data-projection',projections['day-tall']);
   await page.setViewportSize({width:636,height:640});
-  expect(await receive(send('shell',{...shell,tier:'compact'}))).toBe(true);
-  await expect(page.locator('.ck-still')).toHaveAttribute('data-projection',projections['day-compact']);
+  expect(await receive(send('shell',{...shell,tier:'compact'}))).toBe(false);
+  await expect(page.locator('#cockpit')).toHaveAttribute('data-layout','890');
+  await expect(page.locator('.ck-still')).toHaveAttribute('data-projection',projections['day-tall']);
   expect((await state(page)).animations).toBe(14);
 });
 test('porthole flicker follows the prototype timing and stops on every gate',async({page})=>{
@@ -64,7 +65,7 @@ test('porthole flicker follows the prototype timing and stops on every gate',asy
 });
 // D207/D209 (owner 2026-11-12): the night stills are the website's fleet r4 rockets, rendered from the same 3D models
 // with the porthole camera. The normal view paints exactly the pack's re-rendered layers at their recorded
-// rectangles and never asks for a WebGL context (CKP-PORT-01), also across a scope's theme/tier change.
+// rectangles and never asks for a WebGL context (CKP-PORT-01), also across a theme change.
 test('D207 the night still paints the r4 layers at their recorded rectangles and creates no WebGL context',async({page})=>{
   const {readFileSync}=await import('node:fs');
   const pack=JSON.parse(readFileSync(new URL('../../../official-visuals/runtime/porthole-stills/manifest.json',import.meta.url),'utf8'));
@@ -78,7 +79,21 @@ test('D207 the night still paints the r4 layers at their recorded rectangles and
   expect(bodies.map(b=>b.file).sort()).toEqual(projection.models.map(m=>m.body.file).sort());
   for(const m of projection.models){const b=bodies.find(x=>x.file===m.body.file);expect([b.left,b.top,b.width,b.height]).toEqual([m.body.left,m.body.top,m.body.width,m.body.height]);}
   expect(await receive(send('appearance',{...appearance,theme:'day'}))).toBe(true);
-  await page.setViewportSize({width:636,height:640});expect(await receive(send('shell',{...shell,tier:'compact'}))).toBe(true);
-  await expect(page.locator('.ck-still')).toHaveAttribute('data-projection',projections['day-compact']);
+  await expect(page.locator('.ck-still')).toHaveAttribute('data-projection',projections['day-tall']);
   expect(await page.evaluate(()=>window.glAsks)).toBe(0);
+});
+
+// Owner 11-25: the scene can sit lower in the glass (--ck-still-drop, fraction of the window height) and its glow can be
+// dimmed (--ck-still-dim). Owner D445: web/cockpit.css defaults to drop .15, dim 0; this test sets both explicitly.
+test('porthole scene drop and glow dim follow the port custom properties',async({page})=>{
+  await open(page,'night','tall');
+  const read=()=>page.evaluate(()=>{const s=document.querySelector('.ck-still-stage'),f=document.querySelector('.ck-field');
+    return {y:new DOMMatrixReadOnly(getComputedStyle(s).transform).f,H:f.clientHeight,dim:f.querySelectorAll('.ck-still-dim').length};});
+  await page.evaluate(()=>document.querySelector('.ck-port').style.setProperty('--ck-still-drop','0'));
+  await page.evaluate(async()=>{const r=document.documentElement;r.dataset.theme='day';await new Promise(f=>setTimeout(f,50));r.dataset.theme='night';await new Promise(f=>setTimeout(f,50));});
+  const before=await read();expect(before.dim).toBe(0);
+  await page.evaluate(()=>{const p=document.querySelector('.ck-port');p.style.setProperty('--ck-still-drop','.15');p.style.setProperty('--ck-still-dim','.25');});
+  await page.evaluate(async()=>{const r=document.documentElement;r.dataset.theme='day';await new Promise(f=>setTimeout(f,50));r.dataset.theme='night';await new Promise(f=>setTimeout(f,50));});
+  await expect.poll(async()=>(await read()).dim).toBe(1);
+  const after=await read();expect(Math.abs(after.y-before.y-after.H*.15)).toBeLessThan(1.5);
 });
