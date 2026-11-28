@@ -285,6 +285,7 @@
           "SET918NotificationKindsJourneyTests",
           "SET926CacheHintsJourneyTests",
           "SET926SystemFallbackJourneyTests",
+          "SettingsPluginsRefreshTests",
           "StatusHelpMenuTests",
           "StatusItemLaunchTests",
           "V05CardJourneyTests",
@@ -371,7 +372,8 @@
           "G1SettingsJourneys",
           "NativeShellBatchTests",
           "NightOnlyCockpitTests",
-          "NormalEntryActivityTests"
+          "NormalEntryActivityTests",
+          "SettingsPluginsRefreshTests"
         ]
       }
     },
