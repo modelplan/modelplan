@@ -228,24 +228,25 @@ test("post: re-check right before posting (head change, closed PR, duplicate del
 
 test("D484-5: a lane may replace its own latest block at the same head on a forced re-review; a merge is never posted over", () => {
   const items = (cs) => R.feed(cs);
+  // D482: ghglm counts (and so may replace its own block) only on a NORMAL head (t1n); on an IMPORTANT one (t1) it is advice.
   const blk = [comment(v("block", H, "ghglm"))];
-  assert.equal(decide({ comments: blk, glmTiers: [1] }).why, "this lane already reviewed this head", "no force: no automatic second verdict");
-  assert.equal(decide({ comments: blk, force: true, glmTiers: [1] }).review, true, "force re-reviews a lane's own block");
-  assert.equal(decide({ comments: [...blk, comment(v("merge", H, "ghglm"))], force: true, glmTiers: [1] }).why, "this lane already reviewed this head", "latest is a merge");
-  assert.equal(decide({ comments: [comment(v("merge", H, "ghglm")), comment(v("block", H, "ghglm"))], force: true, glmTiers: [1] }).review, true, "latest is a block");
-  assert.equal(S.postProblem({ pr: pr(), items: items(blk), head: H, lane: "ghsol", posted: "ghglm", force: true, files: t1, glmTiers: [1] }), null, "the replacement may post");
-  assert.match(S.postProblem({ pr: pr(), items: items(blk), head: H, lane: "ghsol", posted: "ghglm", files: t1, glmTiers: [1] }), /already has a verdict/, "not without force");
-  assert.match(S.postProblem({ pr: pr(), items: items([...blk, comment(v("merge", H, "ghglm"))]), head: H, lane: "ghsol", posted: "ghglm", force: true, files: t1, glmTiers: [1] }), /already has a verdict/, "a second delivery after the replacement never posts twice");
+  assert.equal(decide({ files: t1n, comments: blk, glmTiers: [1] }).why, "this lane already reviewed this head", "no force: no automatic second verdict");
+  assert.equal(decide({ files: t1n, comments: blk, force: true, glmTiers: [1] }).review, true, "force re-reviews a lane's own block");
+  assert.equal(decide({ files: t1n, comments: [...blk, comment(v("merge", H, "ghglm"))], force: true, glmTiers: [1] }).why, "this lane already reviewed this head", "latest is a merge");
+  assert.equal(decide({ files: t1n, comments: [comment(v("merge", H, "ghglm")), comment(v("block", H, "ghglm"))], force: true, glmTiers: [1] }).review, true, "latest is a block");
+  assert.equal(S.postProblem({ pr: pr(), items: items(blk), head: H, lane: "ghsol", posted: "ghglm", force: true, files: t1n, glmTiers: [1] }), null, "the replacement may post");
+  assert.match(S.postProblem({ pr: pr(), items: items(blk), head: H, lane: "ghsol", posted: "ghglm", files: t1n, glmTiers: [1] }), /already has a verdict/, "not without force");
+  assert.match(S.postProblem({ pr: pr(), items: items([...blk, comment(v("merge", H, "ghglm"))]), head: H, lane: "ghsol", posted: "ghglm", force: true, files: t1n, glmTiers: [1] }), /already has a verdict/, "a second delivery after the replacement never posts twice");
 });
 
 test("D484-5 (macrev2-1312-1): the replacement is posted by the provider of the blocking lane, never the other one", () => {
   const items = (cs) => R.feed(cs);
   const blk = [comment(v("block", H, "ghglm"))];
-  const d = decide({ comments: blk, force: true, glmTiers: [1] });
+  const d = decide({ files: t1n, comments: blk, force: true, glmTiers: [1] });
   assert.deepEqual(d.providers, ["glm"], "a ghglm block is replaced by GLM only (no openai, so no quota fallback to a ghsol merge)");
   assert.deepEqual(d.replace.lanes, ["(ghglm)"]);
-  assert.deepEqual(decide({ comments: [comment(v("block", H, "ghsol"))], force: true, glmTiers: [1] }).providers, ["openai"]);
-  const post = (posted, cs = blk) => S.postProblem({ pr: pr(), items: items(cs), head: H, lane: "ghsol", posted, force: true, files: t1, glmTiers: [1] });
+  assert.deepEqual(decide({ files: t1n, comments: [comment(v("block", H, "ghsol"))], force: true, glmTiers: [1] }).providers, ["openai"]);
+  const post = (posted, cs = blk) => S.postProblem({ pr: pr(), items: items(cs), head: H, lane: "ghsol", posted, force: true, files: t1n, glmTiers: [1] });
   assert.match(post("ghsol"), /would not replace the block of \(ghglm\)/, "a ghsol merge must not strand the ghglm block");
   assert.equal(post("ghglm"), null);
   assert.deepEqual(R.verdicts(items([...blk, comment(v("merge", H, "ghglm"))]), H, []).get("(ghglm)"), "merge");
@@ -253,7 +254,7 @@ test("D484-5 (macrev2-1312-1): the replacement is posted by the provider of the 
 
 test("D484-5 (macrev2-1312-2): the replacement brief carries the block and its Record, and a merge must dispose of every blocker", () => {
   const body = `BLOCKER X-1 (P2) - Trigger: a. Consequence: b. Acceptance test: c.\n\nRecord: ${H}\ncrit -> open X-1\n\n${v("block", H, "ghglm")}`;
-  const d = decide({ comments: [comment(body)], force: true, glmTiers: [1] });
+  const d = decide({ files: t1n, comments: [comment(body)], force: true, glmTiers: [1] });
   assert.deepEqual(d.replace.ids, ["X-1"]);
   assert.equal(d.record.sha, H);
   assert.match(d.record.text, /open X-1/);
@@ -272,6 +273,15 @@ test("D484-5 (macrev2-1312-2): the replacement brief carries the block and its R
   assert.equal(S.parseAnswer(ans("A-1 -> closed: done here\nB-2 -> fixed: done here"), H, ["A-1", "B-2"]).ok, true);
   assert.equal(S.parseAnswer(ans("A-1 -> closed: done here"), H, ["A-1", "B-2"]).ok, false, "every ID needs its own line");
   assert.equal(S.parseAnswer(ans("crit -> ok"), H, []).ok, true, "no prior block: unchanged");
+});
+
+test("D484-5 + D482: on an IMPORTANT head the Sol lane replaces its own block (OpenAI side); a ghglm block is advice and opens nothing", () => {
+  const d = decide({ files: t1, comments: [comment(v("block", H, "ghsol"))], force: true });
+  assert.equal(d.review, true);
+  assert.deepEqual(d.replace.lanes, ["(ghsol)"]);
+  assert.ok(d.providers.includes("openai") && !d.providers.includes("glm"), "posted by the Sol lane's provider only");
+  assert.equal(decide({ files: t1, comments: [comment(v("merge", H, "ghsol"))], force: true }).why, "this lane already reviewed this head");
+  assert.equal(decide({ files: t1, comments: [comment(v("block", H, "ghglm"))], force: true }).replace, null, "ghglm is advice there: nothing to replace");
 });
 
 test("D484-5: the gate takes the latest verdict per lane at a head, in both directions", () => {
