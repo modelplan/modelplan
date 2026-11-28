@@ -100,7 +100,8 @@ import ModelPlanWire
             case .keptOld:
                 XCTAssertTrue(texts.contains("3 小时前更新")); XCTAssertTrue(texts.contains("63%"))
             default:
-                XCTAssertTrue(texts.contains("未登录")); XCTAssertTrue(texts.contains("打开 Unread 并登录"))
+                // Master spec §3.4 (D474): one reading ladder, the rung then the one step (as WP15WidgetCardStateTests).
+                XCTAssertTrue(texts.contains("读不到 · 需要登录"), "\(texts)"); XCTAssertTrue(texts.contains("打开 Unread"), "\(texts)")
                 let buttons = view.subviews.compactMap { $0 as? NSButton }.map(\.title)
                 XCTAssertEqual(buttons, ["重新读取"])
             }

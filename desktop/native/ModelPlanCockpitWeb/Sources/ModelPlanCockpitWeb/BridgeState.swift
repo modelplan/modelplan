@@ -190,6 +190,9 @@ public enum CockpitReceipt: Equatable {
   case deadlinePending(UUID)
   /// D466: a deadline the page sent on its own (a news look from the user's input, outside any host message).
   case unsolicitedDeadline(UInt64?)
+  /// D466: the page's deadline report in answer to a host message that needs no receipt (`news`, `seen`). It moves the
+  /// refresh timing only; it is never a reason to send that message again (no message ping-pong).
+  case answerDeadline(UInt64?)
   case action(CockpitIntent)
 }
 public struct CockpitMessageSource {
@@ -395,6 +398,15 @@ public final class CockpitBridgeState {
   public private(set) var pluginsSent = false
   /// D466: true once the host sent a `news` message; the page then posts `newsLook` actions.
   public private(set) var newsSent = false
+  /// The request id of the last envelope built (set by `envelope`).
+  private var lastEnvelopeID: UUID?
+  /// The `news` / `seen` messages the page may still answer with a deadline report (bounded: older ones are forgotten,
+  /// and an answer to a forgotten one is then taken as unsolicited, which never re-sends anything either).
+  private var answerable: [UUID] = []
+  private func noteAnswerable() {
+    guard let id = lastEnvelopeID else { return }
+    answerable.append(id); if answerable.count > 8 { answerable.removeFirst(answerable.count - 8) }
+  }
   /// D474 decision 3: true once the host sent a `seen` message (the page answers it with a fresh deadline report).
   public private(set) var seenSent = false
   /// The clock a replayed look's `atUnixMs` is checked against (a test seam).
@@ -444,6 +456,7 @@ public final class CockpitBridgeState {
     }
     hostSequence += 1
     let id = UUID()
+    lastEnvelopeID = id
     var body: [String: Any] = [
       "version": 2, "pageId": pageID.uuidString, "requestId": id.uuidString,
       "sessionId": context.sessionID.uuidString, "storeEpoch": context.storeEpoch,
@@ -627,7 +640,7 @@ public final class CockpitBridgeState {
       return ["id": item.id, "status": item.status.rawValue, "untilUnixMs": until]
     }
     let raw = try envelope("news", extra: ["items": body])
-    newsSent = true
+    newsSent = true; noteAnswerable()
     return raw
   }
   /// D474 decision 3 (C13, C45; contract `desktop/tests/shared/seen-subscriptions.json`): the member keys that had a good
@@ -637,7 +650,7 @@ public final class CockpitBridgeState {
     guard ids.count <= 64, Set(ids).count == ids.count,
       ids.allSatisfy({ $0 != "all" && CockpitMemberScopes.isValidKey($0) }) else { throw CockpitBridgeError.invalidMessage }
     let raw = try envelope("seen", extra: ["ids": ids])
-    seenSent = true
+    seenSent = true; noteAnswerable()
     return raw
   }
   /// Plugin columns: one reading for a running plugin. Only after `plugins`, and only to a visible, unoccluded page.
@@ -750,6 +763,11 @@ public final class CockpitBridgeState {
       if deadlineReportRequest == id {
         deadlineReportRequest = nil; pageSequence = sequence
         return .nextDeadline(deadline)
+      }
+      // D466: the page answers `news` and `seen` with its deadline. That answer is not a news look of its own.
+      if let index = answerable.firstIndex(of: id) {
+        answerable.remove(at: index); pageSequence = sequence
+        return .answerDeadline(deadline)
       }
       // D466: a host that sends `news` also takes the page's unsolicited deadline: the page recorded a news look from the
       // user's own input (paging, the alert list, a strip hover) and its next deadline moved. It has a fresh request id

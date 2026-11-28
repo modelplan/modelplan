@@ -59,6 +59,29 @@ extension BridgeTests {
     XCTAssertThrowsError(try state.accept(reply(load, "action", 4, extra: ["action": "newsLook", "events": sixtyFive]), source: source))
   }
 
+  /// #1289 GUI (G3-108 shutter, cockpit opens 0.2 s -> 3 s): the page answers `news` and `seen` with a deadline report.
+  /// That answer is timing only (`answerDeadline`), never an unsolicited look, so the host never re-sends `news` for it:
+  /// a resend would be answered again, a message ping-pong that starved the main thread.
+  func testTheAnswerToNewsOrSeenIsNotAnUnsolicitedLook() throws {
+    let state = CockpitBridgeState(context: try context())
+    let load = try ready(state)
+    _ = try state.setVisibility(.init(visible: true, occluded: false, key: true))
+    func requestID(_ raw: String) throws -> String {
+      try XCTUnwrap((try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])?["requestId"] as? String)
+    }
+    let news = try requestID(try state.news([]))
+    XCTAssertEqual(try state.accept(reply(load, "nextDeadline", 2, extra: ["requestId": news, "deadlineUnixMs": "5000"]), source: source),
+                   .answerDeadline(5000))
+    let seen = try requestID(try state.seen([]))
+    XCTAssertEqual(try state.accept(reply(load, "nextDeadline", 3, extra: ["requestId": seen, "deadlineUnixMs": NSNull()]), source: source),
+                   .answerDeadline(nil))
+    // The same answer replayed under a newer sequence is no longer an answer; a fresh id is still the user's own look.
+    XCTAssertEqual(try state.accept(reply(load, "nextDeadline", 4, extra: ["requestId": news, "deadlineUnixMs": "6000"]), source: source),
+                   .unsolicitedDeadline(6000))
+    XCTAssertEqual(try state.accept(reply(load, "nextDeadline", 5, extra: ["requestId": UUID().uuidString, "deadlineUnixMs": "7000"]), source: source),
+                   .unsolicitedDeadline(7000))
+  }
+
   /// D466 (#1290): the page sends `nextDeadline` with a fresh request id when the user's own input records a news look.
   /// A host that sent `news` takes it (and moves its timing); any other host still refuses an uncorrelated report.
   func testUnsolicitedDeadlineFromANewsLookIsAccepted() throws {

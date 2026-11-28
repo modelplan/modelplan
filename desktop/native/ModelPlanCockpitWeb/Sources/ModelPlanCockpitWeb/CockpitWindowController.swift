@@ -1335,10 +1335,15 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       case .deadlinePending(let id):
         if receiptWatchdog.currentID != id { receiptWatchdog.wait(for: id) }
       case .unsolicitedDeadline(let value):
-        // D466: re-arm the refresh timing from it and re-answer the page's news (a look changes the clock's answers).
+        // D466: re-arm the refresh timing from it and re-answer the page's news only if the clock's answers changed (the
+        // look reaches the clock as a `newsLook` action, and `setNews` follows). Never forced: a forced resend is answered
+        // by another report, which would start a message ping-pong that starves the main thread (#1289 GUI, G3-108).
         // A display receipt wait in progress is left alone.
         freshnessDriver.accept(deadline: value)
-        publishNews(force: true)
+        publishNews()
+      case .answerDeadline(let value):
+        // D466: the page's report in answer to `news` / `seen`: timing only, nothing is sent back.
+        freshnessDriver.accept(deadline: value)
       case .nextDeadline(let value):
         if !bridge.hasPendingDisplay { setReadingDelayed(false, cause: "deadline") }
         receiptWatchdog.cancel(); freshnessDriver.accept(deadline: value)

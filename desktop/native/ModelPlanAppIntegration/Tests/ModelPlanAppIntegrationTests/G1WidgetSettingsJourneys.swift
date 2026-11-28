@@ -106,6 +106,12 @@ private actor G1RowsClient: EngineClient {
             let observed = ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: 1_800_000_000))
             accounts[0]["observedAt"] = observed
             for index in windows.indices { windows[index]["observedAt"] = observed }
+            // DOCK-3.7-03 / C19 (D474, #1289 R11 rounds 4-5): the restart that clears a confirmed direct reset is a window
+            // longer than 5 h whose cycle began within 60 s of the confirmation and not in the future. The weekly cycle
+            // begins now (the confirmation was published 1 s earlier); the 2099 default would compute a future start.
+            let restartedAt = Date(timeIntervalSince1970: 1_800_000_000)
+            windows[1]["resetsAt"] = ISO8601DateFormatter().string(from: restartedAt.addingTimeInterval(604800))
+            windows[1]["validUntil"] = windows[1]["resetsAt"]
         }
         accounts[0]["windows"] = windows
         if secondMember {
@@ -723,8 +729,16 @@ private actor G1RowsClient: EngineClient {
         let app = try await open(G1DisplayEnvironment(), profile: profile)
         defer { app.composition.dock.close() }
         let dock = app.composition.dock, view = dock.dockView
+        // Master spec §7.4 / C28 (D473) replaced DOCK-3.6-18's "no native tooltip" for the ignition key only: the key's
+        // tooltip says what a press does now ("Open cockpit"), the same words as its accessibility label.
+        let ignition = dock.ignitionLabelForChecks
+        let ignitionWords = [IgnitionCockpitState.closed, .dockedOpen, .detachedOpen].flatMap { [$0.text.value(.english), $0.text.value(.chinese)] }
         func inspect(_ node: NSView) {
-            XCTAssertNil(node.toolTip, "Dock controls must not expose native hover tooltips")
+            if let tip = node.toolTip, tip == ignition.toolTip, ignitionWords.contains(tip), node.accessibilityLabel() == tip {
+                // The D473 ignition tooltip.
+            } else {
+                XCTAssertNil(node.toolTip, "Dock controls must not expose native hover tooltips")
+            }
             if node is NSControl && node.isAccessibilityElement() {
                 XCTAssertFalse((node.accessibilityLabel() ?? "").isEmpty, "Accessible controls need a label")
             }
