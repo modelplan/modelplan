@@ -4,6 +4,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import * as V from "../merge-gates/visual.mjs";
 import * as R from "../merge-gates/rules.mjs";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const H = "a".repeat(40), OLD = "b".repeat(40), BASE = "c".repeat(40);
 const ME = { login: "guanbear", id: 11829005 };
@@ -192,4 +196,79 @@ test("rollout marker: rules.mjs carries the exact line the visual job looks for 
   const text = readFileSync(new URL("../merge-gates/rules.mjs", import.meta.url), "utf8");
   assert.ok(text.split("\n").includes(`export const VISUAL_DIFF_MARKER = "${R.VISUAL_DIFF_MARKER}";`));
   assert.equal(R.VISUAL_DIFF_MARKER, "D489-v1", "desktop/tests/cockpit/visual-diff.mjs MARKER_LINE names this value");
+});
+
+// macrevb-1320-3: a merge group never reuses a PR visual report. Replay: the PR passed against base A; main moved to B (an
+// ancestor of the head H) and changed the cockpit; H reverts that change, so the group commit's tree equals H's tree,
+// yet B -> group changes pixels.
+const workflow = readFileSync(new URL("../../.github/workflows/u11-cockpit.yml", import.meta.url), "utf8");
+function scopeScript() {
+  const lines = workflow.split("\n"), at = lines.findIndex((l) => l.trim() === "- id: scope");
+  const run = lines.findIndex((l, i) => i > at && l.trim() === "run: |");
+  const out = [];
+  for (let i = run + 1; i < lines.length && (lines[i].startsWith("          ") || !lines[i].trim()); i++) out.push(lines[i].slice(10));
+  return out.join("\n");
+}
+
+test("queue-scope: the visual path list is the gate's; the visual job runs on the group's own watched changes", () => {
+  const queuePaths = /QUEUE_PATHS: (.*)$/m.exec(workflow)[1];
+  assert.equal(queuePaths, V.VISUAL_PATHS, "VISUAL_PATHS mirrors u11-cockpit.yml QUEUE_PATHS");
+  const visualJob = workflow.slice(workflow.indexOf("\n  visual:\n"));
+  assert.match(visualJob, /if: \$\{\{ !cancelled\(\) && \(github\.event_name != 'merge_group' \|\| needs\.queue-scope\.outputs\.visual == 'true'\) \}\}/);
+  assert.doesNotMatch(visualJob.split("\n").slice(0, 6).join("\n"), /outputs\.run/, "the visual job never follows the tree-equal reuse");
+});
+
+test("queue-scope replay: tree-equal group whose head reverts a cockpit change main made since -> visual runs, checks reuse", () => {
+  const dir = mkdtempSync(join(tmpdir(), "queue-scope-"));
+  const g = (...args) => execFileSync("git", args, { cwd: dir, encoding: "utf8", env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.invalid", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.invalid" } }).trim();
+  const scope = (base) => {
+    const out = join(dir, ".out");
+    writeFileSync(out, "");
+    execFileSync("bash", ["-c", scopeScript()], { cwd: dir, env: { ...process.env, BASE: base, GITHUB_OUTPUT: out, QUEUE_PATHS: V.VISUAL_PATHS }, stdio: ["ignore", "ignore", "inherit"] });
+    return Object.fromEntries(readFileSync(out, "utf8").trim().split("\n").map((l) => l.split("=")));
+  };
+  try {
+    g("init", "-q", "-b", "main");
+    mkdirSync(join(dir, "desktop/cockpit/web"), { recursive: true });
+    writeFileSync(join(dir, "desktop/cockpit/web/cockpit.css"), ".grip{color:#fff}\n"); writeFileSync(join(dir, "README.md"), "a\n");
+    g("add", "-A"); g("commit", "-qm", "A");
+    writeFileSync(join(dir, "desktop/cockpit/web/cockpit.css"), ".grip{color:#f00}\n");
+    g("commit", "-qam", "B: main changes the grip"); const B = g("rev-parse", "HEAD");
+    g("checkout", "-qb", "pr");
+    writeFileSync(join(dir, "desktop/cockpit/web/cockpit.css"), ".grip{color:#fff}\n");
+    g("commit", "-qam", "H: PR reverts the grip"); const H = g("rev-parse", "HEAD");
+    g("checkout", "-q", "--detach", B); g("merge", "-q", "--no-ff", "--no-edit", H);
+    assert.equal(g("rev-parse", "HEAD^{tree}"), g("rev-parse", `${H}^{tree}`), "tree-equal group");
+    assert.deepEqual(scope(B), { visual: "true", run: "false" }, "other checks reuse the head; the visual job runs against B");
+    // a group whose head changes no watched path against its base skips the visual job
+    g("checkout", "-q", "--detach", B); writeFileSync(join(dir, "README.md"), "b\n"); g("commit", "-qam", "docs"); const D = g("rev-parse", "HEAD");
+    g("checkout", "-q", "--detach", B); g("merge", "-q", "--no-ff", "--no-edit", D);
+    assert.equal(scope(B).visual, "false");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("gate replay: a group that changes cockpit paths since its base needs a report bound to that base", () => {
+  const A = "1".repeat(40), B = "2".repeat(40);
+  const qr = (path, id, over = {}) => runOf(path, id, { head_branch: `gh-readonly-queue/main/pr-7-${B}`, event: "merge_group", pull_requests: [], ...over });
+  const queueRuns = R.QUEUE_WORKFLOWS.map((p, i) => qr(p, i + 1)), vrun = queueRuns.find((r) => r.path === V.VISUAL_WORKFLOW);
+  // the PR passed at PR level on its stale base A (zero change, base note)
+  const prRuns = [runOf(".github/workflows/ci.yml"), runOf(V.VISUAL_WORKFLOW, 2)];
+  const prRes = R.evaluatePr({ pr: pr(""), items: R.feed([comment(`VERDICT: merge @ ${H} (ghglm)`)], []), files: [{ filename: "desktop/cockpit/web/cockpit.css" }],
+    runs: prRuns, statuses: [], verifiedEdge: () => false, conf, visual: { run: prRuns[1], job, annotations: [meta({ base: A }), ...record().slice(1)], expectedBase: B } });
+  assert.equal(prRes.state, R.SUCCESS, prRes.why);
+  const step = { pr: 7, mergeProof: { ok: true }, prResult: prRes };
+  const group = (visual, visualRequired = true) => R.evaluateGroup({ steps: [step], queueRuns, groupSha: H, visual, visualRequired });
+  for (const [why, visual] of [["visual job skipped (old tree-equal reuse)", { run: vrun, job: { name: "visual", conclusion: "skipped" } }],
+    ["no visual job", { run: vrun, job: null }], ["no run read", { run: null }]]) {
+    const r = group(visual);
+    assert.equal(r.state, R.FAILURE, why);
+    assert.match(r.why, /^group changes cockpit paths since its base but .*; no visual comparison against the queue base$/, why);
+  }
+  assert.equal(group({ run: vrun, job: { name: "visual", conclusion: "skipped" } }, false).state, R.SUCCESS, "no watched change since the base: nothing to compare");
+  const pixels = [meta({ base: B }), ...record({ "full-day-en": [box(50, 660, 20, 40, { grip: 300 })] }).slice(1)];
+  const ran = group({ run: vrun, job, annotations: pixels });
+  assert.equal(ran.state, R.FAILURE, "the job ran against B: the reverted grip shows and is undeclared");
+  assert.match(ran.why, /full-day-en 50,660 20x40 \(300 px\) in grip/);
+  assert.equal(group({ run: vrun, job, annotations: [meta({ base: A }), ...pixels.slice(1)] }).state, R.FAILURE, "a report for A never binds the group");
+  assert.ok(V.visualPathsChanged(["desktop/cockpit/web/cockpit.css"]) && !V.visualPathsChanged(["README.md"]) && V.visualPathsChanged(null));
 });

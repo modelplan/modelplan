@@ -962,7 +962,9 @@ test("shipped files: design rules parse, gate workflows pass the workflow policy
     for (const job of names.filter((n) => n !== "queue-scope")) {
       const body = new RegExp(`^  ${job}:\\n((?:(?:    .*)?\\n)+)`, "m").exec(jobs)[1];
       assert.match(body, /needs: queue-scope/, `${path}: ${job} must wait for queue-scope`);
-      assert.match(body, /needs\.queue-scope\.outputs\.run == 'true'/, `${path}: ${job} must follow queue-scope`);
+      // D489 (macrevb-1320-3): U11's visual job follows queue-scope's own `visual` output, which never reuses the PR head's run.
+      const gate = path.endsWith("/u11-cockpit.yml") && job === "visual" ? /needs\.queue-scope\.outputs\.visual == 'true'/ : /needs\.queue-scope\.outputs\.run == 'true'/;
+      assert.match(body, gate, `${path}: ${job} must follow queue-scope`);
     }
   }
   const probe = readFileSync(join(root, ".github/workflows/merge-gates-probe.yml"), "utf8");

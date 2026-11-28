@@ -122,10 +122,15 @@ export function visualRun(runs, scope = () => true) {
 // not green (ciState already holds or fails it), a visual job skipped by queue-scope (a merge group whose tree is a PR
 // head's tree), or a run without a visual job (a PR run made before D489 landed; its merge group's run has the job).
 // A green visual job without a readable record fails; a record for another comparison is pending (PR) or fails (group).
-export function visualState(visual, bind) {
+// required (merge groups, macrevb-1320-3): the group changes a watched path against its queue base, so a missing run,
+// missing visual job or skipped visual job FAILS instead of passing; only a report bound to that base counts.
+export function visualState(visual, bind, { required = false } = {}) {
   const run = visual?.run;
-  if (!run || run.status !== "completed" || run.conclusion !== "success") return null;
-  if (!visual.job || visual.job.conclusion === "skipped") return null;
+  const none = (why) => (required ? { state: "failure", why: `changes cockpit paths since its base but ${why}; no visual comparison against the queue base`, outside: [] } : null);
+  if (!run) return none("has no U11 cockpit run");
+  if (run.status !== "completed" || run.conclusion !== "success") return null;
+  if (!visual.job) return none("its U11 cockpit run has no visual job");
+  if (visual.job.conclusion === "skipped") return none("its visual job was skipped");
   const fail = (why) => ({ state: "failure", why, outside: [] });
   if (visual.job.conclusion !== "success") return fail(`visual job ${visual.job.conclusion}`);
   const record = parseVisualRecord(visual.annotations);
@@ -155,6 +160,12 @@ export function bindPr(head, decl, expectedBase) {
     return decl;
   };
 }
+
+// The paths whose change can move a cockpit pixel: U11 cockpit web's pull_request/queue path list (QUEUE_PATHS in
+// .github/workflows/u11-cockpit.yml; a test keeps the two equal).
+export const VISUAL_PATHS = "^(desktop/cockpit/|desktop/tests/cockpit/|desktop/official-visuals/|desktop/third-party/fonts/|schema/app-cli/|source-policy\\.json$|scripts/check-source-policy\\.mjs$|scripts/check-visual-pack\\.mjs$|\\.github/workflows/u11-cockpit\\.yml$)";
+const VISUAL_PATHS_RE = new RegExp(VISUAL_PATHS);
+export const visualPathsChanged = (paths) => !Array.isArray(paths) || paths.some((p) => VISUAL_PATHS_RE.test(p));
 
 // The merge_group.base_sha of a queue run: GitHub names the queue branch gh-readonly-queue/main/pr-<n>-<base sha>.
 const QUEUE_BRANCH = /^gh-readonly-queue\/main\/pr-[0-9]+-([0-9a-f]{40})$/;

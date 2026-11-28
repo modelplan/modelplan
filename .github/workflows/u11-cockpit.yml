@@ -41,6 +41,11 @@ jobs:
     timeout-minutes: 3
     outputs:
       run: ${{ steps.scope.outputs.run }}
+      # D489 (macrevb-1320-3): the visual job never reuses the PR head's run. A PR report may be for an older base, and a
+      # tree-equal group can still change pixels against merge_group.base_sha (a head that reverts a change main made
+      # since). It runs whenever the group changes a watched path against the queue base; modelplan-gates fails a group
+      # that changes one without a visual report bound to that base (visual.mjs visualPathsChanged).
+      visual: ${{ steps.scope.outputs.visual }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -54,6 +59,11 @@ jobs:
         run: |
           set -eu
           read -r _ p1 p2 extra <<<"$(git rev-list --parents -n 1 HEAD) x"
+          if git diff --no-renames --name-only -z "$BASE" HEAD | grep -qzE "$QUEUE_PATHS"; then
+            echo "visual=true" >> "$GITHUB_OUTPUT"; echo "visual: group changes watched paths against the queue base"
+          else
+            echo "visual=false" >> "$GITHUB_OUTPUT"
+          fi
           if [ "$p1" = "$BASE" ] && [ "$extra" = x ] && git merge-base --is-ancestor "$BASE" "$p2" \
             && [ "$(git rev-parse 'HEAD^{tree}')" = "$(git rev-parse "$p2^{tree}")" ]; then
             echo "run=false" >> "$GITHUB_OUTPUT"; echo "PR head $p2 contains the queue base: reusing its checks"
@@ -138,7 +148,7 @@ jobs:
   # strict and fails on any changed pixel, as the retired baselines did, so no mixed-revision group skips both rules.
   visual:
     needs: queue-scope
-    if: ${{ !cancelled() && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
+    if: ${{ !cancelled() && (github.event_name != 'merge_group' || needs.queue-scope.outputs.visual == 'true') }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 20
     steps:

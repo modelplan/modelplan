@@ -66,6 +66,11 @@ run for the head:
     current base <8>; the merge queue re-checks against the exact base", so PRs do not stall after every main move.
   - Merge group: the base is `merge_group.base_sha`, read from the queue branch name
     `gh-readonly-queue/main/pr-<n>-<base sha>`, and the head is the group commit. Any other report FAILS the group.
+  - A merge group never reuses a PR's visual report. queue-scope's `visual` output runs the visual job whenever the
+    group changes a watched path against `merge_group.base_sha`, even when the group tree equals the PR head tree
+    (a head can revert a change main made after the PR's own run). The gate checks the same diff itself. A group
+    that changes a watched path without a visual report bound to its base fails: no run, no visual job, or a skipped
+    one.
 
 The job runs the PR's own code, like today's WebKit job. A PR that changes the diff script, the scene spec or the
 workflow is reviewed as such.

@@ -12,7 +12,7 @@ import { readFileSync, appendFileSync } from "node:fs";
 import { client } from "./github.mjs";
 import * as G from "./git.mjs";
 import { HOSTED_WORKFLOWS } from "./hosted.mjs";
-import { VISUAL_JOB, visualRun } from "./visual.mjs";
+import { VISUAL_JOB, queueBase, visualPathsChanged, visualRun } from "./visual.mjs";
 import { ABSENT_TITLE, MAP_PATH, RECORD_TITLE, parseMap } from "./gui-map.mjs";
 import { CONTEXT, GUI_COVER_TITLE, GUI_DEFER_JOB, parseCoverRecord, PR_GUI_TITLE, prGuiRunScope, DESKTOP_WORKFLOW, FAILURE, dataSyncRunId, parseFallbackUntil, parseGlmTiers, cancelledRunSuperseded, description, prRunScope, evaluateGroup, evaluatePr, queueRunScope, feed, isTrain, parseDesignConf, supersededPrs, TIER_TABLE, tiersFrom, trainMembers } from "./rules.mjs";
 
@@ -247,7 +247,16 @@ async function evaluateGroupAndPost(groupSha) {
   await readJobs(queueRuns.filter(queueRunScope(repo)).filter((r) => r !== desktop));
   const guiCover = desktopJobs ? await readGuiCover(groupSha, desktopJobs) : null;
   const visual = await readVisual(queueRuns, queueRunScope(repo));
-  const result = evaluateGroup({ steps, queueRuns, queueStatuses: combined.statuses ?? [], queueCheckRuns, desktopJobs, guiCover, groupSha, desktopRunId: desktop?.id ?? null, repo, visual });
+  // D489 (macrevb-1320-3): whether the group changes a watched path against its merge_group.base_sha (from the queue
+  // branch name). Unknown base or an unreadable diff counts as changed, so the group then needs a bound report.
+  let visualRequired = true;
+  const qBase = queueBase(visual.run ?? queueRuns.filter(queueRunScope(repo))[0]);
+  if (qBase && G.ensure(cwd, qBase)) {
+    const names = G.git(cwd, ["diff", "--no-renames", "--name-only", qBase, groupSha], { allowFail: true });
+    visualRequired = visualPathsChanged(names === null ? null : names.split("\n").filter(Boolean));
+  }
+  log({ group: groupSha, queueBase: qBase, visualRequired });
+  const result = evaluateGroup({ steps, queueRuns, queueStatuses: combined.statuses ?? [], queueCheckRuns, desktopJobs, guiCover, groupSha, desktopRunId: desktop?.id ?? null, repo, visual, visualRequired });
   await post(groupSha, { group: steps.map((s) => s.pr), ...result });
 }
 

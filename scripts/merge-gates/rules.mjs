@@ -1053,7 +1053,7 @@ export function prGuiState(runs, pr, classes, full = classes) {
   return { state: SUCCESS, why: `PR GUI run green (classes: ${list})` };
 }
 
-export function evaluateGroup({ steps, queueRuns, queueStatuses = [], queueCheckRuns = [], desktopJobs = null, guiCover = null, groupSha = null, desktopRunId = null, repo = REPO, now = Date.now(), visual = null }) {
+export function evaluateGroup({ steps, queueRuns, queueStatuses = [], queueCheckRuns = [], desktopJobs = null, guiCover = null, groupSha = null, desktopRunId = null, repo = REPO, now = Date.now(), visual = null, visualRequired = false }) {
   if (!steps.length) return { state: FAILURE, why: "no PR found in the merge group" };
   for (const s of steps) {
     const n = `#${s.pr}`;
@@ -1073,7 +1073,8 @@ export function evaluateGroup({ steps, queueRuns, queueStatuses = [], queueCheck
   // D489: the group commit's visual diff against the queue base may change only the areas its PRs declare (union), unless
   // one of them carries a trusted VISUAL-ACCEPT at its head.
   // The report must name this group commit and the run's merge_group.base_sha (visual.mjs bindGroup).
-  const vis = visualState(visual, bindGroup(groupSha, steps.map((s) => ({ decl: s.prResult.visual }))));
+  // visualRequired: the group changes a watched path against merge_group.base_sha (evaluate.mjs), so it needs that report.
+  const vis = visualState(visual, bindGroup(groupSha, steps.map((s) => ({ decl: s.prResult.visual }))), { required: visualRequired });
   if (vis?.state === FAILURE) return { state: FAILURE, why: `group ${vis.why}` };
   return { state: SUCCESS, why: `group of ${steps.length}: gates pass` };
 }
