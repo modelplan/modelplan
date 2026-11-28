@@ -1,0 +1,1 @@
+The Overview now caps its alert lines at two or three so the chart always keeps at least 55% of the page, with the rest behind one "+N" line that opens the full alert list, and the "On this Mac" tooltip no longer covers the totals headline.

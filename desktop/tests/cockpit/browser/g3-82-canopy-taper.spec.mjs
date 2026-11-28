@@ -15,13 +15,13 @@ import {inflateSync} from 'node:zlib';
 //   painted row);
 // - below the canopy the hull only widens.
 const TOL=6.4;
-// D451/D452: the canopy art is now the owner's own (grey set). The reference is re-derived from its solid-outline-890-2x.png
-// alpha (>= 128) the same way the old table reproduces from the v10 art: the row width in CSS px (device width / 2) at
+// D451/D452, D479: the canopy art is now the owner's own dark-graphite set (the owner accepted it on the confirm page, D478). The reference is re-derived from its solid-outline-890-2x.png
+// alpha (>= 128), i.e. the approved D478 render, the same way the old table reproduces from the v10 art: the row width in CSS px (device width / 2) at
 // first-painted-row + y for each y below. (The old art's solid outline gives the previous 240.5 ... 392.5 ... 621 values
 // to within 1 px, which is how the method was checked.) Rows from 260 down are the walls, unchanged.
 const APPROVED={
- tall:[[4,266],[6,314],[8,351.5],[10,382.5],[14,432],[20,484.5],[30,539],[40,564],[60,584],[80,593],[100,600],[120,608],
-  [140,614],[160,618],[180,620],[200,620],[220,620],[240,620],[260,620.5],[300,620.5],[400,620.5],[560,636],[700,636]],
+ tall:[[4,222.5],[6,269.5],[8,308],[10,340.5],[14,393],[20,451.5],[30,511],[40,539],[60,565],[80,578],[100,589],[120,598],
+  [140,605],[160,611],[180,616],[200,619],[220,620],[240,620],[260,620.5],[300,620.5],[400,620.5],[560,636],[700,636]],
 };
 const shapes=[
  {tier:'tall',closed:false,canvas:951,root:905,cap:244,approved:APPROVED.tall},
@@ -86,8 +86,13 @@ for(const scale of [1,2])test.describe(`@${scale}x`,()=>{
    const first=rows.findIndex(Boolean),off=[];
    // The approved render is 2x; at 1x a whole-pixel row cannot follow the arch's first rows (10-50 px per row), so 1x
    // starts where the arch is gentler.
-   for(const [y,want] of s.approved.filter(([y])=>scale>1||y>=14)){const r=rows[first+Math.round(y*scale)],got=r?r.r-r.l:0;
-    if(Math.abs(got-want)>TOL)off.push(`${y}: ${got} vs approved ${want}`);}
+   for(const [y,want] of s.approved.filter(([y])=>scale>1||y>=14)){const at=first+Math.round(y*scale),width=i=>{const r=rows[i];return r?r.r-r.l:0;},got=width(at);
+    // 1x only (owner-approved 2026-11-27, D478/D479 art): the first painted row is quantised to a whole pixel, so the
+    // arch (about 9.7 px of width per CSS px at y=14) can sit one device row off the 2x render it is compared with.
+    // A 1x row also passes when the painted row one device pixel above or below is within TOL; no row is skipped and
+    // TOL is unchanged. 2x compares the exact row.
+    const near=scale===1?[at-1,at+1]:[];
+    if(Math.abs(got-want)>TOL&&!near.some(i=>Math.abs(width(i)-want)<=TOL))off.push(`${y}: ${got} vs approved ${want}`);}
    expect(off,'outline vs the approved v10 A3/A1 render (1% of 636 px)').toEqual([]);
   }
  });

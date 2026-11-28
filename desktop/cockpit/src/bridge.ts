@@ -33,7 +33,13 @@ export type HostMessage = Header & (
   /** Plugin columns: a reading the host sampled for a running plugin. */
   {readonly type:'pluginData'; readonly id:string; readonly data:unknown} |
   /** Plugin columns: open this plugin's big screen (a native action such as the widget card's "Cockpit screen ›"). */
-  {readonly type:'pluginScreen'; readonly id:string});
+  {readonly type:'pluginScreen'; readonly id:string} |
+  /** D466 (#1289): the app's shared news clock, `newsUntil` per announcement (null = no longer news). */
+  {readonly type:'news'; readonly items:readonly NewsItem[]} |
+  /** D474 decision 3 (#1289): the subscription keys that have had a good reading on this Mac (seen-subscriptions.json). */
+  {readonly type:'seen'; readonly ids:readonly string[]});
+/** D466: one announcement's news clock as the host keeps it (`DockNewsClock`, key eventID#status). */
+export interface NewsItem {readonly id:string;readonly status:'announced'|'confirmed';readonly untilUnixMs:string|null}
 export interface CockpitView {
   /** G3-56: caution identities the host remembered as acknowledged; sent before `configure`. */
   restoreAcked?(ids:string[]):void;
@@ -54,12 +60,18 @@ export interface CockpitView {
   clear():void;
   nextDeadline():number|null;
   tick(now:number):void;
+  /** Review 11-24 #11: ends an expired history hold at once; every accepted host message calls it first, so no redraw or reveal shows held history past its end. */
+  expire?(now:number):void;
   active(active:boolean,now?:number):void;
   /** Open = visible and not occluded (key or not); plugins sample only while this is true (D124). */
   visible?(visible:boolean):void;
   /** Host plugin state; false when it does not fit this page's registry rules. */
   plugins?(state:PluginState):boolean;
   pluginData?(id:string,data:unknown):boolean;
+  /** D466: the host's shared news clock answers. */
+  news?(items:readonly {readonly id:string;readonly status:'announced'|'confirmed';readonly until:number|null}[]):void;
+  /** D474 decision 3: the host's seen subscriptions; columns appear only for these or a good reading now. */
+  seen?(ids:readonly string[]):void;
   /** Opens an enabled plugin's big screen (CKP-PLG-53); false when it is not enabled or the page cannot show it. */
   openPluginScreen?(id:string):boolean;
   dispose():void;
@@ -122,6 +134,9 @@ function message(raw:string,quarantined?:(data:unknown)=>boolean,refused?:(data:
     case 'plugins': if(!keys(['plugins'])||!parsePluginState(m.plugins)) return no('plugins.fields'); break;
     case 'pluginData': if(!keys(['id','data'])||typeof m.id!=='string'||!PLUGIN_ID.test(m.id)) return no('pluginData.fields'); break;
     case 'pluginScreen': if(!keys(['id'])||typeof m.id!=='string'||!PLUGIN_ID.test(m.id)) return no('pluginScreen.fields'); break;
+    case 'news': if(!keys(['items'])||!Array.isArray(m.items)||m.items.length>64||!m.items.every(x=>exact(x,['id','status','untilUnixMs'])&&identity(x.id)&&(x.status==='announced'||x.status==='confirmed')&&(x.untilUnixMs===null||timestamp(x.untilUnixMs)))) return no('news.fields'); break;
+    // D474 decision 3: at most 64 member keys, no repeats (tests/shared/seen-subscriptions.json pins the contract).
+    case 'seen': if(!keys(['ids'])||!Array.isArray(m.ids)||m.ids.length>64||!m.ids.every(k=>k!=='all'&&validScope(k))||new Set(m.ids).size!==m.ids.length) return no('seen.fields'); break;
     default:return no('msg.type');
   }
   return m as unknown as HostMessage;
@@ -229,6 +244,10 @@ export class CockpitBridge {
       this.emit('cleared',m.requestId); return true;
     }
     if(!same(m,this.context)) return this.no('recv.context');
+    // An expired history hold ends in the response to any accepted message that is not itself a new display or tick. It runs
+    // only past the context fence and never before the terminal unload, so a render failure here can neither change the
+    // context check nor keep the page from unloading (macrevc-1216-3).
+    if(m.type!=='display'&&m.type!=='tick'&&m.type!=='unload'){try{this.view.expire?.(this.clock());}catch{return this.no('expire.view');}}
     switch(m.type) {
       case 'appearance':
         // Recovery contract: a view exception is refused, never an unload; the page keeps what it shows.
@@ -287,6 +306,18 @@ export class CockpitBridge {
         // Only for a host that negotiated plugins; presentation only, so a screen the page cannot open is refused, never an unload.
         if(!this.pluginsNegotiated||!this.view.openPluginScreen?.(m.id))return this.no('pluginScreen.refused');
         this.sequence=BigInt(m.sequence);return true;
+      case 'news':
+        // D466: a host that sends the shared news clock also takes the page's first looks (newsLook).
+        {const first=!this.newsNegotiated;this.newsNegotiated=true;this.view.news?.(m.items.map(x=>({id:x.id,status:x.status,until:x.untilUnixMs===null?null:Number(x.untilUnixMs)})));
+        // The looks made before this first answer: one newsLook each, with its own time, for those the host still reports
+        // live; then the deadline the replayed looks may have moved.
+        if(first&&this.pendingLooks.length){const now=this.clock(),live=new Set(m.items.filter(x=>x.untilUnixMs!==null&&Number(x.untilUnixMs)>now).map(x=>x.id+'\u0000'+x.status));
+          for(const p of this.pendingLooks)if(live.has(p.id+'\u0000'+p.status))this.emit('action',this.requestId(),{action:'newsLook',events:[{id:p.id,status:p.status,atUnixMs:String(p.at)}]});
+          this.deadlineChanged();}
+        this.pendingLooks=[];}
+        this.sequence=BigInt(m.sequence);this.reportDeadline(m.requestId);return true;
+      case 'seen':
+        this.view.seen?.(m.ids);this.sequence=BigInt(m.sequence);this.reportDeadline(m.requestId);return true;
       default:return this.no('recv.type');
     }
   }
@@ -345,6 +376,23 @@ export class CockpitBridge {
     if(action==='openHistory'?(!tool||!this.historyTools.has(tool)):tool!==undefined) return false;
     this.emit('action',this.requestId(),{action,...(tool?{tool}:{})});return true;
   }
+  /** D466: a look recorded outside a host message (paging, opening the alert list) changed the news deadline. */
+  deadlineChanged():void {if(this.context&&!this.ended)this.reportDeadline(this.requestId());}
+  private newsNegotiated=false;
+  private pendingLooks:{id:string;status:'announced'|'confirmed';at:number}[]=[];
+  /** D466: announcements first looked at in the cockpit (open with them drawn); the host records them in its shared news
+   *  clock (`recordNewsLook`). Posted only to a host that sent a `news` message. */
+  newsLook(events:readonly {readonly id:string;readonly status:'announced'|'confirmed'}[],at?:number):boolean {
+    if(events.length===0||events.length>64||!events.every(e=>identity(e.id)&&(e.status==='announced'||e.status==='confirmed')))return false;
+    // macrevb-1290-1 (late negotiation): a look made before the host sent `news` is kept, with its time, and replayed once
+    // the host's first answer still reports it live.
+    if(!this.newsNegotiated){
+      if(typeof at==='number'&&Number.isSafeInteger(at)&&at>0)for(const e of events)if(!this.pendingLooks.some(p=>p.id===e.id&&p.status===e.status)&&this.pendingLooks.length<64)this.pendingLooks.push({id:e.id,status:e.status,at});
+      return false;
+    }
+    if(!this.isVisible()||!this.context)return false;
+    this.emit('action',this.requestId(),{action:'newsLook',events:events.map(e=>({id:e.id,status:e.status}))});return true;
+  }
   private pluginsNegotiated=false;
   /** Plugin columns: a plugin edit made on the page (right-click Remove or the + menu). Posted only to a host that sent its plugin state. */
   pluginsEdit(state:PluginState):boolean {
@@ -364,6 +412,6 @@ export class CockpitBridge {
   unload():void {
     if(this.ended) return;
     this.view.clear();this.historyTools.clear();this.scopeMembers.clear();this.allScopeMembers.clear();this.hasDisplay=false;this.view.active(false);this.view.dispose();
-    this.pendingAck=null;this.context=null;this.shellState=null;this.loadRequestId=null;this.retiredEpochs.clear();this.retiredSessions.clear();this.ended=true;this.loaded=false;
+    this.pendingAck=null;this.pendingLooks=[];this.context=null;this.shellState=null;this.loadRequestId=null;this.retiredEpochs.clear();this.retiredSessions.clear();this.ended=true;this.loaded=false;
   }
 }

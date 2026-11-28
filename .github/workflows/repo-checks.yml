@@ -88,6 +88,9 @@ jobs:
       - name: "source-policy: mac-compile runner tests"
         if: ${{ !cancelled() }}
         run: node --test scripts/tests/mac-compile-run.test.mjs
+      - name: "source-policy: mac-compile hosted overflow tests"
+        if: ${{ !cancelled() }}
+        run: node --test scripts/tests/mac-compile-overflow.test.mjs
       - name: "source-policy: native-headless build seed tests"
         if: ${{ !cancelled() }}
         run: node --test scripts/tests/mac-compile-headless-seed.test.mjs
@@ -106,6 +109,9 @@ jobs:
       - name: "source-policy: merge-gates hosted-leg tests (D314)"
         if: ${{ !cancelled() }}
         run: node --test scripts/tests/merge-gates-hosted.test.mjs
+      - name: "source-policy: GUI test map (D481)"
+        if: ${{ !cancelled() }}
+        run: node --test scripts/tests/gui-test-map.test.mjs
       - name: "source-policy: dependency wake tests"
         if: ${{ !cancelled() }}
         run: node --test scripts/tests/dependency-wake.test.mjs

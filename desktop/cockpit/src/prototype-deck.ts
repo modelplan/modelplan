@@ -43,7 +43,7 @@ const SEG_CHEVRON='<svg class="ch" viewBox="0 0 4 7" width="4" height="7" aria-h
 const SEG_OVERVIEW='<svg class="ic" viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><path d="M2 8.5V5.5M5 8.5V2M8 8.5V4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
 const cockpitPageRegistry=Object.freeze([Object.freeze({module:overview,key:'host.pageOverview'}),Object.freeze({module:plans,key:'host.pageSubscription'}),Object.freeze({module:tune,key:'host.pageEffort'}),Object.freeze({module:where,key:'host.pageBreakdown'})]);
 export const cockpitPageIds=Object.freeze(cockpitPageRegistry.map(p=>p.module.id));
-export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boolean,fixture:PrototypeDetailsFixture=unavailablePrototypeDetailsFixture(),redBelow:()=>number=()=>effectiveRedBelow(undefined),reportPins:(ids:string[])=>void=()=>{},onSettings:()=>boolean=()=>false,onRange?:(range:CockpitRange)=>boolean,onRefresh:(key:string)=>boolean=()=>false,appRange?:()=>CockpitRange,isRefreshing:()=>boolean=()=>false,onOpenCompare:()=>boolean=()=>false){
+export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boolean,fixture:PrototypeDetailsFixture=unavailablePrototypeDetailsFixture(),redBelow:()=>number=()=>effectiveRedBelow(undefined),reportPins:(ids:string[])=>void=()=>{},onSettings:()=>boolean=()=>false,onRange?:(range:CockpitRange)=>boolean,onRefresh:(key:string)=>boolean=()=>false,appRange?:()=>CockpitRange,isRefreshing:()=>boolean=()=>false,onOpenCompare:()=>boolean=()=>false,beforeRedraw:()=>void=()=>{}){
  const scale=root.querySelector<HTMLElement>('.fd-scale')!,channels=root.querySelector<HTMLElement>('.fd-chs')!,mfd=root.querySelector<HTMLElement>('.dk-mfd')!;
  let details=fixture;const fixturePublication=fixture.publication!==null;fixture=unavailablePrototypeDetailsFixture();
  let publicationKey:string|null=null;
@@ -238,7 +238,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
  // G3-171: one source for the range. The app's (the header's) range is read at every paint; the copy below is only the
  // fallback of a deck mounted without an app (tests).
  const rangeNow=():CockpitRange=>appRange?.()??uiRangeLocal;const pages=cockpitPageRegistry,modules=pages.map(p=>p.module);let uiWhere='proj',uiRangeLocal:CockpitRange=INITIAL_RANGE,painted:CockpitRange|null=null,uiChart='bars',uiStack=true,uiModels:'list'|'chart'='list',listPick:string|null=null,uiSubTab='now',uiCycle:string|null=null,gridFill:{w:number;h:number}|null=null;
- const buttons=pages.map((item,i)=>{const b=node('button','pk'),caption=node('span'),led=node('i','pk-led');b.type='button';b.dataset.mfd='page:'+modules[i].id;b.dataset.mat='part';b.append(caption,led);b.onclick=e=>{if(!e.isTrusted)return;alertsView=null;if(compare){delete previews[compare.modelId];compare=null;}returnPage=null;tuneModel=null;selected=i;paint();};bar.append(b);return {b,caption};});
+ const buttons=pages.map((item,i)=>{const b=node('button','pk'),caption=node('span'),led=node('i','pk-led');b.type='button';b.dataset.mfd='page:'+modules[i].id;b.dataset.mat='part';b.append(caption,led);b.onclick=e=>{if(!e.isTrusted)return;alertsView=null;if(compare){delete previews[compare.modelId];compare=null;}returnPage=null;tuneModel=null;selected=i;beforeRedraw();paint();};bar.append(b);return {b,caption};});
  // D387 / D413: while a plugin screen is open (Calendar, Resources; D400: a HUD click opens the Models page, which is
  // not a screen) the Overview slot itself becomes the switch "‹ Overview │ icon + short name": the same 86 px grid cell, never wider, in the pressed key body. The left half returns
  // (as Escape does); the right half is the current screen, lit, and does nothing. One Tab stop: the arrows move between
@@ -248,7 +248,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
  segBack.type='button';segBack.dataset.mfd='seg:overview';segBack.setAttribute('role','tab');
  segCur.type='button';segCur.dataset.mfd='seg:screen';segCur.setAttribute('role','tab');
  seg.append(segBack,sepEl,segCur);bar.append(seg);
- const toOverview=()=>{if(screenView!==null){closeScreenHook?.();screenView=null;}alertsView=null;if(compare){delete previews[compare.modelId];compare=null;}returnPage=null;tuneModel=null;selected=0;paint();buttons[0]?.b.focus({preventScroll:true});};
+ const toOverview=()=>{if(screenView!==null){closeScreenHook?.();screenView=null;}alertsView=null;if(compare){delete previews[compare.modelId];compare=null;}returnPage=null;tuneModel=null;selected=0;beforeRedraw();paint();buttons[0]?.b.focus({preventScroll:true});};
  segBack.onclick=e=>{if(e.isTrusted)toOverview();};
  // Roving tab stop: the half that has focus is the switch's one Tab stop.
  for(const [a,b] of [[segBack,segCur],[segCur,segBack]] as const)a.onfocus=()=>{a.tabIndex=0;b.tabIndex=-1;};
@@ -279,7 +279,15 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   const lines=(source.getAttribute('data-tip')??'').split('\n').filter(Boolean);if(!lines.length){hideTip();return;}
   tip.replaceChildren(...lines.map((line,i)=>node('span',i?'':'h',line)));tip.hidden=false;
   const box=screen.getBoundingClientRect(),r=source.getBoundingClientRect(),w=tip.offsetWidth,h=tip.offsetHeight;
-  const left=r.right-box.left+6+w<=box.width?r.right-box.left+6:Math.max(0,r.left-box.left-6-w),top=Math.min(Math.max(0,r.top-box.top),Math.max(0,box.height-h));
+  let left=r.right-box.left+6+w<=box.width?r.right-box.left+6:Math.max(0,r.left-box.left-6-w),top=Math.min(Math.max(0,r.top-box.top),Math.max(0,box.height-h));
+  // A row-wide source (the totals row's "On this Mac") has no room beside it, and beside it would cover its own headline:
+  // the tip goes just below it (above it when nothing fits below), at the pointer's side.
+  // Another row-wide source (an alert line above the totals row) must not land on that headline either: the candidates are
+  // below the row, above it, then over the row itself; the first one that is clear of the headline and inside the screen wins.
+  if(r.width>box.width*.6){left=Math.min(Math.max(0,e.clientX-box.left),Math.max(0,box.width-w));
+   const head=source.matches('.ov-top')?null:page.querySelector('.ov-top')?.getBoundingClientRect(),clear=(y:number)=>!head||y+box.top+h<=head.top||y+box.top>=head.bottom;
+   const spots=[r.bottom-box.top+4,r.top-box.top-4-h,r.top-box.top];
+   top=spots.find(y=>y>=0&&y+h<=box.height&&clear(y))??spots.find(clear)??spots[0];top=Math.max(0,top);}
   tip.style.left=left+'px';tip.style.top=top+'px';};
  screen.onpointerleave=hideTip;
  // Public projection only: v1.1 charts, rankings and full session lists are
@@ -319,8 +327,8 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   const accounts=members.map(({key,row,account})=>({id:ids.get(key)!,name:titleOf(row,account),short:locale==='en'?row.name.en:row.name.zh,plan:planOf(account),vendor:row.vendorKey&&Object.hasOwn(vendorPalette,row.vendorKey)?row.vendorKey:'unknown',colour:colours.get(key)!,logo:row.vendorKey&&Object.hasOwn(subscriptionMarks,row.vendorKey)?subscriptionMarks[row.vendorKey]!:'',source:'native',state:account.valueState==='current'?'ok':account.valueState==='retained'?'stale':'loading',ageMin:ageOf(account),support:'quota-only',pool:null,windows:account.valueState==='none'?[]:account.windows.filter(w=>!scopedWindow(w)).map(w=>({kind:w.role==='session'?'5h':w.role==='weekly'?'week':w.role==='monthly'?'month':w.role==='daily'?'day':'other',label:locale==='en'?w.label.en:w.label.zh,remaining:displayWindow(account,w,now)?w.remainingPercent:null,resetIn:displayWindow(account,w,now)&&w.resetsAt&&Number.isFinite(Date.parse(w.resetsAt))&&Date.parse(w.resetsAt)>=now?(Date.parse(w.resetsAt)-now)/60000:null,resetAt:displayWindow(account,w,now)&&w.resetsAt&&Number.isFinite(Date.parse(w.resetsAt))?Date.parse(w.resetsAt):null,...runOutFields(runOutMinutes(data,row.id,account,w,now)),elapsed:null})),extras:account.valueState==='none'?[]:account.windows.filter(scopedWindow).map(w=>({kind:'other',label:locale==='en'?w.label.en:w.label.zh,remaining:displayWindow(account,w,now)?w.remainingPercent:null,resetIn:displayWindow(account,w,now)&&w.resetsAt&&Number.isFinite(Date.parse(w.resetsAt))&&Date.parse(w.resetsAt)>=now?(Date.parse(w.resetsAt)-now)/60000:null,resetAt:displayWindow(account,w,now)&&w.resetsAt&&Number.isFinite(Date.parse(w.resetsAt))?Date.parse(w.resetsAt):null,...runOutFields(runOutMinutes(data,row.id,account,w,now)),elapsed:null})),cards:[],credits:scope==='all'&&prototypeEngineSupplement(account,data??undefined).reserveCredits?.balance!=null&&['credits','points'].includes(prototypeEngineSupplement(account,data??undefined).reserveCredits?.unit??'')?{balance:prototypeEngineSupplement(account,data??undefined).reserveCredits!.balance,drawing:null}:null,todayTokens:prototypeEngineSupplement(account,data??undefined).todayTokens,forecast:forecastOf(account.windows.filter(w=>!scopedWindow(w)).map(w=>runOutFields(runOutMinutes(data,row.id,account,w,now)))),peak:null,resets:resetHistory(data,account.subscriptionRef,row.id,now),usageStats:usageStats(data,account.subscriptionRef)}));
   // Owner D38: urgency order, subscription and time left; resets and stale readings are list-only (blue).
   // The overview follows the selected scope; the full list (the global lamp's destination) never does.
-  const allAlerts=data?cautionItems(data,now,redBelow()).map(x=>({member:x.member,level:x.level,stable:x.stable,text:locale==='en'?x.text.en:x.text.zh,detail:x.detail?locale==='en'?x.detail.en:x.detail.zh:null,tip:x.tip?locale==='en'?x.tip.en:x.tip.zh:null,settings:x.settings===true,kind:x.kind})):[];
-  const alerts=allAlerts.filter(x=>scope==='all'||x.member===scope).map(({level,text,kind})=>({level,text,kind}));
+  const allAlerts=data?cautionItems(data,now,redBelow()).map(x=>({member:x.member,level:x.level,stable:x.stable,text:locale==='en'?x.text.en:x.text.zh,detail:x.detail?locale==='en'?x.detail.en:x.detail.zh:null,tip:x.tip?locale==='en'?x.tip.en:x.tip.zh:null,settings:x.settings===true,kind:x.kind,dot:x.dot??null,news:x.news??null,topic:x.topic,who:x.who?locale==='en'?x.who.en:x.who.zh:null})):[];
+  const alerts=allAlerts.filter(x=>scope==='all'||x.member===scope).map(({level,text,kind,dot,news})=>({level,text,kind,dot,news}));
   // Public model data for the frontier (owner D39/D-B): the shared selection for this scope, ten at most.
   const published=publishedFleet(data,scope,now);
   // macrevc-1058-4: the Models list also shows an eligible model the history ranks as used even when it falls outside the ten-model field.
@@ -372,6 +380,8 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
    const back=t(pages[selected].module.title),mark=alertsView.from==='caution'?alertsView.mark??null:null,flashRow=alertsView.flash===true;alertsView.flash=false;
    page.className='mfd-page pg-alerts is-view';
    page.innerHTML=alertsPage(d.allAlerts,{back:{label:t('mfd.back',{p:back}),aria:t('mfd.backAria',{p:back})},mark,flash:flashRow,ack:alertsView.from==='caution'});
+   // D474 §6.2: a name that does not fit fades over its last 12 pt (only when it overflows); the time is never cut.
+   for(const who of page.querySelectorAll<HTMLElement>('.al-who'))who.classList.toggle('over',who.scrollWidth>who.clientWidth);
    footer.replaceChildren(...Array.from({length:3},()=>{const e=node('span','ok soft off');e.dataset.mat='part';e.setAttribute('aria-hidden','true');return e;}));
    page.onclick=e=>{
     if(!e.isTrusted)return;const target=e.target as HTMLElement;

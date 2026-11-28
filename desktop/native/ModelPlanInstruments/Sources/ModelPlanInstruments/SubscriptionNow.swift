@@ -116,8 +116,8 @@ public struct SubscriptionNowSnapshot: Equatable, Sendable {
                 let reset:String
                 switch cell.publicReset {
                 case .announced(let at):reset=zh ? " · 公开重置预告 · "+format.future(at,now:now):" · Public reset announced · "+format.future(at,now:now)
-                case .confirmedAwaitingReading:reset=zh ? " · 已重置 · 等读数":" · Reset · awaiting reading"
-                case nil:reset=""
+                // D466: a confirmed reset is not drawn on the window; its reading says whether it restarted.
+                case .confirmedAwaitingReading,nil:reset=""
                 }
                 rows.append(row(prefix+".window."+cell.id,windowName(cell),text+reset,.quota,cell.level,.init(cell),deadline))
             }

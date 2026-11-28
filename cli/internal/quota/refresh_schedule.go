@@ -127,11 +127,16 @@ func PlanScopeRefresh(p Paths, scope string, now time.Time) (ScopeRefreshPlan, e
 			}
 		}
 	}
+	if definition.Tool == "antigravity" && antigravityRetryDue(p) {
+		next = time.Time{} // Settings Retry: the read is due now
+	}
 	switch definition.Tool {
 	case "copilot":
 		next = laterRefreshTime(next, loadCopilotState(p.Cache).NextAt)
 	case "antigravity":
-		next = laterRefreshTime(next, loadAntigravityState(p.Cache).NextAt)
+		if !antigravityRetryDue(p) {
+			next = laterRefreshTime(next, loadAntigravityState(p.Cache).NextAt)
+		}
 	case "zai":
 		next = laterRefreshTime(next, loadZaiConfigState(p.Cache).NextAt)
 	}

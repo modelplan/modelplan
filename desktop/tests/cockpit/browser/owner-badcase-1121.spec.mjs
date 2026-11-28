@@ -141,6 +141,93 @@ test('B1 the held history never crosses the privacy barrier and expires after te
  expect(await receive(send('display',{...next,data:unread()}))).toBe(true);
  await expect(empty(page)).toHaveCount(1);
 });
+// Review 11-24 #11: the hold ends on its own deadline, and a redraw never restarts it.
+const HOLD=10*60*1000;
+test('B1 the held history ends at its ten-minute deadline with no new reply',async({page})=>{
+ const {send,receive}=await open(page,{data:recorded()});
+ await page.clock.setFixedTime(new Date(NOW+60*1000));
+ expect(await receive(send('display',{data:unread()}))).toBe(true);
+ await expect(totals(page)).toHaveCount(1);await expect(empty(page)).toHaveCount(0);
+ const last=await page.evaluate(()=>window.__msgs.filter(m=>m.type==='nextDeadline').at(-1));
+ expect(Number(last.deadlineUnixMs)).toBeLessThanOrEqual(NOW+HOLD);
+ expect(await receive(send('tick',{nowUnixMs:String(NOW+HOLD-1),reason:'deadline'}))).toBe(true);
+ await expect(totals(page)).toHaveCount(1);
+ expect(await receive(send('tick',{nowUnixMs:String(NOW+HOLD),reason:'deadline'}))).toBe(true);
+ await expect(empty(page)).toHaveCount(1);await expect(totals(page)).toHaveCount(0);
+});
+test('B1 a member reorder while the history is held does not restart the hold',async({page})=>{
+ const {send,receive}=await open(page,{data:recorded()});
+ await page.clock.setFixedTime(new Date(NOW+5*60*1000));
+ expect(await receive(send('display',{data:unread()}))).toBe(true);
+ await expect(totals(page)).toHaveCount(1);
+ const order=await page.evaluate(()=>[...new Set([...document.querySelectorAll('.ec[data-col]')].map(e=>e.dataset.col))]);
+ expect(order.length).toBeGreaterThan(1);
+ await page.clock.setFixedTime(new Date(NOW+6*60*1000));
+ expect(await receive(send('appearance',{...appearance,memberOrder:[...order].reverse()}))).toBe(true);
+ await expect(totals(page)).toHaveCount(1);
+ await page.clock.setFixedTime(new Date(NOW+HOLD));
+ expect(await receive(send('display',{data:unread()}))).toBe(true);
+ await expect(empty(page)).toHaveCount(1);
+});
+// macrevc-1216-2: every redraw that carries a time ends an expired hold at once, whichever message comes first at the cutoff.
+test('B1 a locale-only appearance update at the cutoff, before any tick, clears the held history; before the cutoff it keeps it',async({page})=>{
+ const {send,receive}=await open(page,{data:recorded()});
+ await page.clock.setFixedTime(new Date(NOW+60*1000));
+ expect(await receive(send('display',{data:unread()}))).toBe(true);
+ await expect(totals(page)).toHaveCount(1);
+ await page.clock.setFixedTime(new Date(NOW+HOLD-1));
+ expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);
+ await expect(totals(page)).toHaveCount(1);await expect(empty(page)).toHaveCount(0);
+ await page.clock.setFixedTime(new Date(NOW+HOLD));
+ expect(await receive(send('appearance',{...appearance,locale:'en'}))).toBe(true);
+ await expect(empty(page)).toHaveCount(1);await expect(totals(page)).toHaveCount(0);
+});
+test('B1 the page becoming visible again at the cutoff, before any tick, clears the held history',async({page})=>{
+ const {send,receive}=await open(page,{data:recorded()});
+ await page.clock.setFixedTime(new Date(NOW+60*1000));
+ expect(await receive(send('display',{data:unread()}))).toBe(true);
+ await expect(totals(page)).toHaveCount(1);
+ expect(await receive(send('visibility',{visible:false,occluded:false,key:false}))).toBe(true);
+ await page.clock.setFixedTime(new Date(NOW+HOLD+1000));
+ expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+ await expect(empty(page)).toHaveCount(1);await expect(totals(page)).toHaveCount(0);
+});
+// macrevc-1216-2 (round 2): the invariant is "no accepted host message leaves held history on screen at or after the cutoff".
+// Every route that is not a display, a tick or an appearance update must end an expired hold in its own response, and
+// none of them may end it early.
+const routes={
+ 'a member-refresh shell message':(send,r)=>send('shell',{...shell,refreshing:true,range:'7d'}),
+ 'a range shell message':(send,r)=>send('shell',{...shell,range:'30d'}),
+ 'a visible non-key return':(send,r)=>send('visibility',{visible:true,occluded:false,key:false}),
+};
+for(const [name,make] of Object.entries(routes))
+test(`B1 ${name} at the cutoff, before any tick, clears the held history; one millisecond earlier it keeps it`,async({page})=>{
+ const {send,receive}=await open(page,{data:recorded()});
+ await page.clock.setFixedTime(new Date(NOW+60*1000));
+ expect(await receive(send('display',{data:unread()}))).toBe(true);
+ await expect(totals(page)).toHaveCount(1);
+ expect(await receive(send('visibility',{visible:false,occluded:false,key:false}))).toBe(true);
+ await page.clock.setFixedTime(new Date(NOW+HOLD-1));
+ expect(await receive(make(send))).toBe(true);
+ await expect(totals(page)).toHaveCount(1);await expect(empty(page)).toHaveCount(0);
+ await page.clock.setFixedTime(new Date(NOW+HOLD));
+ expect(await receive(make(send))).toBe(true);
+ await expect(empty(page)).toHaveCount(1);await expect(totals(page)).toHaveCount(0);
+});
+// macrevc-1216-2 (round 3): a local redraw (the MFD page keys) also never paints held history past the cutoff.
+test('B1 returning to the Overview through the page keys at the cutoff, before any host message, shows the empty state; one millisecond earlier it keeps the totals',async({page})=>{
+ const {send,receive}=await open(page,{data:recorded()});
+ await page.clock.setFixedTime(new Date(NOW+60*1000));
+ expect(await receive(send('display',{data:unread()}))).toBe(true);
+ await expect(totals(page)).toHaveCount(1);
+ const away=async()=>{await page.locator('[data-mfd="page:tune"]').click();await page.locator('[data-mfd="page:overview"]').click();};
+ await page.clock.setFixedTime(new Date(NOW+HOLD-1));
+ await away();
+ await expect(totals(page)).toHaveCount(1);await expect(empty(page)).toHaveCount(0);
+ await page.clock.setFixedTime(new Date(NOW+HOLD));
+ await away();
+ await expect(empty(page)).toHaveCount(1);await expect(totals(page)).toHaveCount(0);
+});
 test('B1 a fresh profile with nothing recorded still says "No usage record yet"',async({page})=>{
  await open(page,{data:unread()});
  await expect(empty(page)).toHaveCount(1);

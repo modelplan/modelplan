@@ -12,6 +12,7 @@
 
 import referenceMap from "./reference-map.json" with { type: "json" };
 import reviewRouting from "./review-routing.json" with { type: "json" };
+import { bareNames, mappedClasses, parseAbsent, parseRecord, setHash } from "./gui-map.mjs";
 export const CONTEXT = "modelplan-gates";
 // The repository whose runs count; evaluate.mjs passes GITHUB_REPOSITORY, this is the default.
 export const REPO = "modelplan/modelplan";
@@ -84,12 +85,21 @@ export function pathTier(paths) {
   return 0;
 }
 
-// R13 (2026-11-12): a ledger PR (its body has a "Ledger: ... G3-nn" line) is at least tier 2 whatever it touches, so it
-// needs a Sol verdict (macrev2/macrevb). Before this, tier-1 files let Terra alone land #785 #788 #848 #863 #865 #870
-// #884 #887. A REVIEW-TIER override can raise it but never lower it below 2.
+// R13 (2026-11-12): a ledger PR (its body has a "Ledger: ... G3-nn" line) needs a Sol verdict whatever it touches. Before
+// R13, tier-1 files let Terra alone land #785 #788 #848 #863 #865 #870 #884 #887. D482 (owner 2026-11-28): R13 lives in the
+// review class (reviewClass: a ledger PR is IMPORTANT, so only a Sol lane admits it), and its tier floor is
+// review-routing.json "ledgerMinTier" (1: a docs- or assets-only ledger PR still needs that verdict, and no override lowers it
+// to tier 0) instead of 2, so the gate and the coordinator compute the same tier (decide.py tier). The pattern is
+// review-routing.json "ledger" (multi-line, case-insensitive), which the coordinator reads too.
+const LEDGER_RE = new RegExp(reviewRouting.ledger, "im");
 export function ledgerPr(pr) {
-  return /^[ \t>*-]*Ledger:.*\bG3-[0-9]+/im.test(pr?.body ?? "");
+  return LEDGER_RE.test(pr?.body ?? "");
 }
+// The one tier rule both gates use: the trusted override, else the path tier; a ledger PR at least ledgerMinTier.
+export const prTier = (paths, override = null, ledger = false) => {
+  const t = override ?? pathTier(paths);
+  return ledger ? Math.max(reviewRouting.ledgerMinTier, t) : t;
+};
 
 // The paths mac-compile-trigger.yml starts the Mac compile for ("desktop/native/**"); the sol test keeps them in step.
 // A PR that changes (or renames away) a file there cannot merge without a mac-compile success status at its head.
@@ -206,43 +216,65 @@ export function parseGlmTiers(value) {
   if (!/^[12](\s*,\s*[12])*$/.test(v)) return [...DEFAULT_GLM_TIERS];
   return [...new Set(v.split(",").map((x) => Number(x.trim())))].sort();
 }
-// ---- Review routing (owner D395/D396/D404, 2026-11-24) ----
-// Most PRs are reviewed by the GitHub GLM reviewer and its exact-head (ghglm) verdict counts; only an IMPORTANT PR (consent,
-// privacy, credentials, readers, wire, the Swift<->Go seam, timing/lifecycle, release, pins, security, the gate itself: the
-// table review-routing.json) still needs a GPT (Codex) lane verdict. One important path makes the whole PR important, and so
-// do path tier 2, a review:codex or review:gpt label, and a file list of maxFiles or more (it may be cut, so fail closed).
-// The coordinator classifies with the same file from main (decide.py review_class), so the two gates agree.
+// ---- Review routing (owner D395/D396/D404, 2026-11-24; narrowed by D482, 2026-11-28) ----
+// Most PRs are reviewed by the GitHub GLM reviewer and its exact-head (ghglm) verdict counts. D482: only an IMPORTANT PR needs
+// a Sol-tier GPT lane verdict: (a) privacy, consent, credentials, tokens, security; (b) merge gates, CI workflows, release,
+// signing (the areas of review-routing.json); (c) an owner-reported fix PR (ledgerPr, R13). A review:codex or review:gpt label,
+// a trusted "REVIEW-TIER: 2" comment, a file list of maxFiles or more (it may be cut), none at all, or a rename (fail closed)
+// make a PR important too. Path tier 2, spanning native Swift and cockpit web, and design-touching no longer do by themselves.
+// The coordinator classifies with the same file from main (decide.py review_class) and tests the same "examples", so the two
+// gates agree.
 export const REVIEW_ROUTING = reviewRouting;
 const ROUTING_AREAS = reviewRouting.areas.map((a) => ({ area: a.area, re: new RegExp(a.re, "i") }));
 export const NORMAL = "normal";
 export const IMPORTANT = "important";
-// paths: prPaths(files); labels: REST label objects or names; tier: the PR's path tier (an override too); fileCount: files.length;
+// paths: prPaths(files); labels: REST label objects or names; override: tierOverride(items) (only review-routing.json
+// overrideTier raises; a lower override never lowers); ledger: ledgerPr(pr); fileCount: files.length;
 // renamed: a file of the PR is a rename (the coordinator's GraphQL file list has no old path, so any rename is IMPORTANT on both
-// sides: the two gates classify alike). Returns { cls: "normal" | "important", why }.
+// sides: the two gates classify alike). Returns { cls: "normal" | "important", why }. The tier does not take part (D482).
 export const hasRename = (files) => (files ?? []).some((f) => f?.status === "renamed" || f?.previous_filename);
-export function reviewClass({ paths = [], labels = [], tier = 1, fileCount = paths.length, renamed = false } = {}) {
+export function reviewClass({ paths = [], labels = [], override = null, ledger = false, fileCount = paths.length, renamed = false } = {}) {
   const names = (labels ?? []).map((l) => (typeof l === "string" ? l : l?.name));
   const lab = reviewRouting.labels.find((l) => names.includes(l));
   if (lab) return { cls: IMPORTANT, why: `label ${lab}` };
-  if (Number(tier) === 2) return { cls: IMPORTANT, why: "tier 2" };
+  if (ledger) return { cls: IMPORTANT, why: "ledger PR (R13)" };
+  if (override !== null && override !== undefined && Number(override) === reviewRouting.overrideTier) return { cls: IMPORTANT, why: `REVIEW-TIER: ${reviewRouting.overrideTier}` };
   if (!paths.length) return { cls: IMPORTANT, why: "no file list" };
   if (renamed) return { cls: IMPORTANT, why: "renamed file" };
   if (fileCount >= reviewRouting.maxFiles || paths.length >= reviewRouting.maxFiles) return { cls: IMPORTANT, why: `${reviewRouting.maxFiles}+ files` };
   for (const p of paths.filter((x) => !TEST_RE.test(x))) for (const a of ROUTING_AREAS) if (a.re.test(p)) return { cls: IMPORTANT, why: `${a.area}: ${p}` };
   return { cls: NORMAL, why: "no important path" };
 }
-// The GPT/GLM lanes whose verdict decides a head of this tier: Sol always; Terra on tier 1; (ghglm) on glmTiers (the D366
-// fallback) and, by D395, on every tier-1/2 head of a NORMAL PR (cls).
-export function eligibleLanes(tier, glmTiers = DEFAULT_GLM_TIERS, cls = IMPORTANT) {
+// D482 (macrevb-1311-1): the PR's review tier and class together, the one entry point of the gate, the workflow reviewer and the
+// coordinator (decide.py review_tier). An IMPORTANT PR is at least importantMinTier (1): a workflow-only or docs-only IMPORTANT PR
+// (path tier 0) still needs an exact-head Sol verdict. A NORMAL tier-0 PR keeps needing none.
+export function prReview({ paths = [], labels = [], override = null, ledger = false, fileCount = paths.length, renamed = false } = {}) {
+  const route = reviewClass({ paths, labels, override, ledger, fileCount, renamed });
+  const base = prTier(paths, override, ledger);
+  return { tier: route.cls === IMPORTANT ? Math.max(reviewRouting.importantMinTier, base) : base, cls: route.cls, why: route.why };
+}
+// The GPT/GLM lanes whose verdict decides a head of this tier: Sol always; Terra on tier 1 (never on an IMPORTANT PR,
+// macrevb-1311-2); (ghglm), by D395, on every
+// tier-1/2 head of a NORMAL PR (cls) and never on an IMPORTANT one (D482: a Sol verdict is required there, whatever
+// REVIEW_GLM_TIERS says). Without a class (cls null: a caller that has none) glmTiers (D366/D469) decides as before.
+export function eligibleLanes(tier, glmTiers = DEFAULT_GLM_TIERS, cls = null) {
   // (ghglm) decides only tiers 1 and 2: tier 0 needs no verdict, so a GLM verdict never counts there.
-  const glm = (tier === 1 || tier === 2) && (glmTiers.includes(tier) || cls === NORMAL);
-  return [...SOL_LANES, ...(tier === 2 ? [] : TERRA_LANES), ...(glm ? [GLM_LANE] : [])];
+  const glm = (tier === 1 || tier === 2) && (cls === NORMAL || (cls !== IMPORTANT && glmTiers.includes(tier)));
+  return [...SOL_LANES, ...(tier === 2 || cls === IMPORTANT ? [] : TERRA_LANES), ...(glm ? [GLM_LANE] : [])];
 }
 // The workflow reviewer pair: "REVIEWER: ghsol" or "REVIEWER: ghglm" assigns the Actions workflow, whichever provider answers
 // (D396: GPT in the Zhipu peak, GLM otherwise, each the other's quota fallback). So a sticky (ghsol) also accepts the (ghglm)
 // verdict, and the reverse, wherever (ghglm) may decide; any other sticky lane stays the only one.
 export const stickyLanes = (sticky, eligible) =>
   !sticky ? null : ["(ghsol)", GLM_LANE].includes(sticky) ? ["(ghsol)", GLM_LANE].filter((l) => eligible.includes(l)) : [sticky];
+// D482: "REVIEWER: ghglm" names the workflow pair (D396-1). Where (ghglm) may not decide (an IMPORTANT PR) the pair's Sol
+// provider (ghsol) is that assignment, so an assignment made before the PR became IMPORTANT never stalls the workflow review.
+// macrevb-1311-2: on an IMPORTANT PR any other assignment that cannot decide it (a stale Terra one) is dropped, so the workflow's
+// Sol reviewer takes the head (landing is stateless: assignments are dispatch hints only).
+export const pairLane = (assigned, eligible, cls = null) => {
+  const a = assigned === GLM_LANE && !eligible.includes(GLM_LANE) && eligible.includes("(ghsol)") ? "(ghsol)" : assigned;
+  return cls === IMPORTANT && a && !eligible.includes(a) ? null : a;
+};
 // Every lane that could be eligible on some tier (an assignment to anything else is never valid).
 // A shadow lane (any lane name ending in "shadow": (ghsolshadow), (gh-terra-shadow)) is advisory and counts nowhere.
 export const isShadowLane = (lane) => /shadow\)?$/i.test(String(lane));
@@ -722,7 +754,9 @@ export function dataSyncProblem({ pr, files, items, sync, glmTiers = DEFAULT_GLM
 // tiers: parseTiers(); sync: dataSyncRunId's run and head commit (see dataSyncProblem).
 // glmFallbackUntil/now: the GLM-out fallback window (parseFallbackUntil); null keeps it closed.
 // glmTiers: parseGlmTiers(vars.REVIEW_GLM_TIERS), the tiers on which (ghglm) decides.
-export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, proveMainMerges, conf, members = [], tiers = new Map(), sync = null, glmFallbackUntil = null, now = Date.now(), glmTiers = DEFAULT_GLM_TIERS }) {
+// guiMaps: the parsed GUI test maps (gui-map.mjs; evaluate.mjs passes main's, plus the head's when the PR changes it). A
+// PR whose changed paths map to a class needs a successful exact-head PR GUI run (D481, prGuiState); null or [] = no map.
+export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, proveMainMerges, conf, members = [], tiers = new Map(), sync = null, glmFallbackUntil = null, now = Date.now(), glmTiers = DEFAULT_GLM_TIERS, guiMaps = null }) {
   const head = pr.head.sha;
   const gpt = gptLabelled(pr);
   if (gpt) glmTiers = [];
@@ -741,9 +775,11 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   const design = designTouch(files, conf);
   const paths = prPaths(files);
   const override = tierOverride(items);
-  const tier = ledgerPr(pr) ? Math.max(2, override ?? pathTier(paths)) : (override ?? pathTier(paths));
-  // D395: on a NORMAL PR the (ghglm) verdict decides tiers 1 and 2 like a GPT lane (review:gpt makes a PR important).
-  const route = reviewClass({ paths, labels: pr.labels, tier, fileCount: files.length, renamed: hasRename(files) });
+  // D482: the tier is the trusted override or the path tier; a ledger PR (R13) at least ledgerMinTier (1) and IMPORTANT; an
+  // IMPORTANT PR at least importantMinTier (1). On a NORMAL PR the (ghglm) verdict decides tiers 1 and 2 like a GPT lane; on an
+  // IMPORTANT one only Sol does.
+  const rv = prReview({ paths, labels: pr.labels, override, ledger: ledgerPr(pr), fileCount: files.length, renamed: hasRename(files) });
+  const tier = rv.tier, route = { cls: rv.cls, why: rv.why };
   const chain = carryChain(carryEdges(items), head, verifiedEdge);
   // labelled PR, GPT out of quota: the marked GLM verdict counts, on tiers 1 and 2 only (macrevb-1237-2: tier 0 stays advisory, so a
   // labelled tier-0 GLM block never vetoes)
@@ -764,7 +800,8 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   // verified carried) merge from ANY Sol lane, or (ghglm) inside a D366 fallback (glmTiers) / the review:gpt marked fallback; a NORMAL
   // head on a (ghglm) merge or any GPT (Sol or Terra) merge. A block from ANY of these lanes, Terra included, or an unnamed one blocks.
   const glmCounts = eligibleLanes(tier, glmTiers, route.cls).includes(GLM_LANE) || fbGlm !== null;
-  const eligible = [...SOL_LANES, ...(route.cls === NORMAL ? TERRA_LANES : []), ...(glmCounts ? [GLM_LANE] : [])];
+  // D482: Terra admits only tier 1 of a NORMAL PR (owner D149: Terra is advice on tier 2; coordinator lanes.sh lane_admits).
+  const eligible = [...eligibleLanes(tier, glmTiers, route.cls).filter((l) => l !== GLM_LANE), ...(glmCounts ? [GLM_LANE] : [])];
   const blockers = [...new Set([...SOL_LANES, ...TERRA_LANES, ...(glmCounts ? [GLM_LANE] : []), "(unnamed)"])];
   const assigned = reviewerLane(items, gpt);
   const sticky = assigned && eligible.includes(assigned) ? assigned : null;   // reported only
@@ -772,7 +809,7 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   // Advisory notes, shortest and most useful first, so the 140-character description keeps them.
   const notes = [...allLanes].filter(([l, v]) => v === "block" && !lanes.has(l)).map(([l]) => `${l} block`);
   if (sticky) notes.unshift(`reviewer ${sticky}`);
-  if (tier !== 0) notes.push(route.cls === NORMAL ? "D395 normal: GLM counts" : `D395 important (${route.why.slice(0, 60)})`);
+  if (tier !== 0) notes.push(route.cls === NORMAL ? "D482 normal: GLM counts" : `D482 important (${route.why.slice(0, 60)})`);
   if (tier !== 0 && glmInScope(paths)) {
     const g = glmVerdict(items, head, fb);
     if (g) notes.push(`GLMREV ${g}`);
@@ -806,9 +843,15 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   // D314: hosted macOS legs are post-merge only, unless the PR changes a workflow (hosted.mjs explains why).
   extra.hostedExempt = !touchesWorkflows(paths) && files.length < FILE_LIST_LIMIT;
   if (!extra.hostedExempt) notes.push("workflow change: hosted legs gate");
-  const ci = ciState(runs, statuses, { scope: prRunScope(pr), hosted: extra.hostedExempt, ...(dataSync ? { required: [ANCHOR_WORKFLOW, DATA_SYNC.repoChecks] } : {}) });
+  // D481: a PR GUI run (a desktop dispatch titled "desktop PR GUI #<n> @ <sha>") is judged by prGuiState below, never by
+  // ciState: as the newest desktop run at the head it would otherwise displace the PR's own pull_request desktop run.
+  const ci = ciState(runs.filter((r) => !isPrGuiRun(r)), statuses, { scope: prRunScope(pr), hosted: extra.hostedExempt, ...(dataSync ? { required: [ANCHOR_WORKFLOW, DATA_SYNC.repoChecks] } : {}) });
   if (ci.info) notes.push(ci.info);
   if (ci.state === FAILURE) return res(FAILURE, say(ci.why), extra);
+  const guiClasses = dataSync ? [] : requiredGuiClasses(paths, guiMaps, { truncated: files.length >= FILE_LIST_LIMIT });
+  if (guiClasses.length) extra.guiClasses = guiClasses;
+  const gui = guiClasses.length ? prGuiState(runs, pr, guiClasses, requiredGuiClasses([], guiMaps, { truncated: true })) : null;
+  if (gui?.state === FAILURE) return res(FAILURE, say(gui.why), extra);
   if (missing.length) return res(PENDING, say(`tier ${tier}: needs ${missing.join(", ")}`), extra);
   if (ci.state === PENDING) return res(PENDING, say(ci.why), extra);
   // Owner D374: the review no longer waits for the Mac compile, so the merge gate does. A native head (or one whose file
@@ -816,6 +859,8 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   // already held back by ciState above. A data-sync PR never touches desktop/native.
   if (!dataSync && (needsCompile(paths) || files.length >= FILE_LIST_LIMIT) && !(statuses ?? []).some((s) => s.context === COMPILE_CONTEXT && s.state === "success"))
     return res(PENDING, say("waiting for mac-compile at this head"), extra);
+  // D481: after mac-compile, because the coordinator dispatches the PR GUI run only once mac-compile passed.
+  if (gui && gui.state !== SUCCESS) return res(PENDING, say(gui.why), extra);
   return res(SUCCESS, say(`tier ${tier}: gates pass${chain.length ? ` (carried ${chain.length})` : ""}`), extra);
 }
 
@@ -852,12 +897,74 @@ export function queueCheckState(queueRuns, queueCheckRuns, repo = REPO, { hosted
 }
 
 // The GUI leg of desktop.yml's queue run, read from its jobs (GET /actions/runs/{id}/jobs). A skipped GUI job is
-// ok only when queue-scope's "GUI share not needed" step succeeded (desktop.yml's design decision); otherwise the
-// leg must have actually run: one pool green (native, or native-hosted + native-owner-gui). A skip for any other reason, or no GUI job at all, fails closed. null jobs = not read: no check.
+// ok only when queue-scope's "GUI share not needed" step succeeded (desktop.yml's design decision), or (D488) when
+// gui-defer's "GUI covered by a later group" step succeeded AND guiCoverState verifies the covering run itself
+// (`cover`, read by evaluate.mjs; the step's claim alone never passes). Otherwise the leg must have actually run:
+// one pool green (native, or native-hosted + native-owner-gui). A skip for any other reason, or no GUI job at all,
+// fails closed. null jobs = not read: no check.
 export const GUI_NOT_NEEDED_STEP = "GUI share not needed";
-export function guiLegState(jobs) {
+export function guiLegState(jobs, { cover = null, groupSha = null, runId = null, repo = REPO } = {}) {
   if (jobs == null) return { state: SUCCESS, why: "GUI leg not read" };
   if (jobs.some((j) => j.name === "queue-scope" && (j.steps ?? []).some((s) => s.name === GUI_NOT_NEEDED_STEP && s.conclusion === "success"))) return { state: SUCCESS, why: "GUI share not needed" };
+  const leg = guiPoolState(jobs);
+  if (!leg.missing) return leg;
+  if (jobs.some((j) => j.name === GUI_DEFER_JOB && j.conclusion === "success" && (j.steps ?? []).some((s) => s.name === GUI_COVERED_STEP && s.conclusion === "success")))
+    return guiCoverState(cover, { groupSha, runId, repo });
+  return { state: FAILURE, why: `${leg.why} without queue-scope saying it is not needed` };
+}
+
+// ---- Merge-queue GUI leg for the group tail only (D488, owner 2026-11-28) ----
+// The queue builds up to four groups at once and every group commit contains the groups before it, but the owner
+// has one GUI Mac. desktop.yml's gui-defer job (gui-defer.mjs) lets an entry that is not the tail of the building
+// window wait for a later group's GUI leg instead of queueing its own. It records the covering run as a notice
+// annotation titled GUI_COVER_TITLE ("run=<id> sha=<head>") and runs its "GUI covered by a later group" step.
+// The gate trusts neither: guiCoverState re-reads that run and passes only when it is a desktop.yml merge_group run of
+// this repository on a queue branch, other than this group's run, at a different commit whose history contains this
+// group commit (cover.contains: git merge-base --is-ancestor in evaluate.mjs), with gui-scope green and a GUI leg
+// that actually ran green. Anything missing or unreadable fails.
+// The marker gui-defer.mjs looks for in main's rules.mjs before it defers (merge-gates.yml runs main's evaluator, so a
+// group may only skip its GUI leg once main can verify the cover). Keep the line exactly; change the value only together
+// with gui-defer.mjs COVER_MARKER.
+export const GUI_COVER_MARKER = "D488-v1";
+export const GUI_DEFER_JOB = "gui-defer";
+export const GUI_COVERED_STEP = "GUI covered by a later group";
+export const GUI_COVER_TITLE = "D488 GUI covered by";
+export const parseCoverRecord = (msg) => {
+  const m = /^run=([1-9][0-9]*) sha=([0-9a-f]{40})$/.exec(String(msg ?? ""));
+  return m ? { runId: Number(m[1]), sha: m[2] } : null;
+};
+export const queuePrOf = (branch) => {
+  const m = /^(?:refs\/heads\/)?gh-readonly-queue\/main\/pr-([1-9][0-9]*)-[0-9a-f]{40}$/.exec(String(branch ?? ""));
+  return m ? Number(m[1]) : null;
+};
+// A run that can cover another group's GUI leg, without the containment proof (callers add it).
+export function coverCandidate(run, { repo = REPO, runId = null, groupSha = null } = {}) {
+  return !!run && Number.isInteger(run.id) && run.id !== Number(runId)
+    && String(run.path ?? "").split("@")[0] === DESKTOP_WORKFLOW && run.event === "merge_group"
+    && run.head_repository?.full_name === repo && queuePrOf(run.head_branch) != null
+    && SHA.test(run.head_sha ?? "") && run.head_sha !== groupSha;
+}
+// The covering run's own GUI leg: gui-scope green and one pool green (a "not needed" declaration never covers).
+export function coverGuiState(jobs) {
+  if (!Array.isArray(jobs)) return { state: PENDING, why: "covering run's jobs not read" };
+  if (!jobs.some((j) => j.name === "gui-scope" && j.conclusion === "success")) return { state: PENDING, why: "covering run has no successful gui-scope job" };
+  const leg = guiPoolState(jobs);
+  return leg.missing ? { state: PENDING, why: "covering run's GUI leg has not run" } : leg;
+}
+export function guiCoverState(cover, { groupSha = null, runId = null, repo = REPO } = {}) {
+  const no = (why) => ({ state: FAILURE, why: `GUI leg deferred (D488) but ${why}` });
+  if (!cover?.run) return no("the covering run could not be read");
+  const r = cover.run;
+  if (!coverCandidate(r, { repo, runId, groupSha })) return no(`run ${r.id} is not another merge_group desktop run of ${repo}`);
+  if (cover.record && (cover.record.runId !== r.id || cover.record.sha !== r.head_sha)) return no(`run ${r.id} does not match the recorded cover`);
+  if (cover.contains !== true) return no(`run ${r.id}'s commit ${String(r.head_sha).slice(0, 8)} does not contain this group commit`);
+  const leg = coverGuiState(cover.jobs);
+  if (leg.state !== SUCCESS) return no(`run ${r.id}: ${leg.why}`);
+  return { state: SUCCESS, why: `GUI leg covered by #${queuePrOf(r.head_branch)} merge_group run ${r.id}` };
+}
+
+// The GUI leg jobs of one desktop run: one pool green (native, or native-hosted + native-owner-gui), none failed.
+export function guiPoolState(jobs) {
   // Only the actual GUI leg jobs count (names from a real merge-group run: the reusable workflow's job named after the
   // task, "<caller> (os) / <task> (os)"). Its other child jobs (probe, sequences, transport, u11-native, ...) are skipped
   // by design and ignored, and so is a whole job skipped before it expanded (its name keeps "${{ matrix.os }}").
@@ -867,10 +974,72 @@ export function guiLegState(jobs) {
   const leg = [...A, ...H, ...O];
   if (leg.some((j) => j.conclusion !== "success")) return { state: FAILURE, why: `GUI leg ${leg.filter((j) => j.conclusion !== "success").map((j) => `${j.name} ${j.conclusion}`).join(", ")}` };
   if (A.length || (H.length && O.length)) return { state: SUCCESS, why: "GUI leg green" };
-  return { state: FAILURE, why: "GUI leg skipped or missing without queue-scope saying it is not needed" };
+  return { state: FAILURE, why: "GUI leg skipped or missing", missing: true };
 }
 
-export function evaluateGroup({ steps, queueRuns, queueStatuses = [], queueCheckRuns = [], desktopJobs = null, repo = REPO, now = Date.now() }) {
+// ---- PR GUI leg (D481, owner 2026-11-27) ----
+// A ready PR whose changed paths map to at least one class of the GUI test map (gui-map.mjs) needs a successful PR GUI run
+// at its exact head before this gate passes: a desktop.yml workflow_dispatch of the PR's own head branch with pr=<n> and
+// sha=<head>, titled "desktop PR GUI #<n> @ <head>" (desktop.yml run-name; the runs API carries no inputs, so the title
+// binds the run to the head, as mac-compile.yml's title does). It runs only the mapped classes, through the pinned
+// trusted-mac.yml (`gui_classes`). PRs with no mapped class are unaffected; the merge queue still runs the whole share.
+export const DESKTOP_WORKFLOW = ".github/workflows/desktop.yml";
+export const PR_GUI_TITLE = /^desktop PR GUI #([1-9][0-9]*) @ ([0-9a-f]{40})$/;
+export const isPrGuiRun = (r) => String(r?.path ?? "").split("@")[0] === DESKTOP_WORKFLOW && r?.event === "workflow_dispatch"
+  && PR_GUI_TITLE.test(r?.display_title ?? "");
+
+// The PR GUI runs that count for this PR head: the title names this PR and head, GitHub ran it at that very commit on the
+// PR's own branch in this repository, and the trusted account dispatched it (trusted-mac.yml admits the owner's GUI Macs
+// only for that actor anyway).
+export function prGuiRunScope(pr) {
+  const repo = pr.base.repo.full_name;
+  return (r) => {
+    const m = PR_GUI_TITLE.exec(r?.display_title ?? "");
+    return isPrGuiRun(r) && !!m && Number(m[1]) === pr.number && m[2] === pr.head.sha && r.head_sha === pr.head.sha
+      && r.head_repository?.full_name === repo && r.head_branch === pr.head.ref && isTrusted(r.actor) && isTrusted(r.triggering_actor);
+  };
+}
+
+export const requiredGuiClasses = (paths, maps, { truncated = false } = {}) => (maps?.length ? mappedClasses(paths, maps, { truncated }) : []);
+
+// classes: the required "<package>:<Class>" list. The newest bound run decides, whatever its state (a newer queued or
+// running one holds the PR even after an older green one; merge-gates.yml re-evaluates when it is requested). Its jobs
+// (run.jobs, read by evaluate.mjs) must show gui-scope green and a GUI leg that actually ran green: a run whose GUI jobs
+// were skipped found no class to run, which disagrees with this gate's map, and fails closed. Then the two gui-scope
+// records (run.guiRecord / run.guiAbsent, gui-map.mjs RECORD_TITLE / ABSENT_TITLE, read by evaluate.mjs):
+// - a required class the run found undeclared at the head: PENDING "merge main first" (it cannot run at this head);
+// - the record must cover every required class: a plain list must contain them; "all@<hash>" must equal setHash of
+//   this gate's full set (full: every class of its maps); "sha256:<hash>:<n>" must equal setHash and the size of the
+//   required set itself. Anything else (no record, a smaller or other set, the map changed since) waits for a re-run.
+// The gate's maps are main's plus the head's (evaluate.mjs), the same union the run selects with, so the hashes agree.
+export function prGuiState(runs, pr, classes, full = classes) {
+  const names = bareNames(classes);
+  const list = names.length > 3 ? `${names.slice(0, 3).join(", ")} +${names.length - 3}` : names.join(", ");
+  const r = runs.filter(prGuiRunScope(pr)).sort((a, b) => b.id - a.id)[0];
+  if (!r) return { state: PENDING, why: `waiting for PR GUI run (classes: ${list})` };
+  if (r.status !== "completed") return { state: PENDING, why: `PR GUI run in progress (classes: ${list})` };
+  if (r.conclusion !== "success") return { state: FAILURE, why: `PR GUI run ${r.conclusion} (classes: ${list}); fix or re-dispatch` };
+  if (!Array.isArray(r.jobs)) return { state: PENDING, why: `PR GUI run jobs not read (classes: ${list})` };
+  if (!r.jobs.some((j) => j.name === "gui-scope" && j.conclusion === "success")) return { state: FAILURE, why: "PR GUI run has no successful gui-scope job" };
+  const short = (l) => (l.length > 3 ? `${l.slice(0, 3).join(", ")} +${l.length - 3}` : l.join(", "));
+  const rec = r.guiRecord == null ? null : parseRecord(r.guiRecord);
+  const abs = r.guiAbsent == null ? null : parseAbsent(r.guiAbsent);
+  if (!rec || !abs) return { state: PENDING, why: `re-run needed: PR GUI run recorded no class set (classes: ${list})` };
+  if (abs.many) return { state: PENDING, why: `merge main first: ${abs.many} mapped classes do not exist at this head` };
+  const gone = bareNames(classes.filter((c) => abs.list.includes(c)));
+  if (gone.length) return { state: PENDING, why: `merge main first: class ${short(gone)} does not exist at this head` };
+  const leg = guiPoolState(r.jobs);
+  if (leg.state !== SUCCESS) return { state: FAILURE, why: leg.missing ? `PR GUI run ran no GUI leg, but the map needs classes: ${list}` : `PR GUI run: ${leg.why} (classes: ${list})` };
+  if (rec.list) {
+    const missing = bareNames(classes.filter((c) => !rec.list.includes(c)));
+    if (missing.length) return { state: PENDING, why: `re-run needed: PR GUI run did not cover ${short(missing)}` };
+  } else if (rec.all ? rec.all !== setHash(full) : rec.hash !== setHash(classes) || rec.count !== new Set(classes).size) {
+    return { state: PENDING, why: `re-run needed: PR GUI run's hashed class set is not the gate's (classes: ${list})` };
+  }
+  return { state: SUCCESS, why: `PR GUI run green (classes: ${list})` };
+}
+
+export function evaluateGroup({ steps, queueRuns, queueStatuses = [], queueCheckRuns = [], desktopJobs = null, guiCover = null, groupSha = null, desktopRunId = null, repo = REPO, now = Date.now() }) {
   if (!steps.length) return { state: FAILURE, why: "no PR found in the merge group" };
   for (const s of steps) {
     const n = `#${s.pr}`;
@@ -881,7 +1050,7 @@ export function evaluateGroup({ steps, queueRuns, queueStatuses = [], queueCheck
   const hosted = steps.every((s) => s.prResult.hostedExempt === true);
   let ci = ciState(queueRuns, queueStatuses, { required: QUEUE_WORKFLOWS, scope: queueRunScope(repo), hosted });
   if (ci.state === SUCCESS) ci = queueCheckState(queueRuns, queueCheckRuns, repo, { hosted });
-  if (ci.state === SUCCESS) ci = guiLegState(desktopJobs);
+  if (ci.state === SUCCESS) ci = guiLegState(desktopJobs, { cover: guiCover, groupSha, runId: desktopRunId, repo });
   if (ci.state === PENDING) {
     const starts = queueRuns.filter(queueRunScope(repo)).map((r) => Date.parse(r.created_at)).filter(Number.isFinite);
     if (starts.length && now - Math.min(...starts) > GROUP_WAIT_MS) return { state: FAILURE, why: `group timed out after ${GROUP_WAIT_MS / 60000} min: ${ci.why}` };

@@ -60,6 +60,14 @@ export function runOutMinutes(data:WireCockpitData|null|undefined,rowId:string,a
  const at=Date.parse(f.runsOutAt),reset=window.resetsAt?Date.parse(window.resetsAt):Infinity;
  return at>now&&at<reset?(at-now)/60000:null;
 }
+/** D474 §3.2: the engine's forecast for a current window with a known reset says it lasts to that reset (line 2 "够用到重置").
+ *  No forecast (or basis none) says nothing, so the line stays empty rather than claiming the window lasts. */
+export function forecastLasts(data:WireCockpitData|null|undefined,rowId:string,account:WireAccount,window:WireWindow,now:number):boolean {
+ const ref=account.subscriptionRef,f=ref?data?.details?.forecasts?.find(x=>x.source===rowId&&x.subscriptionRef===ref&&x.windowId===window.id):undefined;
+ if(!f||f.basis==='none'||f.pace==='exhausted'||!window.resetsAt||!currentWindow(account,window,now))return false;
+ const reset=Date.parse(window.resetsAt),at=f.runsOutAt?Date.parse(f.runsOutAt):Infinity;
+ return Number.isFinite(reset)&&reset>now&&at>=reset;
+}
 /** The prototype's fields: a negative trend marks the window whose run-out the account's forecast names. */
 export const runOutFields=(minutes:number|null)=>({trend:minutes===null?null:-1,runOutMin:minutes});
 export const forecastOf=(windows:readonly {trend:number|null;runOutMin:number|null}[])=>{const w=windows.find(x=>x.trend!==null&&x.trend<0);return w?{runOutMin:w.runOutMin}:null;};

@@ -12,7 +12,14 @@ import (
 	"time"
 )
 
+// LiveWithin is how recently a log must have changed to be tailed, and how long a turn can read as
+// running. It does not decide how long a finished session stays listed (D277: idle sessions read "6m
+// ago"); LiveIdleKeep and LiveIdleMax do.
 const LiveWithin = 5 * time.Minute
+
+// LiveIdleKeep and LiveIdleMax: idle sessions stay listed, newest first, up to LiveIdleMax within LiveIdleKeep.
+const LiveIdleKeep = 24 * time.Hour
+const LiveIdleMax = 5
 const LiveRateWindow = time.Minute
 const maxLive = 64
 const liveTail = 256 << 10
@@ -311,7 +318,7 @@ func ObserveLive(cache string, logs []LiveLog, labels bool, subscriptions map[st
 }
 func (l *PerfLedger) setLive(key, source string, x liveProbe, subscription string, now time.Time) bool {
 	start := l.start(source)
-	if x.cfg.model == "" || x.last.IsZero() || x.last.Before(start) || !x.last.After(now.Add(-LiveWithin)) || x.last.After(now) || x.start.IsZero() {
+	if x.cfg.model == "" || autoReview(x.cfg.model) || x.last.IsZero() || x.last.Before(start) || !x.last.After(now.Add(-LiveWithin)) || x.last.After(now) || x.start.IsZero() {
 		return false
 	}
 	r := LiveRecord{GrantEpoch: currentEpoch(l.admission, source), Key: key, Ref: newRef(), Source: source, Model: clip(x.cfg.model), Effort: clip(x.cfg.effort), Speed: speedMode(x.cfg.speed), StartedAt: x.start.UTC(), LastAt: x.last.UTC(), Running: x.running, SubscriptionRef: subscription}
@@ -375,7 +382,13 @@ func (l *PerfLedger) setLive(key, source string, x liveProbe, subscription strin
 func (l *PerfLedger) pruneLive(now time.Time) {
 	kept := l.Live[:0]
 	for _, r := range l.Live {
-		if r.LastAt.After(now.Add(-LiveWithin)) && !r.LastAt.After(now) {
+		if autoReview(r.Model) {
+			continue // a record cached before the auto-review rule
+		}
+		if r.LastAt.After(now.Add(-LiveIdleKeep)) && !r.LastAt.After(now) {
+			if !r.LastAt.After(now.Add(-LiveWithin)) {
+				r.Running, r.Activity = false, nil // a kept idle session never reads as running
+			}
 			kept = append(kept, r)
 		}
 	}
@@ -397,9 +410,15 @@ func (v PerfView) LiveSessions() []LiveSession {
 	if !v.OK || !v.Recording {
 		return out
 	}
-	for _, r := range v.Ledger.Live {
-		if !r.LastAt.After(v.Now.Add(-LiveWithin)) || r.LastAt.After(v.Now) {
+	recs := slices.Clone(v.Ledger.Live)
+	sort.SliceStable(recs, func(i, j int) bool { return recs[i].LastAt.After(recs[j].LastAt) })
+	for _, r := range recs {
+		// A record cached before the auto-review rule is never published (the model is not a session).
+		if autoReview(r.Model) || r.LastAt.After(v.Now) || !r.LastAt.After(v.Now.Add(-LiveIdleKeep)) {
 			continue
+		}
+		if !r.LastAt.After(v.Now.Add(-LiveWithin)) {
+			r.Running, r.Activity = false, nil // past the live window: idle by definition
 		}
 		x := LiveSession{Ref: r.Ref, Source: r.Source, Model: r.Model, Effort: r.Effort, EffortStatus: "unreported", Speed: r.Speed, StartedAt: r.StartedAt, LastAt: r.LastAt, Status: "idle", ProjectRef: refOrNil(r.ProjectRef), ProjectLabel: r.ProjectLabel, SubscriptionRef: refOrNil(r.SubscriptionRef), InProgress: r.turnOpen(v.Now)}
 		if r.Effort != "" {
@@ -460,5 +479,17 @@ func (v PerfView) LiveSessions() []LiveSession {
 		}
 		return out[i].LastAt.After(out[j].LastAt)
 	})
-	return out
+	// Running rows are never cut; only the newest LiveIdleMax idle rows stay, however recently they finished.
+	idle := 0
+	kept := out[:0]
+	for _, x := range out {
+		if x.Status != "running" {
+			if idle == LiveIdleMax {
+				continue
+			}
+			idle++
+		}
+		kept = append(kept, x)
+	}
+	return kept
 }
