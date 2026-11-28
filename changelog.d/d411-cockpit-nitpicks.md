@@ -1,0 +1,1 @@
+Fix seven cockpit nitpicks from list 13 in the night panels and hull: session row height, left-wall speck, aft highlight seam, key row edge, Gemini key label, rule crossings and right wall edge alpha. Items 1, 2, 4 and 12 (hull corners, gutter bar ends, nozzle collar overlap, aft alpha row) are left to the hull art pass; item 5 (nozzle row offset) stays as it is by decision.

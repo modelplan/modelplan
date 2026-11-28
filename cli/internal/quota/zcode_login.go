@@ -21,6 +21,7 @@ import (
 	"crypto/cipher"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"math"
 	"net/http"
@@ -53,22 +54,18 @@ func ZCodeLoginDir(home string) string { return filepath.Join(home, ".zcode", "v
 // ZCodeLoginPresent: ZCode's sign-in layout is there (detect.ZCodeLoginPresent; metadata only).
 func ZCodeLoginPresent(home string) bool { return detect.ZCodeLoginPresent(home) }
 
-// zcodeLoginStamp: size and modification time of the credential store, so a new sign-in releases
-// a held "sign in again" state. File metadata only; the value is never read here.
-func zcodeLoginStamp(home string) string {
-	fi, err := os.Lstat(filepath.Join(ZCodeLoginDir(home), "credentials.json"))
-	if err != nil {
-		return ""
-	}
-	return strconv.FormatInt(fi.Size(), 10) + "." + strconv.FormatInt(fi.ModTime().UnixNano(), 10)
-}
-
 // zcodeLogin is one resolved read. credential is in memory only.
 type zcodeLogin struct {
 	region     string // global | bigmodel-cn
 	billing    bool   // Start Plan balance (JWT) rather than Coding Plan quota (account key)
 	credential string
 	deviceMid  string
+	// What names the account (zcodeAccountMaterial) and the still-sealed store it came from, so
+	// the read can record it for the projection (zcodeRememberSeal). In memory only.
+	material string
+	sel      zcodeSelected
+	format   string
+	store    map[string]any
 }
 
 var zcodeProviderIDs = map[string]map[string]string{
@@ -141,8 +138,14 @@ func zcodeDecrypt(value, secret string) string {
 	if !ok {
 		return ""
 	}
-	parts := strings.Split(rest, ".")
-	if len(parts) != 3 {
+	key := sha256.Sum256([]byte(secret))
+	return zcodeOpen(rest, key[:])
+}
+
+// zcodeOpen opens one sealed payload, iv.tag.cipher in base64url, AES-256-GCM under a 32-byte key.
+func zcodeOpen(payload string, key []byte) string {
+	parts := strings.Split(payload, ".")
+	if len(parts) != 3 || len(key) != 32 {
 		return ""
 	}
 	decode := func(s string) []byte {
@@ -156,8 +159,7 @@ func zcodeDecrypt(value, secret string) string {
 	if len(iv) != 12 || len(tag) != 16 || body == nil {
 		return ""
 	}
-	key := sha256.Sum256([]byte(secret))
-	block, err := aes.NewCipher(key[:])
+	block, err := aes.NewCipher(key)
 	if err != nil {
 		return ""
 	}
@@ -172,11 +174,124 @@ func zcodeDecrypt(value, secret string) string {
 	return string(plain)
 }
 
+// D380: ZCode 3.19+ (zai-org/ZCode packages/shared/src/credential-security/systemCredentialCipher.ts)
+// keeps a random 32-byte key in the system credential store: a generic password under the service
+// "ZCode Credential Encryption", account hex(sha256(absolute credentials.json path)), whose value
+// is the key in unpadded base64url (43 characters). Entries are "enc:v2:os:<fp>:<iv>.<tag>.<ct>",
+// fp = the first 24 hex digits of sha256(key). ModelPlan reads that item only through the app's
+// credential operation, after the user's own Keychain choice, and only in memory.
+const (
+	zcodeKeychainService = "ZCode Credential Encryption"
+	zcodeV2OSPrefix      = "enc:v2:os:"
+)
+
+// ZCodeKeychainAccount: the Keychain account ZCode files its key under for a credentials file.
+func ZCodeKeychainAccount(credentialsPath string) string {
+	abs, err := filepath.Abs(credentialsPath)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(abs))
+	return hex.EncodeToString(sum[:])
+}
+
+// zcodeKeychainKey decodes the Keychain item's value; nil when it is not a 32-byte base64url key.
+func zcodeKeychainKey(encoded []byte) []byte {
+	if len(encoded) != 43 {
+		return nil
+	}
+	for _, c := range encoded {
+		if !(c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-' || c == '_') {
+			return nil
+		}
+	}
+	key := make([]byte, 32)
+	if n, err := base64.RawURLEncoding.Decode(key, encoded); err != nil || n != 32 {
+		clear(key)
+		return nil
+	}
+	return key
+}
+
+func zcodeKeyFingerprint(key []byte) string {
+	sum := sha256.Sum256(key)
+	return hex.EncodeToString(sum[:])[:24]
+}
+
+// zcodeDecryptV2 opens an "enc:v2:os:" entry with the Keychain key; "" on any mismatch or failure.
+func zcodeDecryptV2(value string, key []byte) string {
+	rest, ok := strings.CutPrefix(value, zcodeV2OSPrefix)
+	if !ok || key == nil {
+		return ""
+	}
+	fp, payload, ok := strings.Cut(rest, ":")
+	if !ok || fp != zcodeKeyFingerprint(key) {
+		return ""
+	}
+	return zcodeOpen(payload, key)
+}
+
+// zcodeStoreFormat names the store's encryption: "v1" (machine-derived secret, ZCode 3.11-3.18),
+// "os" (Keychain key, 3.19+), "" for a store without encrypted entries, or "unsupported" for
+// anything else (enc:v2:env, an unknown envelope, or v1 and v2 entries mixed mid-migration).
+func zcodeStoreFormat(pinned bool, store map[string]any) string {
+	v1, os2, other := false, false, false
+	for _, v := range store {
+		raw, ok := v.(string)
+		if !ok || !strings.HasPrefix(raw, "enc:") {
+			continue
+		}
+		switch {
+		case strings.HasPrefix(raw, "enc:v1:"):
+			v1 = true
+		case strings.HasPrefix(raw, zcodeV2OSPrefix):
+			os2 = true
+		default:
+			other = true
+		}
+	}
+	switch {
+	case other || v1 && os2 || v1 && pinned:
+		return "unsupported"
+	case os2 || pinned:
+		return "os"
+	case v1:
+		return "v1"
+	}
+	return ""
+}
+
+// ZCodeKeychain is the in-memory Keychain capability of one ZCode sign-in read (D380). Consent is
+// the saved-login scope's own Keychain choice (allowed | denied | unset). Key runs the app's
+// credential operation and returns the item's value or a closed status; nil without the app.
+type ZCodeKeychain struct {
+	Consent string
+	Key     func(context.Context) ([]byte, string)
+	// StillValid is checked again after the store is opened: a consent revoked meanwhile drops
+	// the key and the plaintext before anything is sent.
+	StillValid func() bool
+}
+
+// zcodeKeychainFailure maps the credential operation's closed status to a reader code.
+func zcodeKeychainFailure(status string) string {
+	switch status {
+	case "denied":
+		return "keychain_denied"
+	case "canceled":
+		return "keychain_canceled"
+	case "interaction_required", "timeout", "keychain-confirmation-needed", "confirmation-needed":
+		return "keychain_confirmation_needed"
+	case "consent-required", "consent_required", "unset":
+		return "keychain_unset"
+	}
+	return "keychain_unavailable"
+}
+
 // zcodeIdentity: the signed-in account as the family's stored profile names it (Token Monitor's
 // storedProfileIdentity): a normalized profile's id, or a zai document's user_id.
-func zcodeIdentity(store map[string]any, secret, family string) string {
+func zcodeIdentity(store map[string]any, open func(string) string, family string) string {
 	raw, _ := store["oauth:"+family+":user_info"].(string)
-	doc := zcodeDecrypt(raw, secret)
+	doc := open(raw)
 	if doc == "" {
 		return ""
 	}
@@ -232,67 +347,128 @@ func zcodeBaseRegion(base string) string {
 	return ""
 }
 
+// zcodeSelected is the sign-in ZCode's settings select: the family, its region and the selected
+// provider entry. Only this entry of the registry decides the account (owner build-6 #1).
+type zcodeSelected struct {
+	family, region, providerID, kind string
+	provider                         zcodeProvider
+	start                            bool
+}
+
+// zcodeSelect follows the selection the way the read does; the code is the read's refusal.
+func zcodeSelect(settings zcodeSettings, providers map[string]zcodeProvider) (zcodeSelected, string) {
+	family := strings.TrimSpace(settings.Domain)
+	region := map[string]string{"zai": "global", "bigmodel": "bigmodel-cn"}[family]
+	if region == "" {
+		return zcodeSelected{}, "not_signed_in"
+	}
+	providerID, kind := zcodeSelectedProvider(settings, family)
+	provider, ok := providers[providerID]
+	if providerID == "" || !ok {
+		return zcodeSelected{}, "not_signed_in"
+	}
+	if provider.Enabled != nil && !*provider.Enabled {
+		if reason := strings.TrimSpace(provider.DisabledReason); reason == "" || reason == "oauth_provider_inactive" {
+			return zcodeSelected{}, "not_signed_in"
+		}
+	}
+	start := providerID == zcodeProviderIDs["startPlan"][family]
+	if !start && providerID != zcodeProviderIDs["codingPlan"][family] {
+		return zcodeSelected{}, "unsupported_login" // a pay-as-you-go API key entry: no plan quota to read
+	}
+	// Region scoping (Pulse lesson): the entry's own endpoint must not name the other region.
+	if r := zcodeBaseRegion(provider.Options.BaseURL); r != "" && r != region {
+		return zcodeSelected{}, "region_refused"
+	}
+	return zcodeSelected{family: family, region: region, providerID: providerID, kind: kind, provider: provider, start: start}, ""
+}
+
 // readZCodeLogin resolves what one read may send and where, from ZCode's own files, read-only.
 // The code on failure is a reader error code; nothing of the files appears in it.
-func readZCodeLogin(dir string, now time.Time) (zcodeLogin, string) {
+func readZCodeLogin(ctx context.Context, dir string, keychain *ZCodeKeychain, now time.Time) (zcodeLogin, string) {
+	// D380 (macrev2-1162-1): nothing in ZCode's folder is opened before the scope's own Keychain
+	// choice is Allow, for any store: a markerless store may be Keychain-bound too.
+	if keychain == nil || keychain.Consent == "" || keychain.Consent == "unset" {
+		return zcodeLogin{}, "keychain_unset"
+	}
+	if keychain.Consent != "allowed" {
+		return zcodeLogin{}, "keychain_denied"
+	}
+	pinned := detect.ZCodeKeychainMarkerPresent(dir)
 	var settings zcodeSettings
 	var registry struct {
 		Provider map[string]zcodeProvider `json:"provider"`
 	}
-	b, err := zaiConfigFile(filepath.Join(dir, "setting.json"))
+	b, err := zcodeLoginRead(filepath.Join(dir, "setting.json"))
 	if err != nil {
 		return zcodeLogin{}, errorCode(err)
 	}
 	if json.Unmarshal(b, &settings) != nil {
 		return zcodeLogin{}, "parse_error"
 	}
-	if b, err = zaiConfigFile(filepath.Join(dir, "config.json")); err != nil {
+	if b, err = zcodeLoginRead(filepath.Join(dir, "config.json")); err != nil {
 		return zcodeLogin{}, errorCode(err)
 	}
 	if json.Unmarshal(b, &registry) != nil {
 		return zcodeLogin{}, "parse_error"
 	}
-	family := strings.TrimSpace(settings.Domain)
-	region := map[string]string{"zai": "global", "bigmodel": "bigmodel-cn"}[family]
-	if region == "" {
-		return zcodeLogin{}, "not_signed_in"
+	sel, code := zcodeSelect(settings, registry.Provider)
+	if code != "" {
+		return zcodeLogin{}, code
 	}
-	providerID, kind := zcodeSelectedProvider(settings, family)
-	provider, ok := registry.Provider[providerID]
-	if providerID == "" || !ok {
-		return zcodeLogin{}, "not_signed_in"
-	}
-	if provider.Enabled != nil && !*provider.Enabled {
-		if reason := strings.TrimSpace(provider.DisabledReason); reason == "" || reason == "oauth_provider_inactive" {
-			return zcodeLogin{}, "not_signed_in"
-		}
-	}
-	start := providerID == zcodeProviderIDs["startPlan"][family]
-	if !start && providerID != zcodeProviderIDs["codingPlan"][family] {
-		return zcodeLogin{}, "unsupported_login" // a pay-as-you-go API key entry: no plan quota to read
-	}
-	// Region scoping (Pulse lesson): the entry's own endpoint must not name the other region.
-	if r := zcodeBaseRegion(provider.Options.BaseURL); r != "" && r != region {
-		return zcodeLogin{}, "region_refused"
-	}
+	family, region, kind, provider, start := sel.family, sel.region, sel.kind, sel.provider, sel.start
 	var store map[string]any
-	if b, err = zaiConfigFile(filepath.Join(dir, "credentials.json")); err == nil {
+	if b, err = zcodeLoginRead(filepath.Join(dir, "credentials.json")); err == nil {
 		if json.Unmarshal(b, &store) != nil {
 			store = nil
 		}
 	}
-	// G3-158: ZCode 3.19+ entries (enc:v2) are keyed by a secret in the system credential store,
-	// which is not read. Such a store is unsupported; neither "sign in again" nor the plaintext
-	// mirror, which may belong to another account, stands in for it.
-	for _, v := range store {
-		if raw, ok := v.(string); ok && strings.HasPrefix(raw, "enc:") && !strings.HasPrefix(raw, "enc:v1:") {
-			return zcodeLogin{}, "unsupported_login"
-		}
+	// The route follows the store's own format (owner, 2026-11-21): enc:v1 opens with ZCode's
+	// machine-derived secret (3.11-3.18); enc:v2:os (3.19+, credential-source "os") opens only with
+	// the Keychain key, after the user's own Keychain choice (D380). Anything else, including a store
+	// mixing both, is unsupported. A Keychain-bound store never falls back to config.json's
+	// plaintext mirror, which may belong to a previous account.
+	format := zcodeStoreFormat(pinned, store)
+	if format == "unsupported" {
+		return zcodeLogin{}, "unsupported_login"
 	}
 	secret := zcodeCredentialSecret()
+	open := func(v string) string { return zcodeDecrypt(v, secret) }
+	if format == "os" {
+		switch {
+		case keychain == nil || keychain.Consent == "" || keychain.Consent == "unset":
+			return zcodeLogin{}, "keychain_unset"
+		case keychain.Consent != "allowed":
+			return zcodeLogin{}, "keychain_denied"
+		case keychain.Key == nil:
+			return zcodeLogin{}, "keychain_unavailable" // no app credential operation (standalone CLI)
+		}
+		encoded, status := keychain.Key(ctx)
+		key := zcodeKeychainKey(encoded)
+		clear(encoded)
+		if status != "" && status != "ok" {
+			clear(key)
+			return zcodeLogin{}, zcodeKeychainFailure(status)
+		}
+		if key == nil {
+			return zcodeLogin{}, "keychain_unavailable"
+		}
+		defer clear(key)
+		fp := zcodeKeyFingerprint(key)
+		matched := false
+		for _, v := range store {
+			if raw, ok := v.(string); ok && strings.HasPrefix(raw, zcodeV2OSPrefix+fp+":") {
+				matched = true
+			}
+		}
+		if !matched && len(store) > 0 {
+			return zcodeLogin{}, "keychain_unavailable" // the item's key opens none of this store
+		}
+		open = func(v string) string { return zcodeDecryptV2(v, key) }
+	}
 	identity := ""
 	if store != nil {
-		identity = zcodeIdentity(store, secret, family)
+		identity = zcodeIdentity(store, open, family)
 	}
 	mirror := strings.TrimSpace(provider.Options.APIKey)
 	login := zcodeLogin{region: region, billing: start}
@@ -302,8 +478,8 @@ func readZCodeLogin(dir string, now time.Time) (zcodeLogin, string) {
 			return zcodeLogin{}, "region_refused"
 		}
 		raw, _ := store["zcodejwttoken"].(string)
-		login.credential = zcodeDecrypt(raw, secret)
-		if login.credential == "" && identity == "" {
+		login.credential = open(raw)
+		if login.credential == "" && identity == "" && format != "os" {
 			login.credential = mirror // 3.11.x: no store names the account
 		}
 		if login.credential == "" {
@@ -322,7 +498,9 @@ func readZCodeLogin(dir string, now time.Time) (zcodeLogin, string) {
 				// The account is known but its own key is absent; a mirror may belong to a previous account.
 				return zcodeLogin{}, "login_expired"
 			}
-			login.credential = zcodeDecrypt(raw, secret)
+			login.credential = open(raw)
+		case format == "os":
+			return zcodeLogin{}, "login_expired" // no account in the Keychain-bound store; never the mirror
 		default:
 			login.credential = mirror
 		}
@@ -330,10 +508,15 @@ func readZCodeLogin(dir string, now time.Time) (zcodeLogin, string) {
 			return zcodeLogin{}, "login_expired"
 		}
 	}
+	if format == "os" && keychain.StillValid != nil && !keychain.StillValid() {
+		return zcodeLogin{}, "consent_required"
+	}
 	login.credential = strings.TrimSpace(login.credential)
 	if len(login.credential) > 8192 || strings.ContainsAny(login.credential, "\r\n\x00") {
 		return zcodeLogin{}, "unsupported_login"
 	}
+	login.material = zcodeAccountMaterial(sel, format, store, open)
+	login.sel, login.format, login.store = sel, format, store
 	return login, ""
 }
 
@@ -353,7 +536,7 @@ func encodeURIComponent(s string) string {
 
 // zcodeDeviceMid: ZCode's own device id, which its billing gateway requires (code 3001 without it).
 func zcodeDeviceMid(dir string) string {
-	b, err := zaiConfigFile(filepath.Join(dir, "telemetry-state.json"))
+	b, err := zcodeLoginRead(filepath.Join(dir, "telemetry-state.json"))
 	if err != nil {
 		return ""
 	}
@@ -374,9 +557,31 @@ func zcodeDeviceMid(dir string) string {
 // the Start Plan balance on zcode.z.ai for the z.ai family. Errors carry fixed codes only.
 func fetchZCodeLogin(ctx context.Context, c *http.Client, source ZaiConfigSource, now time.Time) codexbarEntry {
 	e := codexbarEntry{Status: "error", ObservedAt: now.UTC()}
-	login, code := readZCodeLogin(source.SettingsPath, now)
+	login, code := readZCodeLogin(ctx, source.SettingsPath, source.Keychain, now)
 	if code != "" {
 		e.ErrorCode, e.Error = code, code
+		return e
+	}
+	generation := ""
+	if source.Resolved != nil {
+		var same bool
+		if generation, same = source.Resolved(login); !same || generation == "" {
+			e.zcodeMismatch = true
+			e.ErrorCode, e.Error = "consent_required", "consent_required"
+			return e
+		}
+	}
+	login.store, login.material = nil, ""
+	e = fetchZCodeLoginAs(ctx, c, source, login, now)
+	e.zcodeGeneration = generation
+	return e
+}
+
+// fetchZCodeLoginAs sends the one request of a resolved sign-in.
+func fetchZCodeLoginAs(ctx context.Context, c *http.Client, source ZaiConfigSource, login zcodeLogin, now time.Time) codexbarEntry {
+	e := codexbarEntry{Status: "error", ObservedAt: now.UTC()}
+	if _, blocked := zaiConfigAdmission(ctx); blocked != "" {
+		e.ErrorCode, e.Error = "consent_required", "consent_required"
 		return e
 	}
 	if source.Region != "" && source.Region != login.region {
@@ -619,25 +824,47 @@ func parseZCodeBilling(r zcodeBillingResponse, now time.Time) codexbarEntry {
 }
 
 // zcodeProviderFileKeyless: ZCode's provider file selects no key (no selection, an account
-// selection, or a selected rule without a key), so the key route can never read. The file is read
-// only when its size or time changed (paths are built every watcher pass); the key, if any, is
-// dropped at once and only the verdict is kept.
-func zcodeProviderFileKeyless(path string) bool {
-	fi, err := os.Lstat(path)
-	if err != nil || !fi.Mode().IsRegular() {
+// selection, or a selected rule without a key), so the key route can never read.
+// The admitted scan reads each file revision once and keeps only the verdict.
+var zcodeProviderRead = zaiConfigFile
+
+// zcodeLoginRead opens a file in ZCode's sign-in folder; every such open goes through it, so a test
+// can prove none happens before the Keychain choice (D380, macrev2-1162-1).
+var zcodeLoginRead = zaiConfigFile
+
+// Discovery may use a previous admitted classification, but never opens the
+// provider file itself. A changed file requires another admitted scan.
+func zcodeProviderCachedKeyless(path string) bool {
+	stamp := zcodeProviderRevision(path)
+	if stamp == "" {
 		return false
 	}
-	stamp := strconv.FormatInt(fi.Size(), 10) + "." + strconv.FormatInt(fi.ModTime().UnixNano(), 10)
+	zcodeKeylessMu.Lock()
+	defer zcodeKeylessMu.Unlock()
+	m, ok := zcodeKeylessMemo[path]
+	return ok && m.stamp == stamp && m.keyless
+}
+
+func zcodeProviderFileKeyless(path string) bool {
+	stamp := zcodeProviderRevision(path)
+	if stamp == "" {
+		return false
+	}
 	zcodeKeylessMu.Lock()
 	defer zcodeKeylessMu.Unlock()
 	if m, ok := zcodeKeylessMemo[path]; ok && m.stamp == stamp {
 		return m.keyless
 	}
-	keyless := false
-	if b, err := zaiConfigFile(path); err == nil {
-		_, key, state, code := zcodeProviderKey(b)
-		keyless = (state != "" && (code == "unsupported_login" || code == "no_key")) || (state == "" && strings.TrimSpace(key) == "")
+	b, err := zcodeProviderRead(path)
+	if err != nil {
+		return false // An I/O failure is not a classification; retry on the next pass.
 	}
+	defer clear(b)
+	if zcodeProviderRevision(path) != stamp {
+		return false
+	}
+	_, key, state, code := zcodeProviderKey(b)
+	keyless := (state != "" && (code == "unsupported_login" || code == "no_key")) || (state == "" && strings.TrimSpace(key) == "")
 	zcodeKeylessMemo[path] = zcodeKeylessEntry{stamp, keyless}
 	return keyless
 }
@@ -651,3 +878,33 @@ var (
 	zcodeKeylessMu   sync.Mutex
 	zcodeKeylessMemo = map[string]zcodeKeylessEntry{}
 )
+
+// WithZCodeKeychain binds the app's credential operation (D380) to ZCode's sign-in route when the
+// scope's Keychain choice is Allow. key returns the item's value for one read, or a closed status;
+// the caller holds nothing. Any other grant, or a route without that choice, is returned unchanged.
+func WithZCodeKeychain(p Paths, key func(context.Context) ([]byte, string)) Paths {
+	g, ok := p.ReaderAccessGrant("zai")
+	if !ok || g.ConfigSource == nil || g.ConfigSource.Tool != zcodeLoginTool || g.ConfigSource.Keychain == nil || g.ConfigSource.Keychain.Consent != "allowed" || key == nil {
+		return p
+	}
+	source := *g.ConfigSource
+	keychain := *source.Keychain
+	still := g.StillValid
+	keychain.Key = func(ctx context.Context) ([]byte, string) {
+		// Revoked or changed consent: no Keychain operation at all.
+		if ctx.Err() != nil || (still != nil && !still()) {
+			return nil, "consent-required"
+		}
+		return key(ctx)
+	}
+	keychain.StillValid = still
+	source.Keychain = &keychain
+	g.ConfigSource = &source
+	grants := map[string]ReaderGrant{}
+	for provider, v := range p.ReaderAccess.Grants {
+		grants[provider] = v
+	}
+	grants["zai"] = g
+	p.ReaderAccess = &ReaderAccess{Grants: grants}
+	return p
+}

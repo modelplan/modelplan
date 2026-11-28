@@ -1,22 +1,62 @@
 /* SPDX-License-Identifier: MIT */
 /* Copyright (c) 2026 ModelPlan. Owner-released G/P6 port; source 1d3f82429f1b853314ee120d4bd0007f84fc051d. */
 :root[data-theme]{--fd-unlit:#ffffff2b;--fd-eb:#e9edf03d}
-:root[data-theme="night"]{--fd-tick:#ffffff21;--fd-dot:#e9edf0e0;--fd-dot-ring:#00000000;--fd-dot-ink:#e9edf0}
+:root[data-theme="night"]{--fd-lowbezel:#2c3238;--fd-tick:#ffffff33;--fd-dot:#e9edf0e0;--fd-dot-ring:#00000000;--fd-dot-ink:#e9edf0}
 :root[data-theme="day"]{--fd-tick:#0000002e;--fd-dot:#ffffff;--fd-dot-ring:#0000007a;--fd-dot-ink:#15181c}
 
 
-.dk-fad{--fd-lcd:calc(92px + 2 * var(--bz,2px));--fd-rows:var(--row-h,18px) var(--key-gap,4px) var(--fd-lcd) 4px minmax(0,1fr);--fd-pad:8px;
-  display:grid;grid-template-columns:calc(3 * var(--fd-ch,64px) + 2 * var(--gutter,9px)) var(--fd-scale,34px);column-gap:var(--fd-lane,4px);
+/* D405/D419 (owner 11-24/25): the lever area's vertical proportions are MEASURED from the approved direction 06 prototype
+   (whole-proposed.png; spec table in PR #1229, confirm 2026-11-24/19-lever-slots-compare/SPEC.md), as ratios of the column
+   height H (= --console-h): card top .066 H (the 18 px lamp row floors it at 18 px), card .392 H, upper-tier lip .497 H, lever tier .499-.928 H (it stops 1 px above the bank keys), travel from .521 H,
+   .378 H long (the slot lies inside the tier with the prototype's margins; 97 px keeps the top detents 19.5 px apart,
+   CKP-FAD-13). The compact layout (640) cannot hold these ratios with a readable card and the 19.5 px floor; it sets px values
+   below. */
+.dk-fad{--fd-H:var(--console-h,217px);--fd-led-gap:max(0px,calc(var(--fd-H) * .066 - var(--row-h,18px)));--fd-lcd:calc(var(--fd-H) * .392);
+  --fd-tier-bot:var(--fd-bot-paged);--fd-bot-paged:min(calc(var(--fd-H) * .928),calc(var(--fd-H) - var(--row-h,18px) - 1px));
+  --fd-tier-top:calc(var(--fd-H) * .499);--fd-L:calc(var(--fd-tier-bot) - var(--fd-tier-top));--fd-trvk:.7353;--fd-trva:.1243;--fd-trv-min:97px;
+  --fd-trv-top:calc(var(--fd-tier-top) + var(--fd-L) * var(--fd-trva) - 8px);--fd-trv:max(var(--fd-trv-min),calc(var(--fd-L) * var(--fd-trvk) + 16px));
+  --fd-rows:var(--row-h,18px) var(--fd-led-gap) var(--fd-lcd) calc(var(--fd-trv-top) - var(--row-h,18px) - var(--fd-led-gap) - var(--fd-lcd)) var(--fd-trv) minmax(0,1fr);--fd-pad:8px;
+  position:relative;isolation:isolate;display:grid;grid-template-columns:calc(3 * var(--fd-ch,64px) + 2 * var(--fd-gap,12px));
   grid-template-rows:minmax(0,1fr) var(--row-h,18px);row-gap:var(--key-gap,4px);align-self:stretch;height:var(--console-h,217px);min-height:0;-webkit-user-select:none;user-select:none}
-.dk-fad .fd-scale{position:relative;grid-column:2;grid-row:1;display:grid;grid-template-rows:var(--fd-rows);min-height:0}
-.dk-fad .fd-scale .sc-led{grid-row:1;justify-self:start;align-self:center;line-height:var(--row-h,18px)}
+/* D405 (owner 2026-11-24, direction 06): two tilted tiers drawn with light only (no 3D transform; text and hit areas stay
+   true). One light from above: the nearer a face is to level, the brighter. The upper tier (lamps and cards) leans back a
+   little and ends in a lit front edge over a crease; the lower tier (levers and bank row) is nearly level, so brighter, a
+   touch narrower at the far end, with a rounded lit front edge and a dark step wall towards the big screen. The tier
+   heights are the measured prototype ratios above; both panels are flush with the column, as in the prototype. */
+.dk-fad::before,.dk-fad::after{content:"";position:absolute;z-index:-1;left:0;right:0;pointer-events:none}
+.dk-fad::before{top:-2px;height:calc(var(--fd-tier-top) + 2px);border-radius:5px 5px 0 0;
+  background:linear-gradient(180deg,#0000 calc(100% - 4.7px),var(--lip-hi,#ffffff42) calc(100% - 4.7px),var(--lip-hi,#ffffff42) calc(100% - 3.5px),var(--lip-face,#ffffff0d) calc(100% - 3.5px)),
+   linear-gradient(180deg,var(--tier-up-1,#ffffff04),var(--tier-up-2,#ffffff12));}
+.dk-fad::after{top:var(--fd-tier-top);bottom:calc(100% - var(--fd-tier-bot));border-radius:2px 2px 5px 5px;
+  clip-path:polygon(calc((1 - var(--tq,.955)) * 61%) 0,calc(100% - (1 - var(--tq,.955)) * 61%) 0,100% 100%,0 100%);
+  background:linear-gradient(180deg,var(--lip-cast,#000000bf),#0000 15px),
+   linear-gradient(180deg,var(--tier-face-1,#21262b),var(--tier-face-2,#363c44) 70%,var(--tier-face-3,#3f464e) calc(100% - 4.4px),var(--tier-rim,#545b62) calc(100% - 3.8px),var(--tier-face-lip,#191d20))}
+/* D419 round 4 (owner 11-25): the lip and the deck measured on the prototype (whole-proposed.png; SPEC.md rows "Lip" and "Deck"):
+   the card panel ends in a 4.7 px bevel band (1.2 px lit edge, 3.5 px lighter face) that casts a 15 px shadow onto the top
+   of the lever tier; the deck is matte (no top lip line, no side wall) and gets lighter towards the front, which ends in a
+   0.6 px lit rim over a 3.8 px fall-off. */
+/* D419 (owner 11-24): the lever tier is its own lighter graphite panel, as in the direction 06 prototype: an opaque face that
+   gets brighter towards the pilot, a lit top lip, a dark front edge, and a trapezoid that matches the slots' convergence
+   (61% of 1 - tq is the face's top inset from the shared TIER_Q geometry). It holds the travels only; the bank keys
+   (◀ 1/2 ▶) sit below it, outside the panel, on the console. */
+:root[data-theme="day"] .dk-fad{--tier-face-1:#b4bac0;--tier-face-2:#c3c8cd;--tier-face-3:#d2d6da;--tier-face-lip:#8f959b;--tier-top-lip:#ffffffb3;--lip-hi:#ffffffd9;--lip-face:#ffffff40;--lip-cast:#0000006b;--tier-rim:#ffffffa6;--tier-up-1:#0000000a;--tier-up-2:#ffffff2e;--tier-edge:#ffffffb3;--tier-crease:#00000066;--tier-low-1:#ffffff1a;--tier-low-2:#ffffff66;--tier-lip:#ffffffd9;--tier-lip-shade:#00000040;--tier-wall:#00000059}
+/* Night lever face (owner 11-26, after the grey hull #1265): neutral grey like the frame (R=G=B), darker than the first D405 draw
+   (measured top 24 / mid 52 / bottom 66 lum, blue cast), and ONE 1 px highlight on the front lip only (--tier-rim).
+   Variant A (-30 %, owner D453): top ~22, bottom ~46 lum. */
+:root[data-theme="night"] .dk-fad{--tier-face-1:#242424;--tier-face-2:#2b2b2b;--tier-face-3:#303030;--tier-rim:#5c5c5c;--tier-face-lip:#141414}
+:root[data-theme="night"] .dk-fad::after{background:linear-gradient(180deg,var(--lip-cast,#000000bf),#0000 15px),
+  linear-gradient(180deg,var(--tier-face-1),var(--tier-face-2) 70%,var(--tier-face-3) calc(100% - 4px),var(--tier-rim) calc(100% - 4px),var(--tier-rim) calc(100% - 3px),var(--tier-face-lip) calc(100% - 3px))}
+/* D405: the effort names, printed twice, in the two gaps between the levers (an overlay on the channel grid); 会话 heads the lamps. */
+.dk-fad .fd-scale{position:relative;z-index:2;grid-column:1;grid-row:1;display:grid;pointer-events:none;min-height:0;
+  grid-template-columns:var(--fd-ch,64px) var(--fd-gap,12px) var(--fd-ch,64px) var(--fd-gap,12px) var(--fd-ch,64px);grid-template-rows:var(--fd-rows)}
+.dk-fad .fd-scale .sc-led{grid-row:1;grid-column:2;justify-self:center;align-self:center;line-height:var(--row-h,18px)}
 .dk-fad .sc-travel{grid-row:5;position:relative;min-height:0}
-.dk-fad .sc-lcd{grid-row:3}
-.dk-fad .sc-l{position:absolute;left:0;top:calc(var(--fd-pad) + (100% - 2 * var(--fd-pad)) * var(--k,0));transform:translateY(-50%);padding:3px 6px 3px 0;
-  font:500 10px/1 var(--f-silk);letter-spacing:.04em;color:var(--silk);white-space:nowrap;cursor:pointer}
+.dk-fad .sc-travel[data-gap="1"]{grid-column:2}.dk-fad .sc-travel[data-gap="2"]{grid-column:4}
+.dk-fad .sc-l{position:absolute;left:50%;top:calc(var(--fd-pad) + (100% - 2 * var(--fd-pad)) * var(--k,0));transform:translate(-50%,-50%);padding:3px 1px;pointer-events:auto;
+  font:500 10px/1 var(--f-silk);letter-spacing:0;color:var(--silk);white-space:nowrap;cursor:pointer}
 .dk-fad .sc-l:hover,.dk-fad .sc-l.peek{color:var(--silk-hi)}
 .dk-fad .sc-l.na{color:var(--silk-dim);cursor:default}
-.dk-fad .fd-chs{grid-column:1;grid-row:1;display:grid;grid-template-columns:repeat(3,var(--fd-ch,64px));column-gap:var(--gutter,9px);min-height:0}
+.dk-fad .fd-chs{grid-column:1;grid-row:1;display:grid;grid-template-columns:repeat(3,var(--fd-ch,64px));column-gap:var(--fd-gap,12px);min-height:0}
 .dk-fad .fd-ch{display:grid;grid-template-rows:var(--fd-rows);justify-items:center;min-width:0;min-height:0}
 
 
@@ -40,6 +80,11 @@
    Every line ≤ 9 characters; text never below 10 px. */
 .dk-fad .fd-strip{grid-row:3;position:relative;width:100%;height:100%;display:flex;flex-direction:column;align-items:stretch;
   padding:7px 2px 4px 3px;overflow:hidden;text-align:left;background:var(--lcd-glass);box-shadow:var(--bezel);font:10px/11px var(--f-lcd);color:var(--text)}
+/* D405: the cards lean back with the upper tier: a shallow eave shadow under the top bezel, a thicker, lighter lower bezel. */
+.ck .dk-fad .fd-strip{border-bottom-width:calc(var(--bz,2px) + 1px);border-bottom-color:var(--fd-lowbezel,color-mix(in srgb,var(--bz-ring) 72%,#fff 28%));
+}
+.dk-fad .fd-strip::before{content:"";position:absolute;left:0;right:0;top:0;height:9px;pointer-events:none;background:linear-gradient(180deg,var(--eave,#000000a6),transparent)}
+:root[data-theme="day"] .dk-fad .fd-strip{--eave:#00000040}
 .dk-fad .fd-strip::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:linear-gradient(115deg,var(--lcd-glare),#ffffff02 34%,transparent 35%)}
 .dk-fad .fd-ch.empty .fd-strip{cursor:default}
 .dk-fad .fd-ch.sel .fd-strip{box-shadow:var(--bezel),0 0 0 2px color-mix(in srgb,var(--lcd-ink) 36%,transparent),0 0 8px color-mix(in srgb,var(--lcd-ink) 13%,transparent)}
@@ -56,6 +101,10 @@
 .dk-fad .cd-bar::before{content:"";position:absolute;left:0;top:0;bottom:0;width:var(--s,0%);min-width:2px;border-radius:1px;background:var(--v,var(--lcd-ink))}
 .dk-fad .cd-use{flex:none;margin-top:3px;font:10px/11px var(--f-lcd);letter-spacing:-.02em;white-space:nowrap;color:var(--lcd-muted)}
 .dk-fad .cd-use b{font-weight:400;color:var(--lcd-ink)}
+/* D405: the token count is the card's second figure: larger, bold and in full ink; the share stays small beside it. */
+.dk-fad .cd-use{display:flex;align-items:baseline;gap:4px;margin-top:4px;line-height:13px;overflow:hidden}
+.dk-fad .cd-use .cd-tok{font:600 12px/13px var(--f-lcd);letter-spacing:-.04em;color:var(--lcd-ink)}
+.dk-fad .cd-use .cd-pct{font-size:10px;color:var(--lcd-muted)}
 .dk-fad .cd-eff{flex:none;margin-top:auto;display:flex;align-items:center;gap:4px;font:10px/11px var(--f-lcd);letter-spacing:-.02em;white-space:nowrap;color:var(--lcd-muted)}
 .dk-fad .cd-rec{display:inline-flex;align-items:center;gap:1px;color:var(--gold)}
 .dk-fad .cd-follows .cd-rec{color:color-mix(in srgb,var(--gold) 72%,var(--lcd-glass,#000))}
@@ -70,26 +119,47 @@
 .dk-fad .fd-travel{grid-row:5;position:relative;width:100%;height:100%;min-height:0;touch-action:none;cursor:ns-resize;outline-offset:2px}
 .dk-fad .fd-travel:focus-visible{outline:1.5px solid color-mix(in srgb,var(--silk-hi) 55%,transparent)}
 .dk-fad .fd-ch.empty .fd-travel{opacity:.5;cursor:default}
-.dk-fad .fd-slot{position:absolute;left:50%;top:2px;bottom:2px;width:4px;margin-left:-2px;border-radius:2px;background:var(--slot-deep);box-shadow:inset 0 1px 2px #000,0 1px 0 #ffffff10}
+/* D405 (owner 11-24): the slots and detent dashes are code-drawn on the tilted lever face. One geometry (fader-view TIER_Q,
+   copied to --tq by the page) places everything: each element at face row k moves towards the lever-area centre by
+   --ch-off x pitch x (1 - s(k)), with s(k) = tq + (1 - tq) k, so the slots converge together and the detents (levelK) close up
+   towards the top. The slot itself is an SVG drawn by the page (slotSvg); --slot-w sets its width. No CSS 3D anywhere. */
+.dk-fad{--slot-w:4px;--fd-pitch:calc(var(--fd-ch,64px) + var(--fd-gap,12px))}
+.dk-fad .fd-ch:nth-child(1){--ch-off:-1}.dk-fad .fd-ch:nth-child(2){--ch-off:0}.dk-fad .fd-ch:nth-child(3){--ch-off:1}
+.dk-fad .sc-travel[data-gap="1"]{--ch-off:-.5}.dk-fad .sc-travel[data-gap="2"]{--ch-off:.5}
+.dk-fad .fd-travel{container-type:size}
+.dk-fad .fd-travel>*,.dk-fad .fd-marks>*{--u:calc((100cqh - 2 * var(--fd-pad)) / 97)}
+.dk-fad :is(.fd-tick,.fd-rec,.fd-dot,.fd-peek,.sc-l){--s:calc(var(--tq,1) + (1 - var(--tq,1)) * var(--k,0));translate:calc(var(--ch-off,0) * var(--fd-pitch) * (var(--s) - 1)) 0}
+.dk-fad .fd-tline{transform:skewX(atan(var(--slot-slope,0)));translate:calc(var(--ch-off,0) * var(--fd-pitch) * (var(--tq,1) + (1 - var(--tq,1)) * (var(--k0,0) + var(--k1,0)) / 2 - 1)) 0}
+.dk-fad .fd-slot{position:absolute;inset:0;pointer-events:none}
+/* macrevb-1229-1/-4: the lever and the trial ghost glide along the slot line. Their row k is mirrored into the registered
+   number --fd-kx, which transitions with `top` (and the frame), so x follows the same 280 ms glide as y, also when a cancelled
+   ghost returns. The rod (macrevb-1229-2) is skewed to the slot's slope (--slot-slope, set by the page with the slot drawing). */
+@property --fd-kx{syntax:'<number>';inherits:false;initial-value:0}
+.dk-fad :is(.fd-cap,.fd-ghost){--fd-kx:var(--k,0);translate:calc(var(--ch-off,0) * var(--fd-pitch) * (var(--tq,1) + (1 - var(--tq,1)) * var(--fd-kx) - 1)) 0}
+.dk-fad .fd-slotsvg{position:absolute;left:0;top:0;overflow:visible}
+.dk-fad .fd-slotsvg .sl-core{fill:var(--slot-core,#0b0d10)}.dk-fad .fd-slotsvg .sl-shade{fill:var(--slot-shade,#000)}.dk-fad .fd-slotsvg .sl-lip{fill:var(--slot-lip,#ffffff2e)}
 .dk-fad .fd-tick,.dk-fad .fd-rec,.dk-fad .fd-dot,.dk-fad .fd-cap,.dk-fad .fd-ghost,.dk-fad .fd-peek{position:absolute;top:calc(var(--fd-pad) + (100% - 2 * var(--fd-pad)) * var(--k,0))}
-.dk-fad .fd-tick{left:calc(50% - 14px);width:28px;height:0;margin-top:-.5px;border-top:1px solid var(--fd-tick)}
+.dk-fad .fd-tick{left:50%;width:0;height:0}
+.dk-fad .fd-tick::before,.dk-fad .fd-tick::after{content:"";position:absolute;top:-.75px;width:calc(6.5 * var(--u) * var(--s));height:1.5px;background:var(--fd-tick)}
+.dk-fad .fd-tick::before{right:calc(4 * var(--u) * var(--s))}.dk-fad .fd-tick::after{left:calc(4 * var(--u) * var(--s))}
 
-.dk-fad .fd-rec{left:calc(50% + 16px);width:5px;height:2px;margin-top:-1px;border-radius:1px;background:var(--gold-metal);box-shadow:0 0 3px color-mix(in srgb,var(--gold-metal) 45%,transparent)}
-.dk-fad .fd-rec .g-star{position:absolute;left:6px;top:-3.5px;width:8px;height:8px;fill:var(--gold-metal)}
-.dk-fad .fd-dot{left:calc(50% - 21px);width:5px;height:5px;margin-top:-2.5px;border-radius:50%;background:var(--fd-dot);box-shadow:0 0 4px #ffffff66,0 0 0 1px var(--fd-dot-ring)}
+.dk-fad .fd-rec{left:calc(50% + 12px);width:5px;height:2px;margin-top:-1px;border-radius:1px;background:var(--gold-metal);box-shadow:0 0 3px color-mix(in srgb,var(--gold-metal) 45%,transparent)}
+.dk-fad .fd-rec .g-star{position:absolute;left:3.5px;top:-3.5px;width:8px;height:8px;fill:var(--gold-metal)}
+/* D405: another effort a running session uses = a short glowing tick on the lever's left (was a white dot). */
+.dk-fad .fd-dot{left:calc(50% - 22px);width:6px;height:2px;margin-top:-1px;border-radius:1px;background:var(--fd-dot);box-shadow:0 0 4px #ffffffa6,0 0 0 .5px var(--fd-dot-ring)}
 .dk-fad .fd-dot b{position:absolute;right:7px;top:-3px;font:400 10px/1 var(--f-lcd);color:var(--fd-dot-ink)}
 .dk-fad .fd-ch.xhl .fd-dot{box-shadow:0 0 0 2px color-mix(in srgb,var(--silk-hi) 50%,transparent)}
 .dk-fad .fd-cap,.dk-fad .fd-ghost,.dk-fad .fd-peek{left:50%;width:30px;height:12px;margin:-6px 0 0 -15px;border-radius:2px}
 .dk-fad .fd-cap{z-index:1;background:repeating-linear-gradient(180deg,#ffffff26 0 1px,transparent 1px 2.4px),linear-gradient(180deg,#f1f3f4,#bcc1c6 46%,#8b9298 54%,#c8cdd1);
-  box-shadow:0 2px 3px #000b,0 0 0 .5px #000;transition:top .28s cubic-bezier(.3,.7,.2,1)}
+  box-shadow:0 2px 3px #000b,0 0 0 .5px #000;transition:top .28s cubic-bezier(.3,.7,.2,1),--fd-kx .28s cubic-bezier(.3,.7,.2,1)}
 .dk-fad .fd-cap::after{content:"";position:absolute;left:3px;right:3px;top:5.5px;height:1px;background:#fff;box-shadow:0 0 2px #fff}
 .dk-fad .fd-cap.parked{filter:brightness(.42) saturate(0)}
 .dk-fad .fd-ghost{z-index:2;pointer-events:none;border:1.5px solid var(--trial);
   background:repeating-linear-gradient(180deg,color-mix(in srgb,var(--trial) 18%,transparent) 0 1px,transparent 1px 2.4px),color-mix(in srgb,var(--trial) 24%,transparent);
-  box-shadow:0 0 8px color-mix(in srgb,var(--trial) 45%,transparent);transition:top .28s cubic-bezier(.3,.7,.2,1),opacity .1s linear}
+  box-shadow:0 0 8px color-mix(in srgb,var(--trial) 45%,transparent);transition:top .28s cubic-bezier(.3,.7,.2,1),--fd-kx .28s cubic-bezier(.3,.7,.2,1),opacity .1s linear}
 .dk-fad .fd-ghost::after{content:"";position:absolute;left:3px;right:3px;top:calc(50% - .5px);height:1px;background:var(--trial);box-shadow:0 0 3px var(--trial)}
 .dk-fad .fd-ghost.drag{transition:none}
-.dk-fad .fd-ghost.back{opacity:0;transition:top .28s cubic-bezier(.3,.7,.2,1),opacity .1s linear .2s}
+.dk-fad .fd-ghost.back{opacity:0;transition:top .28s cubic-bezier(.3,.7,.2,1),--fd-kx .28s cubic-bezier(.3,.7,.2,1),opacity .1s linear .2s}
 .dk-fad .fd-peek{z-index:1;pointer-events:none;border:1px dashed color-mix(in srgb,var(--trial) 70%,transparent);opacity:0;transition:opacity .1s}
 .dk-fad .fd-peek.on{opacity:1}
 
@@ -102,14 +172,31 @@ body.reduced #cockpit .dk-fad .fd-ch .fd-ghost.back{transition:opacity .12s line
 @media(prefers-reduced-motion:reduce){#cockpit .dk-fad .fd-ch .fd-ghost.back{transition:opacity .12s linear!important}}
 
 
-#cockpit[data-layout="640"] .dk-fad{--fd-lcd:73px}
-#cockpit[data-layout="640"] .dk-fad .fd-strip{padding:6px 2px 3px 3px}
-#cockpit[data-layout="640"] .dk-fad .cd-big,#cockpit[data-layout="640"] .dk-fad .cd-try{margin-top:2px}
-#cockpit[data-layout="640"] .dk-fad .cd-bar,#cockpit[data-layout="640"] .dk-fad .cd-use{margin-top:2px}
-#cockpit[data-layout="640"] .dk-fad .st-pin{top:9px}
+/* D433 (owner 11-25): with one bank (no page keys) the lever tier runs from the lip to the column bottom, as on main, and the
+   travel, detents and slot re-fit to it with the same ratios of the tier's length L as the paged tier (slot margins .0637 L and
+   .0796 L; the travel is .7353 L + 16 px, the slot keeps its 8 u run past the end detents, u = (travel - 16 px) / 97); the bank row collapses. Paged (two or more banks) keeps the
+   measured prototype tier that stops above the bank keys. */
+.dk-fad:not(.paged){--fd-tier-bot:var(--fd-H);grid-template-rows:minmax(0,1fr) 0;row-gap:0}
+/* D453 (owner 11-26): the lever tier's front edge is flush with the bottom of the big screen's frame (.ck-deck::after reaches 2 px below
+   the column, D434). With one bank the panel therefore bleeds 2 px past the column; the slots and detents keep the column's length. */
+.dk-fad:not(.paged)::after{bottom:calc(100% - var(--fd-tier-bot) - 2px)}
+/* D455 (owner 11-27, build 6): with several banks the face used to stop at --fd-tier-bot, 21 px above the big screen's bottom, and the bank keys
+   hung below it. The face now runs to the same frame bottom (2 px under the column) and the bank row (aligned with the screen's key row) sits ON it;
+   the slots, detents and travels keep the paged tier length (--fd-tier-bot). */
+.dk-fad.paged::after{bottom:-2px}
 
 /* CKP-FAD-54 step 2: the effort page comes in over 150 ms when a card is clicked (none with reduced motion). */
 @keyframes cd-page-in{from{opacity:0}to{opacity:1}}
 .dk-mfd .mfd-page.pg-compare{animation:cd-page-in .15s ease-out}
 body.reduced #cockpit .dk-mfd .mfd-page.pg-compare{animation:none}
 @media(prefers-reduced-motion:reduce){#cockpit .dk-mfd .mfd-page.pg-compare{animation:none}}
+
+/* D434 (owner 11-25): the junction between the lever column and the big screen, measured on the prototype (whole-proposed.png;
+   SPEC.md "Junction" rows). The big screen sits in its own framed graphite panel, like the left column's: a 3.5 px dark gutter
+   (the left panel ends at x 399, the right frame starts at 406), a 4 px lighter frame, and the big screen's own 2.3 px dark bezel.
+   The panel reaches 3 px above the tab row and 2 px below the bottom key row; the darker well beside the tier (13,15,17 against 23,25,27) is not drawn (no element to carry it in CSS).
+   CSS only: the big screen's content keeps its place, the frame is drawn outside it in the deck's 9 px gutter and padding. */
+.ck-deck{isolation:isolate}
+.ck-deck::after{content:"";position:absolute;z-index:-1;grid-column:2;grid-row:1;inset:-3px -4px -2px -5.5px;border-radius:5px;pointer-events:none;
+  background:var(--mfd-frame,#1f2328);box-shadow:inset 0 0 0 1px var(--mfd-frame-edge,#ffffff0d),inset 0 1px 0 var(--mfd-frame-hi,#ffffff14)}
+:root[data-theme="day"] .ck-deck{--mfd-frame:#aab0b6;--mfd-frame-edge:#ffffff40;--mfd-frame-hi:#ffffff59}

@@ -176,6 +176,23 @@ test('CKP-MFD-66 the Models chart key shows the frontier and names every plotted
  expect(await page.locator('.mfd-page svg.fc .fc-l').count()).toBe(await page.locator('.mfd-page svg.fc .fc-star').count());
 });
 
+// macrevb-1179-2: check the actual glyph bounds with the shipped fonts loaded.
+for(const [kind,wide] of [
+ ['full-width','Ｑｗｅｎ－Ｌｏｎｇ－Ｃｏｎｔｅｘｔ－Ｉｎｓｔｒｕｃｔ－Ｐｒｅｖｉｅｗ－２０２６－１１－２２'],
+ ['uppercase','QWEN3-CODER-NEXT-INSTRUCT-REASONING-EXPERIMENTAL-PREVIEW-NOVEMBER-2026'],
+]) test(`CKP-MFD-66 a ${kind} published model name is fitted inside the chart; title and tooltip keep the full name (G3-168)`,async({page})=>{
+ const data=withHistory();
+ data.details.publishedModels.push({...structuredClone(data.details.publishedModels[0]),id:'wide-x',name:wide});
+ await open(page,data);await page.evaluate(()=>document.fonts.ready);await page.locator('[data-mfd="page:tune"]').click();
+ await page.locator('.ok[data-opt="models"] b[data-choice="chart"]').click();
+ const label=page.locator('.mfd-page svg.fc .fc-l',{has:page.locator('title',{hasText:wide})});
+ await expect(label).toHaveCount(1);
+ const fit=await page.locator('.mfd-page svg.fc').evaluate(svg=>{const vb=svg.viewBox.baseVal;return [...svg.querySelectorAll('.fc-l')].map(t=>{const b=t.getBBox();return b.x>=0&&b.x+b.width<=vb.width&&b.y>=0&&b.y+b.height<=vb.height;});});
+ expect(fit.every(Boolean)).toBe(true);
+ expect(await label.locator('title').textContent()).toBe(wide);
+ expect(await page.locator('.mfd-page svg.fc .fc-inspect').evaluateAll(c=>c.map(x=>x.dataset.tip))).toContainEqual(expect.stringContaining(wide));
+});
+
 test('CKP-MFD-67 the Breakdown page has one key, Projects | Sessions; project rows carry their share as a bar',async({page})=>{
  await open(page,withHistory());await page.locator('[data-mfd="page:where"]').click();
  expect(await page.locator('.ok[data-opt="where"] b').allTextContents()).toEqual(['Projects','Sessions']);

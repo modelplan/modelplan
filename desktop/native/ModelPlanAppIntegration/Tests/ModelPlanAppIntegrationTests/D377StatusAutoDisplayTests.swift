@@ -166,6 +166,29 @@ import ModelPlanWire
         XCTAssertEqual(button.accessibilityLabel(), "ModelPlan \u{00B7} Synthetic account 0%")
     }
 
+    /// G3-166 (owner test build 3): the dot sat on the rocket's nose (top-right). It belongs on the icon's bottom-right
+    /// corner, inside the button, and must not widen the item.
+    func testTheRedDotSitsAtTheIconsBottomRightCornerInsideItsBoundsWithoutWideningTheItem() async throws {
+        let (app, button) = try await launch(weekly: 0)
+        let widthBefore = button.frame.width
+        app.applyStatusContent(to: button, detail: "")
+        XCTAssertTrue(app.usedUpDotVisibleForTesting)
+        let dot = app.usedUpDot.frame, side = StatusUsedUpDotView.side
+        XCTAssertEqual(dot.size, NSSize(width: side, height: side))
+        XCTAssertTrue(button.bounds.contains(dot), "inside the icon bounds")
+        XCTAssertEqual(dot.maxX, button.bounds.maxX, accuracy: 0.01, "right edge")
+        // Bottom, whichever way the button's y axis runs.
+        if button.isFlipped { XCTAssertEqual(dot.maxY, button.bounds.maxY, accuracy: 0.01) }
+        else { XCTAssertEqual(dot.minY, button.bounds.minY, accuracy: 0.01) }
+        XCTAssertEqual(button.frame.width, widthBefore, accuracy: 0.01, "no extra width")
+    }
+
+    func testTheDotFrameIsTheBottomRightCornerForBothAxes() {
+        let bounds = NSRect(x: 0, y: 0, width: 24, height: 22), side = StatusUsedUpDotView.side
+        XCTAssertEqual(StatusUsedUpDotView.frame(in: bounds, flipped: false), NSRect(x: 24 - side, y: 0, width: side, height: side))
+        XCTAssertEqual(StatusUsedUpDotView.frame(in: bounds, flipped: true), NSRect(x: 24 - side, y: 22 - side, width: side, height: side))
+    }
+
     func testASqueezedItemFallsBackToTheIconOnlyAfterTheDebounce() async throws {
         let (app, button) = try await launch(weekly: 15)
         var armed: [(seconds: TimeInterval, fire: @MainActor () -> Void)] = []

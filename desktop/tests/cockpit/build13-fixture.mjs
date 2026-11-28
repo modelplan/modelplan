@@ -23,7 +23,7 @@ export function build13Profile(now=Date.now()){
  data.subscriptions=[{subscriptionRef:CODEX_REF,accounts:[{tool:'codex',account:structuredClone(codex.accounts[0])}]}];
  data.details={version:1,sources:['local-history','quota-reserve','quota-thresholds'],subscriptions:[],sessionCoverage:'local-last-seen',resetEvents:[],alerts:[],
   sessions:[{sessionRef:SESSION_REF,source:'codex',subscriptionRef:null,model:'gpt-6.1-sol',effort:'high',projectLabel:'modelPlans',lastObservedAt:new Date(now-20000).toISOString(),state:'running',rate:null}],
-  publication:{contractVersion:1,publicationId:'0123456789abcdef01234567',publishedAt:'2026-11-01T12:00:00Z',source:'client',truncated:true,models:build13Models.slice(0,3)},
-  publishedModels:build13Models};
+  publication:{contractVersion:1,publicationId:'0123456789abcdef01234567',publishedAt:'2026-11-01T12:00:00Z',source:'client',truncated:true,models:structuredClone(build13Models.slice(0,3))},
+  publishedModels:structuredClone(build13Models)};
  return data;
 }

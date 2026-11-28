@@ -111,10 +111,10 @@ test('D323/D328: the calendar draws its column and screen, and falls back to D29
  assert.deepEqual(waiting.cells.map(c=>c.tag.full),['plugin.calendarWaiting']);assert.equal(waiting.foot,null);assert.equal(waiting.draw,null);
 });
 
-test('D328: a user with no peak rules gets D293 cells and "Peak: no peak rules", and no strip',()=>{
+test('D406: a user with no peak rules (Codex only) still gets the day view: reset chips, now line and the no-rules note; cells stay the host fallback',()=>{
  const codexOnly={...week,peakRules:'no',subs:[week.subs[1]],peaks:[],resets:[{sub:0,at:local(2026,11,11,14,10),kind:'5h'},{sub:0,at:local(2026,11,13,6),kind:'week'}],spans:[]};
  const column=calendarPlugin.column(calendarPlugin.accept(codexOnly,undefined),context);
- assert.equal(column.draw,null,'column() returns no draw without peak data');
+ assert.equal(typeof column.draw,'function','column() always draws the day view when there is a reading');
  assert.deepEqual(column.cells.map(c=>c.tag.full),['plugin.calendarReset','plugin.calWeekReset']);
  assert.equal(column.cells[0].big,'14:10');assert.equal(column.cells[0].side.full,'plugin.calIn{"t":"2h50"}');
  assert.equal(column.cells[1].big,'06:00');assert.equal(column.cells[1].subline.text.short,'Codex');
@@ -158,7 +158,7 @@ function display() {
  return {data,ref};
 }
 
-test('shaping from the display data: own subscriptions only, peaks, own 5 h and weekly resets, reset cards, announced resets',()=>{
+test('shaping from the display data: own subscriptions only, peaks, own 5 h and weekly resets, banked resets, announced resets',()=>{
  const {data,ref}=display();
  data.subscriptions=[{subscriptionRef:ref,accounts:[]}];
  const cal=calendarFromCockpit(data,NOW);
@@ -204,6 +204,9 @@ test('macrevc-844-4: missing peak data, no window and known no-rules are three s
  // Feed present, empty, only tool rows (no declared plan): no peak rules.
  const noRules=structuredClone(data);noRules.details.peaks=[];noRules.subscriptions=[];noRules.projection.rows=noRules.projection.rows.filter(r=>!r.id.startsWith('declared:'));
  assert.equal(calendarFromCockpit(noRules,NOW).peakRules,'no');
+ // A tool-read ZCode row (no declared plan) with no window in the horizon: its provider has peak rules, so not "No rules" (D328/D406).
+ const zai=structuredClone(noRules);{const row=structuredClone(zai.projection.rows[0]);row.id='zai';row.name={en:'ZCode',zh:'ZCode'};row.vendorKey='glm';zai.projection.rows.push(row);}
+ assert.equal(calendarFromCockpit(zai,NOW).peakRules,'yes');
  const column=peakRules=>calendarPlugin.column(calendarPlugin.accept({...week,peaks:[],peakRules},undefined),context).foot.value.full;
  assert.equal(column('no'),'plugin.calNoRules');
  assert.notEqual(column('yes'),'plugin.calNoRules');assert.equal(column('yes'),'plugin.calendarNone');
@@ -288,4 +291,41 @@ test('D375: an empty peaks list is "no rules"; a missing field is unknown (never
  assert.equal(foot(data),'plugin.calNoRules');
  delete data.details.peaks;
  assert.equal(foot(data),'plugin.calPeaksUnknown');
+});
+
+test('D406: reset-card notices with no stated time sit on the day they were published; direct resets stay a separate kind',()=>{
+ const {data,ref}=display();
+ data.subscriptions=[{subscriptionRef:ref,accounts:[]}];
+  const iso=t=>new Date(t).toISOString();
+ const ev=(id,kind,publishedAt,schedule)=>({version:1,id,rowId:'codex',provider:'openai',kind,status:'announced',publishedAt:iso(publishedAt),expiresAt:iso(local(2026,11,20)),...(schedule?{schedule}:{}),source:{kind:'publication',publicationId:'p'}});
+ data.details.resetEvents=[ev('c1','reset_credit',NOW),ev('c2','reset_credit',local(2026,11,10,9),{from:iso(local(2026,11,14,8)),through:iso(local(2026,11,14,8)),precision:'exact'}),ev('d1','direct_reset',NOW)];
+ const cal=calendarFromCockpit(data,NOW);
+ assert.ok(parseCalendarData(cal));
+ const at=cal.spans.filter(x=>x.kind!=='cards').map(x=>[x.kind,x.from,x.to,x.count]);
+ assert.deepEqual(at,[['credit',NOW,null,1],['credit',local(2026,11,14,8),local(2026,11,14,8),1],['announced',NOW,null,null]]);
+});
+
+test('D406 review: a point deadline before local midnight stays on its day; a confirmed banked reset keeps its status',()=>{
+ const {data,ref}=display();
+ data.subscriptions=[{subscriptionRef:ref,accounts:[]}];
+ const iso=t=>new Date(t).toISOString();
+ const ev=(id,status,schedule)=>({version:1,id,rowId:'codex',provider:'openai',kind:'reset_credit',status,publishedAt:iso(local(2026,11,10,9)),expiresAt:iso(local(2026,11,20)),...(schedule?{schedule}:{}),source:{kind:'publication',publicationId:'p'}});
+ const late=local(2026,11,14,23,50);
+ data.details.resetEvents=[ev('a','announced',{from:iso(late),through:iso(late),precision:'exact'}),ev('b','confirmed')];
+ const cal=calendarFromCockpit(data,NOW),credit=cal.spans.filter(x=>x.kind!=='cards');
+ assert.equal(new Date(credit[0].to).getDate(),14,'23:50 is still the 14th');
+ assert.deepEqual(credit.map(x=>x.kind),['credit','creditConfirmed']);
+ assert.ok(parseCalendarData(cal));
+});
+
+test('D406 round 2: the half-hour floor is local: 00:05 in Asia/Kathmandu stays on its own day',()=>{
+ const keep=process.env.TZ;process.env.TZ='Asia/Kathmandu';
+ try{
+  const {data,ref}=display();data.subscriptions=[{subscriptionRef:ref,accounts:[]}];
+  const at=Date.UTC(2026,10,25,18,20);// 2026-11-26 00:05 in Kathmandu
+  const iso=t=>new Date(t).toISOString();
+  data.details.resetEvents=[{version:1,id:'k',rowId:'codex',provider:'openai',kind:'reset_credit',status:'announced',publishedAt:iso(at-3600e3),expiresAt:iso(at+9*86400e3),schedule:{from:iso(at),through:iso(at),precision:'exact'},source:{kind:'publication',publicationId:'p'}}];
+  const span=calendarFromCockpit(data,at-7200e3).spans.find(x=>x.kind==='credit');
+  assert.equal(new Date(span.to).getDate(),26);assert.equal(new Date(span.to).getHours(),0);
+ }finally{process.env.TZ=keep;}
 });

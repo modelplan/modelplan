@@ -271,6 +271,31 @@ func runtimeWindowCurrent(windows []Window, now time.Time) bool {
 	return false
 }
 
+// A newer account stamp can come from a different window. If logs include a still-current
+// runtime window, its own observation must be at least as new; a missing window stays missing.
+func logsCoverRuntimeWindows(logs Account, windows []Window, now time.Time) bool {
+	for _, runtime := range windows {
+		if runtime.ObservedAt.IsZero() || runtime.ObservedAt.After(now) || finite(runtime.UsedPercent, 0, 1000) == nil || (runtime.ResetsAt != nil && !now.Before(*runtime.ResetsAt)) {
+			continue
+		}
+		found, covered := false, false
+		for _, local := range logs.Windows {
+			if local.Kind != runtime.Kind {
+				continue
+			}
+			found = true
+			if (local.Limit == "" || runtime.Limit == "" || local.Limit == runtime.Limit) && (local.WindowMinutes == 0 || runtime.WindowMinutes == 0 || local.WindowMinutes == runtime.WindowMinutes) && finite(local.UsedPercent, 0, 1000) != nil && !local.ObservedAt.Before(runtime.ObservedAt) && !local.ObservedAt.After(now) {
+				covered = true
+				break
+			}
+		}
+		if found && !covered {
+			return false
+		}
+	}
+	return true
+}
+
 // AccountDue: the cached reading is old enough to ask Codex again.
 func AccountDue(cache string, now time.Time) bool {
 	if off() || cache == "" {
@@ -290,7 +315,8 @@ func off() bool {
 }
 
 // CodexBin finds the codex executable: $MODELPLAN_CODEX, PATH, then the usual install places
-// (hooks run with a short PATH). Empty when there is none.
+// (hooks run with a short PATH). Empty when there is none. The Codex app's bundled copy is never
+// used: ModelPlan does not run programs inside another app's bundle (owner build-6 #14).
 func CodexBin(home string) string {
 	if p := os.Getenv("MODELPLAN_CODEX"); p != "" {
 		return p
@@ -299,7 +325,7 @@ func CodexBin(home string) string {
 	if runtime.GOOS == "windows" {
 		exe = "codex.exe"
 	}
-	return toolcli.Find(home, exe, "/Applications/Codex.app/Contents/Resources/"+exe)
+	return toolcli.Find(home, exe)
 }
 
 // AccountRefresh is the outcome of an explicit refresh. It covers Codex only: no other source
@@ -471,7 +497,10 @@ func lock(cache string, now time.Time) (func(), bool) {
 }
 
 func save(cache string, s *accountSnap) error {
-	b, _ := json.MarshalIndent(s, "", "  ")
+	b, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		return codeError("parse_error", "parse_error")
+	}
 	p := accountPath(cache)
 	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
 		return err
@@ -520,8 +549,6 @@ func askCodex(ctx context.Context, codex string) (*rlResponse, error) {
 		return nil, err
 	}
 	cmd.Stderr = io.Discard
-	ownProcessGroup(cmd)
-	cmd.WaitDelay = time.Second
 	in, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -530,13 +557,13 @@ func askCodex(ctx context.Context, codex string) (*rlResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := cmd.Start(); err != nil {
+	if err := toolcli.Start(cmd); err != nil {
 		return nil, err
 	}
 	// A descendant that inherited stdout can keep the pipe open after the launcher dies: on the
 	// deadline, stop the whole group and close the read end so the scan below returns.
 	fired := make(chan struct{})
-	stop := context.AfterFunc(ctx, func() { defer close(fired); killProcessGroup(cmd); _ = out.Close() })
+	stop := context.AfterFunc(ctx, func() { defer close(fired); toolcli.KillGroup(cmd); _ = out.Close() })
 	defer func() {
 		// The deadline kill finishes before Wait reaps the launcher, so it never signals a
 		// recycled process group.
@@ -544,8 +571,7 @@ func askCodex(ctx context.Context, codex string) (*rlResponse, error) {
 			<-fired
 		}
 		_ = in.Close()
-		killProcessGroup(cmd)
-		_ = cmd.Wait()
+		_ = toolcli.Finish(cmd)
 	}()
 	send := func(v any) error { b, _ := json.Marshal(v); _, err := in.Write(append(b, '\n')); return err }
 	sc := bufio.NewScanner(out)
@@ -890,7 +916,7 @@ func applyAccount(r *Report, cache string, now time.Time, admissions ...consent.
 		// Turned off, or no window of the runtime reading still in its cycle: the logs stand.
 		newer := !off() && runtimeWindowCurrent(s.Windows, now)
 		for _, candidate := range r.Accounts {
-			if candidate.Source == "codex" && candidate.Via == "" && candidate.Subscription == nil && (!newer || !candidate.ObservedAt.Before(s.ObservedAt)) {
+			if candidate.Source == "codex" && candidate.Via == "" && candidate.Subscription == nil && (!newer || (!candidate.ObservedAt.Before(s.ObservedAt) && logsCoverRuntimeWindows(candidate, s.Windows, now))) {
 				failureSource(false) // the session-log reading wins; the retained windows are not merged
 				return
 			}
@@ -1116,16 +1142,23 @@ func rateLimitsFromErrorBody(message string, now time.Time) *rlSnapshot {
 			ResetAt            *int64   `json:"reset_at"`
 			ResetAfterSeconds  *int64   `json:"reset_after_seconds"`
 		}
-		if json.Unmarshal(raw, &w) != nil || w.UsedPercent == nil || w.LimitWindowSeconds == nil || *w.LimitWindowSeconds < 60 {
+		if json.Unmarshal(raw, &w) != nil || w.UsedPercent == nil || finite(w.UsedPercent, 0, 100) == nil || w.LimitWindowSeconds == nil || *w.LimitWindowSeconds < 60 {
 			return nil, false
 		}
 		minutes := *w.LimitWindowSeconds / 60
 		out := &rlWindow{UsedPercent: w.UsedPercent, WindowDurationMins: &minutes}
+		const maxJSONUnix = 253402300799 // 9999-12-31T23:59:59Z
 		switch {
 		case w.ResetAt != nil && *w.ResetAt > 0:
+			if *w.ResetAt > maxJSONUnix {
+				return nil, false
+			}
 			out.ResetsAt = w.ResetAt
 		case w.ResetAfterSeconds != nil && *w.ResetAfterSeconds >= 0:
-			at := now.Add(time.Duration(*w.ResetAfterSeconds) * time.Second).Unix()
+			if *w.ResetAfterSeconds > maxJSONUnix-now.Unix() {
+				return nil, false
+			}
+			at := now.Unix() + *w.ResetAfterSeconds
 			out.ResetsAt = &at
 		}
 		return out, true

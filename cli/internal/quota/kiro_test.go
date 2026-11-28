@@ -92,3 +92,43 @@ func TestParseKiroFailures(t *testing.T) {
 		t.Fatal("a missing kiro-cli is an error")
 	}
 }
+
+// Owner build-6 #14: a kiro-cli that exists only inside Kiro.app or Kiro CLI.app is never run (it
+// is the IDE's launcher, or a bundle that updates itself, and macOS charged either to ModelPlan
+// as "updating other apps"). The row says the standalone Kiro CLI is needed, not a parse error.
+func TestKiroInsideAppBundleIsNeverRun(t *testing.T) {
+	isolateHome(t)
+	bin, log := fakeKiro(t, kiroUsage)
+	root := t.TempDir()
+	inBundle := filepath.Join(root, "Kiro.app", "Contents", "Resources", "app", "bin", "kiro-cli")
+	if err := os.MkdirAll(filepath.Dir(inBundle), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(inBundle, body, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("MODELPLAN_KIRO", "")
+	t.Setenv("PATH", filepath.Dir(inBundle)+string(os.PathListSeparator)+"/usr/bin:/bin")
+	link := filepath.Join(os.Getenv("HOME"), ".local", "bin", "kiro-cli")
+	if err := os.MkdirAll(filepath.Dir(link), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(inBundle, link); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
+	for _, override := range []string{"", inBundle, link} {
+		t.Setenv("MODELPLAN_KIRO", override)
+		e := fetchKiro(context.Background(), nil, "local", "", now)
+		if e.Status != "error" || e.ErrorCode != "runtime_missing" || e.Error != kiroInstall {
+			t.Fatalf("override %q: entry = %+v", override, e)
+		}
+	}
+	if _, err := os.Stat(log); !os.IsNotExist(err) {
+		t.Fatalf("the in-bundle kiro-cli ran: %v", err)
+	}
+}

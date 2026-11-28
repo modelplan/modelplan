@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: LicenseRef-ModelPlan-Visuals-1.0 */
-/* Copyright (c) 2026 ModelPlan. G3-47 base bells in the 34 px reserve, written for this page from the base-bells
+/* Copyright (c) 2026 ModelPlan. G3-47 base bells in the 46 px reserve, written for this page from the base-bells
    notes (see SOURCES.md); the images are the released, unchanged base-bell rasters. */
 /* G3-131 (owner D294, 2026-11-18): the bell is a fixed 10 px high; its width is the column x 0.7 clamped to 81-101 px,
    so the whole raster is stretched horizontally by at most 1.25x (natural shape 81:10, drawn center/100% 100%).
@@ -14,7 +14,7 @@
 /* Working light (CKP-ENG-17/18, D294): no flame. The sheet is only a container; the idle/empty bells have none.
    Its own opacity yields to the landing burn (cockpit.css), the breathing runs on the two pseudo-elements, so the
    animation can never override that yield. The colour is the subscription's vendor colour (--v, the livery table). */
-.ck-base .bz .bz-sheet{top:0;width:calc(var(--bell-w) * 1.2);height:34px;opacity:1;z-index:2;transition:opacity .3s ease-out .45s}
+.ck-base .bz .bz-sheet{top:0;width:calc(var(--bell-w) * 1.2);height:46px;opacity:1;z-index:2;transition:opacity .3s ease-out .45s}
 /* In-mouth wash. */
 .ck-base .bz .bz-sheet::before{border-radius:0;inset:auto;left:50%;top:calc(var(--bell-m) - .5px);width:calc(var(--bell-w) * .9);height:calc(var(--bell-h) - var(--bell-m) + 1.5px);transform:translateX(-50%);opacity:.85;
   background:radial-gradient(ellipse 50% 70% at 50% 40%,color-mix(in srgb,var(--v) 55%,white) 0%,color-mix(in srgb,var(--v) 80%,transparent) 40%,color-mix(in srgb,var(--v) 30%,transparent) 75%,transparent 100%) no-repeat}
@@ -24,3 +24,43 @@
   background:radial-gradient(ellipse 45% 100% at 50% 0,color-mix(in srgb,var(--v) 30%,transparent) 0%,color-mix(in srgb,var(--v) 12%,transparent) 55%,transparent 100%) no-repeat,
     linear-gradient(180deg,color-mix(in srgb,var(--v) 16%,transparent),transparent 85%) no-repeat;
   -webkit-mask-image:linear-gradient(90deg,transparent,#000 22%,#000 78%,transparent);mask-image:linear-gradient(90deg,transparent,#000 22%,#000 78%,transparent)}
+
+/* D454/D459 (owner 2026-11-26): two layers per bell.
+   1. Subscription output: the soft in-mouth wash in the subscription's colour (the sheet's ::before above) while that
+      subscription works; no flame shape (the cone stays hidden). Shown only while the cockpit is docked at rest (ember):
+      under a full flame or when out it is hidden completely.
+   2. Cockpit thrust (#cockpit[data-thrust], view.ts): the owner's final blue flame set (assets/flames, see SOURCES.md) on
+      every nozzle. Docked = ember, while the host ignites (the launch burn after a detach, the put-back flight, the approach
+      in the catch zone) = full thrust, detached and parked = out (D468, replacing D459's short flame: the last full frame fades
+      away in 0.4 s and the sprite is then hidden, so nothing paints or animates). One sprite hangs under each bell, its root on the
+      lower lip (drawn over the bell and the wash), its root width 0.95 x the bell (88 css px at the 93 px bell of the
+      636 px cockpit, the width of the owner's nozzle close-up). It replaces the landing-burn flare of the base edition. */
+.ck-base .bz .bz-sheet::after{display:none}
+#cockpit:not([data-thrust="ember"]) .ck-base .bz .bz-sheet{display:none}
+.ck-base :is(.bz,.bz-empty)::before,.ck-base :is(.bz,.bz-empty)::after{content:none}
+.ck-base .bz-flame{display:block;position:absolute;left:50%;top:var(--bell-m);width:calc(var(--bell-w) * .95);aspect-ratio:160/176;transform:translateX(-50%);
+  pointer-events:none;z-index:4;background:no-repeat 0 0/100% 100%;background-image:url('./assets/bells/flame-short-2x.png');background-image:image-set(url('./assets/bells/flame-short-1x.png') 1x,url('./assets/bells/flame-short-2x.png') 2x)}
+#cockpit[data-thrust="ember"] .ck-base .bz-flame{background-image:url('./assets/bells/flame-ember-2x.png');background-image:image-set(url('./assets/bells/flame-ember-1x.png') 1x,url('./assets/bells/flame-ember-2x.png') 2x)}
+/* Full thrust: a 3-frame strip; the still frame (reduced motion, hidden cockpit, low power) is the middle one. */
+#cockpit[data-thrust="full"] .ck-base .bz-flame{background-size:300% 100%;background-position:50% 0;background-image:url('./assets/bells/flame-full-strip-2x.png');background-image:image-set(url('./assets/bells/flame-full-strip-1x.png') 1x,url('./assets/bells/flame-full-strip-2x.png') 2x)}
+/* D468: out keeps the full strip's middle frame (no jump from the burn) and fades it; the end state is hidden, no ember. */
+#cockpit[data-thrust="out"] .ck-base .bz-flame{background-size:300% 100%;background-position:50% 0;background-image:url('./assets/bells/flame-full-strip-2x.png');background-image:image-set(url('./assets/bells/flame-full-strip-1x.png') 1x,url('./assets/bells/flame-full-strip-2x.png') 2x);
+  opacity:0;visibility:hidden}
+/* The fade is its own keyframe animation, not a transition: a transition on this element is cancelled by WebKit when the full-thrust
+   animation (which owns opacity) is removed, so the flame would cut to 0. No fill: when it ends the rule above (hidden) applies. */
+@keyframes cockpit-flame-out{from{opacity:1;visibility:visible}to{opacity:0;visibility:visible}}
+@media (prefers-reduced-motion:no-preference){
+html:not([data-reduce-motion="true"]) #cockpit[data-thrust="out"][data-fade="true"] .ck-base .bz-flame{animation:cockpit-flame-out .4s linear}
+}
+/* Flipbook: frames 1-2-3-2 at 9 fps (a ping-pong, so no jump from the last frame to the first), a negative per-bell delay so
+   the nozzles never flip together. Only on an active, open page without Reduce Motion (D450); everything else holds the still. */
+@keyframes cockpit-flame-flip{0%{background-position-x:0}25%{background-position-x:50%}50%{background-position-x:100%}75%{background-position-x:50%}}
+/* Per-nozzle dynamics (owner: subtle, never very different), full thrust only: same frame order everywhere; each bell gets its own
+   flip period (8.4-9.6 fps), a phase offset, a length breath (scaleY about the root, 1.2-1.8 s) and a brightness flicker
+   (opacity 0.95-1), set deterministically per bell index by prototype-base.ts. Transform (scale) and opacity only. */
+#cockpit[data-thrust="full"] .ck-base .bz-flame{transform-origin:50% 0}
+@keyframes cockpit-flame-breathe{0%{scale:1 .98}100%{scale:1 1.02}}
+@keyframes cockpit-flame-flicker{0%{opacity:.95}100%{opacity:1}}
+@media (prefers-reduced-motion:no-preference){
+html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"][data-thrust="full"] .ck-base .bz-flame{animation:cockpit-flame-flip var(--fp,.44s) steps(1,end) var(--fo,0s) infinite,cockpit-flame-breathe calc(var(--fb,1.5s) / 2) ease-in-out var(--fbo,0s) infinite alternate,cockpit-flame-flicker calc(var(--fl,1s) / 2) ease-in-out var(--flo,0s) infinite alternate}
+}

@@ -4,12 +4,12 @@ import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.
 import {appearance,commands,pageId,shell} from '../fixture.mjs';
 import {visualFixture} from '../visual-fixture.mjs';
 
-async function open(page,data=visualFixture().data) {
+async function open(page,data=visualFixture().data,range=null) {
  await page.addInitScript(()=>{window.__g1Messages=[];window.webkit={messageHandlers:{cockpit:{postMessage(raw){window.__g1Messages.push(JSON.parse(raw));}}}};});
  await page.clock.setFixedTime(new Date('2026-11-04T12:00:00Z'));
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
- expect(await receive(send('load',{appearance,shell,redBelow:25}))).toBe(true);
+ expect(await receive(send('load',{appearance,shell:range?{...shell,range}:shell,redBelow:25}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('display',{data}))).toBe(true);
  return {send,receive,data};
@@ -67,11 +67,11 @@ test('G3-55 right-click on the cockpit raises no browser context menu',async({pa
  }
 });
 
-test('CKP-STRIP-08 record strip has five or three lines including the collapsed profile',async({page})=>{
+test('CKP-STRIP-08 record strip has five lines open and closed; the retired compact tier is refused (D444)',async({page})=>{
  const {send,receive}=await open(page);await expect(page.locator('.ck-tape .tl')).toHaveCount(5);
  expect(await receive(send('shell',{...shell,tier:'tall',profile:'closed'}))).toBe(true);await expect(page.locator('.ck-tape .tl')).toHaveCount(5);
- expect(await receive(send('shell',{...shell,tier:'compact'}))).toBe(true);await expect(page.locator('.ck-tape .tl')).toHaveCount(3);
- expect(await receive(send('shell',{...shell,tier:'compact',profile:'closed'}))).toBe(true);await expect(page.locator('.ck-tape .tl')).toHaveCount(3);
+ expect(await receive(send('shell',{...shell,tier:'compact'}))).toBe(false);await expect(page.locator('.ck-tape .tl')).toHaveCount(5);
+ await expect(page.locator('#cockpit')).toHaveAttribute('data-layout','890');await expect(page.locator('html')).toHaveAttribute('data-profile','full');
 });
 
 test('CKP-STRIP-11 v1 session lines expose text without state-square or done indicators',async({page})=>{
@@ -92,7 +92,7 @@ test('CKP-ENG-07 a monthly-only quota stays in Other and distinguishes unknown f
 
 test('CKP-ENG-08 Today uses today output and today average, with unknown left blank',async({page})=>{
  const data=visualFixture().data;const detail=data.details.subscriptions[0];detail.today[0].observedOutputTokens=12000;detail.today[0].generationTps=42;
- const {send,receive}=await open(page,data);const row=page.locator('.eng-cols .ec[data-col]').first().locator('.qrow-t');
+ const {send,receive}=await open(page,data,'today');const row=page.locator('.eng-cols .ec[data-col]').first().locator('.qrow-t');
  await expect(row.locator('.qtokens')).toHaveText('12k');await expect(row.locator('.qaverage')).toContainText('42');
  detail.today=[];expect(await receive(send('display',{data}))).toBe(true);
  await expect(row.locator('.qtokens')).toHaveCount(0);await expect(row.locator('.qaverage')).toHaveCount(0);
@@ -304,7 +304,7 @@ test('CKP-ENG-05 shortcuts appear in tooltip, accessible name and Option help an
 test('CKP-MFD-06 Overview shows delivered today total and puts threshold notices first',async({page})=>{
  const data=visualFixture().data;data.projection.rows=data.projection.rows.slice(0,1);data.details.subscriptions=data.details.subscriptions.slice(0,1);const row=data.projection.rows[0],account=row.accounts[0],detail=data.details.subscriptions[0];detail.today[0].observedOutputTokens=12000;
  data.details.alerts=[{severity:'warning',source:row.id,subscriptionRef:account.subscriptionRef,windowId:account.windows[1].id,remainingPercent:35},{severity:'critical',source:row.id,subscriptionRef:account.subscriptionRef,windowId:account.windows[0].id,remainingPercent:20}];account.windows[0].remainingPercent=20;account.windows[0].resetsAt='2026-11-04T15:30:00Z';account.windows[1].remainingPercent=35;data.details.resetEvents=[{version:1,id:'synthetic-reset',provider:'openai',rowId:row.id,status:'confirmed',publishedAt:'2026-11-04T11:00:00Z',expiresAt:'2026-11-05T12:00:00Z',source:{kind:'publication',publicationId:'0123456789abcdef01234567'}}];const {send,receive}=await open(page,data);
- await expect(page.locator('.pg-overview .mfd-alerts')).toBeVisible();await expect(page.locator('.pg-overview .mfd-alerts li').first()).toHaveClass(/\bal-red\b/);await expect(page.locator('.pg-overview .mfd-alerts li').first()).toContainText('5h 20% · resets in 3h30');await expect(page.locator('.pg-overview .mfd-alerts li').nth(1)).toHaveClass(/\bal-blue\b/);await expect(page.locator('.pg-overview .mfd-alerts li.al-amber')).toHaveCount(0);await expect(page.locator('.pg-overview .mfd-alerts')).toContainText('official extra reset confirmed');await expect(page.locator('.pg-overview .ov-total')).toHaveText('12k');
+ await expect(page.locator('.pg-overview .mfd-alerts')).toBeVisible();await expect(page.locator('.pg-overview .mfd-alerts li').first()).toHaveClass(/\bal-red\b/);await expect(page.locator('.pg-overview .mfd-alerts li').first()).toContainText('5h 20% · resets in 3h30');await expect(page.locator('.pg-overview .mfd-alerts li').nth(1)).toHaveClass(/\bal-blue\b/);await expect(page.locator('.pg-overview .mfd-alerts li.al-amber')).toHaveCount(0);await expect(page.locator('.pg-overview .mfd-alerts')).toContainText('official limit reset confirmed');await expect(page.locator('.pg-overview .ov-total')).toHaveText('12k');
  const positions=await page.locator('.pg-overview').evaluate(e=>[...e.children].map(n=>n.className));expect(positions.indexOf('mfd-alerts')).toBeLessThan(positions.indexOf('ov-top'));
  const second=visualFixture().data;data.projection.rows.push(second.projection.rows[1]);data.details.subscriptions.push({...second.details.subscriptions[1],today:[]});expect(await receive(send('display',{data}))).toBe(true);await expect(page.locator('.pg-overview .ov-total')).toHaveCount(0);await page.locator('.eng-keys .ek[data-sub]').first().click();await expect(page.locator('.pg-overview .ov-total')).toHaveText('12k');
  detail.today=[];expect(await receive(send('display',{data}))).toBe(true);await expect(page.locator('.pg-overview .ov-total')).toHaveCount(0);
@@ -354,7 +354,7 @@ test('CKP-MOT-03 Reduce Motion keeps running cursors static without shifting con
 });
 
 test('CKP-MOT-06 visible text and well nesting respect the v1 budget',async({page})=>{
- const {send,receive}=await open(page);const inspect=()=>page.locator('#cockpit').evaluate(root=>{const nodes=[...root.querySelectorAll('*')];const small=nodes.filter(e=>!e.children.length&&e.textContent.trim()&&e.getClientRects().length&&!e.matches('.eng-keys .ek[data-sub] .ki')).map(e=>({text:e.textContent.trim(),size:parseFloat(getComputedStyle(e).fontSize)})).filter(x=>x.size>0&&x.size<10);const depths=nodes.filter(e=>e.getAttribute('data-mat')==='well').map(e=>{let depth=1;for(let p=e.parentElement;p&&p!==root;p=p.parentElement)if(p.getAttribute('data-mat')==='well')depth++;return depth;});return {small,depths,legends:root.querySelectorAll('legend').length};});for(const tier of ['tall','compact'])for(const locale of ['en','zh-CN']){expect(await receive(send('shell',{...shell,tier}))).toBe(true);expect(await receive(send('appearance',{...appearance,locale}))).toBe(true);for(const scope of ['all','member']){if(scope==='member')await page.locator('.eng-keys .ek[data-sub]').first().click();else await page.locator('.ek-all').click();for(let i=0;i<4;i++){await page.locator('.mfd-pk .pk').nth(i).click();const audit=await inspect();expect(audit.small).toEqual([]);expect(Math.max(0,...audit.depths)).toBeLessThanOrEqual(2);expect(audit.legends).toBe(0);}}}
+ const {send,receive}=await open(page);const inspect=()=>page.locator('#cockpit').evaluate(root=>{const nodes=[...root.querySelectorAll('*')];const small=nodes.filter(e=>!e.children.length&&e.textContent.trim()&&e.getClientRects().length&&!e.matches('.eng-keys .ek[data-sub] .ki')).map(e=>({text:e.textContent.trim(),size:parseFloat(getComputedStyle(e).fontSize)})).filter(x=>x.size>0&&x.size<10);const depths=nodes.filter(e=>e.getAttribute('data-mat')==='well').map(e=>{let depth=1;for(let p=e.parentElement;p&&p!==root;p=p.parentElement)if(p.getAttribute('data-mat')==='well')depth++;return depth;});return {small,depths,legends:root.querySelectorAll('legend').length};});for(const tier of ['tall'])for(const locale of ['en','zh-CN']){expect(await receive(send('shell',{...shell,tier}))).toBe(true);expect(await receive(send('appearance',{...appearance,locale}))).toBe(true);for(const scope of ['all','member']){if(scope==='member')await page.locator('.eng-keys .ek[data-sub]').first().click();else await page.locator('.ek-all').click();for(let i=0;i<4;i++){await page.locator('.mfd-pk .pk').nth(i).click();const audit=await inspect();expect(audit.small).toEqual([]);expect(Math.max(0,...audit.depths)).toBeLessThanOrEqual(2);expect(audit.legends).toBe(0);}}}
 });
 
 test('CKP-MOT-07 active key text and quota bars meet contrast thresholds in both themes',async({page})=>{
@@ -363,9 +363,9 @@ test('CKP-MOT-07 active key text and quota bars meet contrast thresholds in both
  for(const theme of ['night','day']){if(theme==='day')expect(await receive(send('appearance',{...appearance,theme}))).toBe(true);const result=await audit();expect(result.keys).toHaveLength(6);for(const n of result.keys)expect(n).toBeGreaterThanOrEqual(4.5);expect(result.bars).toHaveLength(3);for(const n of result.bars)expect(n).toBeGreaterThanOrEqual(3);}
 });
 
-test('CKP-STRIP-16 record strip right-end text fits without ellipsis in both locales and tiers',async({page})=>{
+test('CKP-STRIP-16 record strip right-end text fits without ellipsis in both locales',async({page})=>{
  const {send,receive}=await open(page);
- for(const tier of ['tall','compact']){
+ for(const tier of ['tall']){
   expect(await receive(send('shell',{...shell,tier}))).toBe(true);
   for(const locale of ['en','zh-CN']){
    expect(await receive(send('appearance',{...appearance,locale}))).toBe(true);

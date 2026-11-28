@@ -17,6 +17,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/modelplan/modelplan/cli/internal/idlework"
 	"io"
 	"math"
 	"os"
@@ -139,7 +140,10 @@ type turn struct {
 const (
 	Keep       = 28 * 24 * time.Hour
 	maxRows    = 3000
-	maxFile    = 2 << 20
+	maxFile    = 2 << 20  // the loader refuses a file above this
+	fileMargin = 64 << 10 // the writer stays this far under maxFile, so a write is never one byte from being unreadable
+	writeLimit = maxFile - fileMargin
+	recoverMax = 16 << 20         // an over-limit perf.json up to this size is still read by the writer, which then shrinks it
 	maxScan    = 8 << 20          // bytes read from one log per run
 	maxLine    = 4 << 20          // longer lines (huge tool output) are skipped unread
 	statusGap  = 15 * time.Second // the status line refreshes often; read at most this often from it
@@ -168,9 +172,14 @@ func Off() bool { return os.Getenv("MODELPLAN_HISTORY") == "off" }
 func Load(cache string) Ledger {
 	l := Ledger{SchemaVersion: 1}
 	b, err := os.ReadFile(Path(cache))
+	if err == nil {
+		idlework.Open()
+		idlework.Read(len(b))
+	}
 	if err != nil || len(b) > maxFile {
 		return l
 	}
+	idlework.Decode()
 	var on Ledger
 	if json.Unmarshal(b, &on) == nil && on.SchemaVersion == 1 {
 		l.Rows, l.Files, l.Counted = on.Rows, on.Files, on.Counted
@@ -286,11 +295,12 @@ func (l *Ledger) scan(path, source string, p parser, now time.Time) bool {
 // scanLog reads one log from its cursor in files and returns its finished turns. A log seen for
 // the first time is read from its last maxScan bytes; a log that shrank (rewritten) starts over.
 func scanLog(files map[string]Cursor, path, source string, p parser, now time.Time) ([]turn, bool) {
-	fh, err := os.Open(path)
+	fh, err := openLog(path)
 	if err != nil {
 		return nil, false
 	}
 	defer fh.Close()
+	idlework.Open()
 	fi, err := fh.Stat()
 	if err != nil || !fi.Mode().IsRegular() {
 		return nil, false
@@ -323,7 +333,8 @@ func scanLog(files map[string]Cursor, path, source string, p parser, now time.Ti
 	if carries {
 		cr.resume(base)
 	}
-	r := bufio.NewReaderSize(io.LimitReader(fh, maxScan), 256<<10)
+	idlework.Decode()
+	r := bufio.NewReaderSize(idlework.Reader(io.LimitReader(fh, maxScan)), 256<<10)
 	off := start
 	if partial { // starting inside a line: skip to the next one
 		_, n, err := readLine(r)
@@ -365,8 +376,13 @@ func scanLog(files map[string]Cursor, path, source string, p parser, now time.Ti
 
 // readLine reads one line through its newline and returns its length, with its bytes unless it is
 // longer than maxLine; an unfinished last line is an error.
-func readLine(r *bufio.Reader) ([]byte, int64, error) {
-	var buf []byte
+func readLine(r *bufio.Reader) ([]byte, int64, error) { return readLineInto(r, nil) }
+
+// readLineInto is readLine reusing buf's storage: the line is valid until the next call with the same
+// buf. For readers that copy what they keep (json.Unmarshal does).
+func readLineInto(r *bufio.Reader, buf []byte) ([]byte, int64, error) {
+	buf = buf[:0]
+	long := false
 	var n int64
 	for {
 		chunk, err := r.ReadSlice('\n')
@@ -374,10 +390,13 @@ func readLine(r *bufio.Reader) ([]byte, int64, error) {
 		if n <= maxLine {
 			buf = append(buf, chunk...)
 		} else {
-			buf = nil
+			long = true
 		}
 		switch err {
 		case nil:
+			if long {
+				return nil, n, nil
+			}
 			return buf, n, nil
 		case bufio.ErrBufferFull:
 			continue

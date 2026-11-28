@@ -3,7 +3,7 @@
 // reads the copy from the string tables (study/rocket-r1/strings/host.js).
 // Reference: CodexBar (MIT) at 7447bc77: Sources/CodexBar/Menu/MenuCardView.swift (UsageMenuCardHeaderView: account,
 // plan and the "Updated" subtitle) and Sources/CodexBarCore/UsageFormatter.swift ("Updated just now" / "Updated 3m ago").
-import type {WireAccount} from '../generated/wire.js';
+import type {WireAccount,WireRow} from '../generated/wire.js';
 
 /** The subscription with its plan when the reader knows it ("Codex Pro 200"); the name alone otherwise, or when the
  * plan only repeats the name. */
@@ -25,9 +25,10 @@ function saysWord(name:string,plan:string):boolean {
 const PENDING=new Set(['ok','not_read_yet','reader_busy','estimated']);
 /** CKP-ENG-50: the column state a wire account draws. A reader that failed with nothing to show is unreadable; one that
  * has not answered yet (or is busy) is still loading; a reading kept past its freshness is stale (drawn like current). */
-export function accountState(account:Pick<WireAccount,'valueState'|'lastFailure'>):'ok'|'stale'|'loading'|'error' {
+export function accountState(account:Pick<WireAccount,'valueState'|'lastFailure'>,rowState?:WireRow['state']):'ok'|'stale'|'loading'|'error' {
  if(account.valueState==='current')return 'ok';
  if(account.valueState==='retained')return 'stale';
+ if(rowState==='empty'||rowState==='failed'||rowState==='needs_action')return 'error';
  const code=account.lastFailure?.code;
  return code&&!PENDING.has(code)?'error':'loading';
 }

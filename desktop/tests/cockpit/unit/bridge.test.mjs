@@ -139,6 +139,8 @@ test('v2 readiness, strict live appearance and native shell state',()=>{
   assert.equal(f.bridge.receive(f.send('shell',{profile:'closed',attached:true,forcedClosed:true,tier:'tall',scope:'all'}),source),true);
   assert.equal(f.bridge.receive(f.send('shell',{profile:'closed',attached:true,forcedClosed:true,tier:'tall',scope:'all',extra:1}),source),false);
   assert.equal(f.bridge.receive(f.send('shell',{profile:'compact',attached:true,forcedClosed:false,tier:'tall',scope:'all'}),source),false);
+  // D444: one layout; the retired compact tier is refused like any unknown value.
+  assert.equal(f.bridge.receive(f.send('shell',{profile:'open',attached:true,forcedClosed:false,tier:'compact',scope:'all'}),source),false);
 });
 test('shell actions are gated by native state and visibility',()=>{
   const f=fixture();
@@ -146,7 +148,7 @@ test('shell actions are gated by native state and visibility',()=>{
   assert.equal(f.bridge.receive(f.send('shell',{profile:'open',attached:true,forcedClosed:false,tier:'tall',scope:'all'}),source),true);
   assert.equal(f.bridge.action('detach'),true);assert.equal(f.bridge.action('putBack'),false);
   assert.equal(f.bridge.action('close'),true);assert.equal(f.bridge.action('shutterToggle'),true);
-  assert.equal(f.bridge.receive(f.send('shell',{profile:'closed',attached:false,forcedClosed:true,tier:'compact',scope:'all'}),source),true);
+  assert.equal(f.bridge.receive(f.send('shell',{profile:'closed',attached:false,forcedClosed:true,tier:'tall',scope:'all'}),source),true);
   assert.equal(f.bridge.action('detach'),false);assert.equal(f.bridge.action('putBack'),true);assert.equal(f.bridge.action('shutterToggle'),false);
   assert.equal(f.bridge.action('close','extra'),false);
   assert.equal(f.bridge.receive(f.send('visibility',{visible:false,occluded:false,key:true}),source),true);
@@ -170,9 +172,9 @@ test('frozen v2 load requires exact initial appearance and tiered shell before r
   const calls=[],events=[],view={clear(){calls.push('clear');},render(){},configure(x){calls.push(['appearance',x]);},updateAppearance(){},shell(x){calls.push(['shell',x]);},active(){},dispose(){}};
   const b=new CockpitBridge(pageId,source.origin,s=>events.push(JSON.parse(s)),view,()=>pageId),send=commands();
   const a={theme:'night',locale:'en',reduceMotion:true,reduceTransparency:false,showProjectNames:true};
-  const shell={profile:'closed',attached:true,forcedClosed:true,tier:'compact',scope:'all'};
+  const shell={profile:'closed',attached:true,forcedClosed:true,tier:'tall',scope:'all'};
   const base=JSON.parse(send('load',{appearance:a,shell}));base.version=2;
-  for(const bad of [{...base,version:1},{...base,shell:undefined},{...base,shell:{...shell,scope:undefined}},{...base,shell:{...shell,scope:'bad/path'}},{...base,appearance:{...a,profile:'full'}},{...base,shell:{...shell,tier:'full',scope:'all'}},{...base,shell:{...shell,profile:'compact'}},{...base,shell:{...shell,extra:true}}])assert.equal(b.receive(JSON.stringify(bad),source),false);
+  for(const bad of [{...base,version:1},{...base,shell:undefined},{...base,shell:{...shell,scope:undefined}},{...base,shell:{...shell,scope:'bad/path'}},{...base,appearance:{...a,profile:'full'}},{...base,shell:{...shell,tier:'full',scope:'all'}},{...base,shell:{...shell,tier:'compact'}},{...base,shell:{...shell,profile:'compact'}},{...base,shell:{...shell,extra:true}}])assert.equal(b.receive(JSON.stringify(bad),source),false);
   assert.equal(b.receive(JSON.stringify(base),source),true);
   assert.deepEqual(calls.filter(Array.isArray),[['appearance',a],['shell',shell]]);
   b.ready();assert.equal(events[0].version,2);assert.equal(events[0].appearanceVersion,2);
@@ -193,6 +195,18 @@ test('scope selection only emits an exact currently displayed member or All',()=
   assert.equal(f.bridge.action('scopeSelect',ref),false);assert.equal(f.bridge.action('scopeSelect',key),true);
   assert.equal(f.bridge.clear(f.send('clear',{viewRevision:'4'}),source),true);
   assert.equal(f.bridge.action('scopeSelect',key),false);assert.equal(f.bridge.action('scopeSelect','all'),false);
+});
+
+test('hidden members cannot be scoped or refreshed until visible again',()=>{
+  const f=fixture(),data=capture(),ref=data.projection.rows[0].accounts[0].subscriptionRef;
+  assert.equal(f.bridge.receive(f.send('display',{data}),source),true);
+  assert.equal(f.bridge.action('scopeSelect',ref),true);
+  assert.equal(f.bridge.receive(f.send('appearance',{...appearance,hiddenMembers:[ref]}),source),true);
+  assert.equal(f.bridge.action('scopeSelect',ref),false);
+  assert.equal(f.bridge.action('refreshMember',ref),false);
+  assert.equal(f.bridge.receive(f.send('appearance',{...appearance}),source),true);
+  assert.equal(f.bridge.action('scopeSelect',ref),true);
+  assert.equal(f.bridge.receive(f.send('appearance',{...appearance,hiddenMembers:['/secret']}),source),false);
 });
 
 test('macrev-403-2: indexed fallback scopes are current, canonical and session-only',()=>{

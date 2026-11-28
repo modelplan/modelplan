@@ -7,6 +7,11 @@ import AppKit
     let subtitle = NSTextField(wrappingLabelWithString: "")
     let controls = NSStackView()
     let illustration = NSView()
+    /// D371: the indented per-subscription lines of a per-subscription row (the percentage window): the subscription's
+    /// name on the left and its dropdown on the same right-hand column as every other control.
+    let subList = NSStackView()
+    /// The title block and the control column side by side; the picture and `subList` sit under it.
+    private let top = NSStackView()
     var diagram: SettingsDiagramView?
     var choices: [String: SettingsChoiceControl] = [:]
     var aliases: [String: SettingsAliasControl] = [:]
@@ -27,7 +32,9 @@ import AppKit
     init(key: SettingKey) {
         self.key = key
         super.init(frame: .zero)
-        orientation = .horizontal; alignment = .centerY; distribution = .fill; spacing = 16
+        orientation = .vertical; alignment = .leading; distribution = .fill; spacing = 8
+        top.orientation = .horizontal; top.alignment = .centerY; top.distribution = .fill; top.spacing = 16
+        subList.orientation = .vertical; subList.alignment = .leading; subList.spacing = 6; subList.isHidden = true
         edgeInsets = .init(top: 14, left: 8, bottom: 14, right: 8)
         titleLabel.font = .systemFont(ofSize: 14, weight: .semibold)
         titleLabel.lineBreakMode = .byTruncatingTail
@@ -48,7 +55,9 @@ import AppKit
         controls.orientation = .vertical; controls.alignment = .trailing; controls.distribution = .fill; controls.spacing = 7
         readout.font = .systemFont(ofSize: 12); readout.textColor = .secondaryLabelColor
         readout.preferredMaxLayoutWidth = 230
-        addArrangedSubview(copy); addArrangedSubview(illustration); addArrangedSubview(controls)
+        top.addArrangedSubview(copy); top.addArrangedSubview(controls)
+        // D371: the little picture sits under the explanation, left aligned, outside the control column.
+        addArrangedSubview(top); addArrangedSubview(illustration); addArrangedSubview(subList)
         let separator = NSBox()
         separator.boxType = .separator
         separator.translatesAutoresizingMaskIntoConstraints = false
@@ -61,6 +70,8 @@ import AppKit
             copy.widthAnchor.constraint(greaterThanOrEqualToConstant: 160),
             subtitle.widthAnchor.constraint(equalTo: copy.widthAnchor),
             illustration.widthAnchor.constraint(equalToConstant: 96), illustration.heightAnchor.constraint(equalToConstant: 40),
+            top.widthAnchor.constraint(equalTo: widthAnchor, constant: -16),
+            subList.widthAnchor.constraint(equalTo: widthAnchor, constant: -16),
             controls.widthAnchor.constraint(equalToConstant: Self.controlColumnWidth(key)),
             readout.widthAnchor.constraint(lessThanOrEqualToConstant: 230),
         ])
@@ -71,6 +82,8 @@ import AppKit
     /// G3-26: rows listing every subscription give names room next to their controls. Since D87 (G3-68) the
     /// order list sits in Settings > Subscriptions beside visibility and aliases, so it shares their column.
     static func controlColumnWidth(_ key: SettingKey) -> CGFloat { [.visible, .alias, .order].contains(key) ? 380 : 230 }
+    /// D371 (B5): every dropdown on the Quota Widget page is this wide, in the 230 pt control column.
+    static let dropdownWidth: CGFloat = 150
 
     override func layout() {
         super.layout()
@@ -95,6 +108,8 @@ import AppKit
         for field in aliases.values { field.retire() }
         shortcut?.retire(); order?.retire(); resetHints?.retire(); surfaceAction?.retire()
         for view in controls.arrangedSubviews { controls.removeArrangedSubview(view); view.removeFromSuperview() }
+        for view in subList.arrangedSubviews { subList.removeArrangedSubview(view); view.removeFromSuperview() }
+        subList.isHidden = true
         choices = [:]; subscriptionLabels = [:]; controlIDs = []
         aliases = [:]; aliasLines = [:]; aliasLabels = [:]; shortcut = nil; order = nil; resetHints = nil
         surfaceAction = nil; licenseView = nil
@@ -203,7 +218,7 @@ import AppKit
             for (id, label, _, _) in values {
                 let popup = SettingsChoiceControl(key: key, subscriptionID: id.isEmpty ? nil : id)
                 popup.translatesAutoresizingMaskIntoConstraints = false
-                popup.widthAnchor.constraint(equalToConstant: id.isEmpty ? 180 : 132).isActive = true
+                popup.widthAnchor.constraint(equalToConstant: Self.dropdownWidth).isActive = true
                 popup.target = target; popup.action = onChoice
                 popup.onInteraction = { [weak self] in self?.diagram?.play() }
                 choices[id] = popup
@@ -213,13 +228,22 @@ import AppKit
                     name.setContentHuggingPriority(.defaultLow, for: .horizontal)
                     subscriptionLabels[id] = name
                     name.lineBreakMode = .byTruncatingTail; name.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+                    name.toolTip = label
                     let line = NSStackView(views: [name, popup]); line.spacing = 6; line.distribution = .fill
-                    controls.addArrangedSubview(line)
-                    line.widthAnchor.constraint(equalTo: controls.widthAnchor).isActive = true
+                    if key == .percentagePin {
+                        // D371: indented lines under the title; the dropdown ends on the control column's right edge.
+                        line.edgeInsets = .init(top: 0, left: 16, bottom: 0, right: 0)
+                        subList.addArrangedSubview(line)
+                        line.widthAnchor.constraint(equalTo: subList.widthAnchor).isActive = true
+                    } else {
+                        controls.addArrangedSubview(line)
+                        line.widthAnchor.constraint(equalTo: controls.widthAnchor).isActive = true
+                    }
                 }
             }
             if values.isEmpty { controls.addArrangedSubview(readout) }
         }
+        subList.isHidden = subList.arrangedSubviews.isEmpty
         for (id, label, value, options) in values {
             guard let popup = choices[id] else { continue }
             subscriptionLabels[id]?.stringValue = label

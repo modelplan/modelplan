@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // The porthole HUD from published public data, through the normal bridge. Synthetic data only.
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
-import {appearance,commands,pageId,shell} from '../fixture.mjs';
+import {appearance,commands,pageId,shell,excludePortholeFlicker} from '../fixture.mjs';
 import {visualFixture} from '../visual-fixture.mjs';
 import {shortLabel} from '../../../cockpit/study/rocket-r1/short-label.js';
 
@@ -26,6 +26,15 @@ test('CKP-PORT-04 D386 the tall HUD lists the six best-ability frontier models, 
  await expect(hud.locator('.hp')).toHaveCount(6);await expect(hud.locator('.hp b').first()).toHaveText('Synthetic m7');await expect(hud.locator('.hp-rec').first()).toHaveText('★high');
  const box=await hud.boundingBox();expect([box.width,box.height]).toEqual([180,160]);
  const svg=await hud.locator('svg.hud-mini').boundingBox();expect([svg.width,svg.height]).toEqual([162,77]);
+});
+// G3-202 (macrevc-1206-1, macrevb-1206-1): the tall chart's vertical axis starts 5 px lower (top inset 11 px) so it clears the porthole rim.
+// D444: one layout, so the built page is loaded tall only; the compact strip axis (M8 6V18H77) is pinned in unit/g3-202-hud-axis.test.mjs.
+test('CKP-PORT-03 G3-202 the tall HUD axis starts at 11 px, below the plot top inset of 6 px',async({page})=>{
+ await open(page);
+ const axis=page.locator('.hud svg.hud-mini path.hud-axis');
+ expect(await axis.getAttribute('d')).toBe('M8 11V65H153');
+ const box=await axis.evaluate(p=>{const b=p.getBBox();return [b.x,b.y,b.width,b.height];});
+ expect(box).toEqual([8,11,145,54]);
 });
 test('CKP-PORT-03 HUD B sits at window-local (76,24)',async({page})=>{
  await open(page);expect(await local(page)).toEqual([76,24,180,160]);
@@ -97,9 +106,65 @@ test('CKP-PORT-07 a subscription scope narrows the HUD and 全部 restores it',a
  await expect(page.locator('.hud .hp')).toHaveCount(1);await expect(page.locator('.hud .hp b')).toHaveText('Synthetic claude-model');
  expect(await receive(send('shell',{...shell,scope:'all'}))).toBe(true);await expect(page.locator('.hud .hp')).toHaveCount(4);
 });
+
+test('D386 a running dominated model remains selectable in the scoped Models list',async({page})=>{
+ const fleet=Array.from({length:10},(_,i)=>model('front-'+i,40+i,.1*(i+1)));
+ fleet.push(model('running-overflow',20,2));let ref='';
+ const session={sessionRef:'00000000000000aa',source:'codex',subscriptionRef:null,model:'running-overflow',effort:'high',projectLabel:null,lastObservedAt:observed(),state:'running',rate:null};
+ const {send,receive}=await open(page,{published:fleet,session,edit:data=>{keepRows(['codex'])(data);ref=data.subscriptions[0].subscriptionRef;}});
+ expect(await receive(send('shell',{...shell,scope:ref}))).toBe(true);
+ await page.getByRole('button',{name:'Models',exact:true}).click();
+ const row=page.locator('.md-row[data-model="running-overflow"]');await expect(row).toBeVisible();await row.click();
+ await expect(row).toHaveClass(/\bsel\b/);
+});
+
+test('D386 all eleven running models precede unused scoped Models rows',async({page})=>{
+ test.setTimeout(60000);await excludePortholeFlicker(page);
+ const fleet=Array.from({length:10},(_,i)=>model('front-'+i,40+i,.1*(i+1)));
+ const sessions=Array.from({length:11},(_,i)=>{
+  fleet.push(model('running-'+i,20,2+i));
+  return {sessionRef:'00000000000000'+(160+i).toString(16),source:'codex',subscriptionRef:null,model:'running-'+i,effort:'high',projectLabel:null,lastObservedAt:new Date(Date.now()-i*1000).toISOString(),state:'running',rate:null};
+ });
+ let ref='';const {send,receive}=await open(page,{published:fleet,sessions,edit:data=>{keepRows(['codex'])(data);ref=data.subscriptions[0].subscriptionRef;}});
+ expect(await receive(send('shell',{...shell,scope:ref}))).toBe(true);
+ await page.getByRole('button',{name:'Models',exact:true}).click();
+ const ids=await page.locator('.md-row').evaluateAll(rows=>rows.map(row=>row.dataset.model));
+ expect(ids.slice(0,11)).toEqual(Array.from({length:11},(_,i)=>'running-'+i));
+ expect(ids.slice(11).some(id=>id.startsWith('front-'))).toBe(true);
+ for(let i=0;i<11;i++){const row=page.locator(`.md-row[data-model="running-${i}"]`);await row.click();await expect(row).toHaveClass(/\bsel\b/);}
+ await page.locator('.ok[data-opt="models"] b[data-choice="chart"]').click();
+ const chart=(await page.locator('.pg-tune [data-fill="fc"]').getAttribute('data-models')).split(' ');
+ expect(chart.filter(id=>id.startsWith('front-'))).toHaveLength(10);
+ expect(chart).toContain('running-10'); // The selected list model may join the capped chart field.
+});
 // D86: "All" is the union of the user's own subscriptions, never the whole published field.
 const keepRows=ids=>data=>{data.projection.rows=data.projection.rows.filter(r=>ids.includes(r.id));data.subscriptions=data.subscriptions.filter(s=>data.projection.rows.some(r=>r.accounts.some(a=>a.subscriptionRef===s.subscriptionRef)));};
 const mixed=()=>[model('gpt-a',50,.3),model('gpt-b',45,.2),{...model('claude-a',60,.5),developerId:'anthropic'},{...model('google-a',55,.4),developerId:'google'}];
+test('a clicked subscription scope immediately narrows the HUD',async({page})=>{
+ await open(page,{published:mixed(),edit:keepRows(['codex','claude'])});
+ expect((await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).sort()).toEqual(['claude-a','gpt-a','gpt-b']);
+ await page.locator('.eng-keys .ek[data-sub]').nth(1).click();
+ expect(await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).toEqual(['claude-a']);
+ await page.locator('.eng-krow [data-all]').click();
+ expect((await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).sort()).toEqual(['claude-a','gpt-a','gpt-b']);
+ await page.keyboard.press('2');
+ expect(await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).toEqual(['claude-a']);
+ await page.keyboard.press('0');
+ expect((await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).sort()).toEqual(['claude-a','gpt-a','gpt-b']);
+});
+test('subscription-list and session-tape scope picks immediately update the HUD',async({page})=>{
+ await open(page,{published:mixed(),edit:data=>{
+  keepRows(['codex','claude','gemini'])(data);
+  const ref=data.projection.rows.find(r=>r.id==='claude').accounts[0].subscriptionRef;
+  data.details.sessions=[{sessionRef:'0000000000000099',source:'claude',subscriptionRef:ref,model:'claude-a',effort:'high',projectLabel:null,lastObservedAt:new Date().toISOString(),state:'running',rate:null}];
+ }});
+ await page.locator('[data-mfd="page:sub"]').click();
+ await page.locator('.sa-list .sa').nth(1).click();
+ expect(await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).toEqual(['claude-a']);
+ await page.locator('.eng-krow [data-all]').click();
+ await page.locator('.ck-tape .t-observed').first().click();
+ expect(await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).toEqual(['claude-a']);
+});
 test('CKP-PORT-04 D86 one GPT subscription: All lists only that plan\'s models, on the HUD and the 模型 page',async({page})=>{
  await open(page,{published:mixed(),edit:keepRows(['codex'])});
  expect((await page.locator('.hud .hp').evaluateAll(rows=>rows.map(r=>r.dataset.hudModel))).sort()).toEqual(['gpt-a','gpt-b']);
@@ -163,54 +228,29 @@ test('CKP-PORT-08 a different current effort is a white dot linked to its ★',a
  await open(page,{published:[model('a',40,.1)],session:{sessionRef:'0000000000000001',source:'Codex',subscriptionRef:null,model:'a',effort:'low',projectLabel:null,lastObservedAt:observed(),state:'running',rate:null}});
  await expect(page.locator('.hud-cur')).toHaveCount(1);await expect(page.locator('.hud-link')).toHaveCount(1);
 });
-test('CKP-PORT-05 the compact profile is one strip of three',async({page})=>{
- await open(page,{tier:'compact'});
- await expect(page.locator('.hud.hud-strip .hp')).toHaveCount(3);
- expect(await local(page)).toEqual([62,25,216,30]);
-});
-// G3-48: long published names overlapped their neighbours in three columns. The study's compact strip is an
-// 86x30 chart beside three stacked 10 px rows; each name stays inside its own row, before its ★ effort.
-test('G3-48 compact HUD names never overlap, however long',async({page})=>{
- const named=(id,name)=>({...model(id,50,.2),name});
- await open(page,{tier:'compact',published:[named('a','GPT-6 Astra Extended Context'),named('b','GPT-6.1 Terra'),named('c','GPT-6 Luna Preview Long Name')]});
- const svg=await page.locator('.hud-strip svg.hud-mini').boundingBox();expect([svg.width,svg.height]).toEqual([86,30]);
- const rows=await page.locator('.hud-strip .hp').evaluateAll(rows=>rows.map(r=>{const box=e=>e.getBoundingClientRect(),hud=r.closest('.hud').getBoundingClientRect(),row=box(r),name=box(r.querySelector('b')),rec=box(r.querySelector('.hp-rec'));return {top:row.top,bottom:row.bottom,nameRight:name.right,recLeft:rec.left,recRight:rec.right,hudRight:hud.right};}));
- expect(rows).toHaveLength(3);
- for(const [i,r] of rows.entries()){expect(r.nameRight).toBeLessThanOrEqual(r.recLeft);expect(r.recRight).toBeLessThanOrEqual(r.hudRight+0.5);if(i)expect(r.top).toBeGreaterThanOrEqual(rows[i-1].bottom);}
- // The boxes above can fit while the glyphs still paint past them: check the painted text against the ★.
- const painted=await page.locator('.hud-strip .hp').evaluateAll(rows=>rows.map(r=>{
-  const name=r.querySelector('b'),rec=r.querySelector('.hp-rec').getBoundingClientRect(),style=getComputedStyle(name);
-  const range=document.createRange();range.selectNodeContents(name);const text=range.getBoundingClientRect();
-  const clipped=style.overflow==='hidden'&&style.textOverflow==='ellipsis'&&style.whiteSpace==='nowrap';
-  return {overflows:name.scrollWidth>name.clientWidth,clipped,textRight:text.right,boxRight:name.getBoundingClientRect().right,recLeft:rec.left,lineHeight:style.lineHeight,rowHeight:r.getBoundingClientRect().height};
- }));
- for(const p of painted){
-  expect(p.overflows&&!p.clipped,'a name wider than its box must be clipped with an ellipsis').toBe(false);
-  expect(p.clipped?p.boxRight:p.textRight).toBeLessThanOrEqual(p.recLeft);
-  expect([p.lineHeight,p.rowHeight]).toEqual(['10px',10]);
- }
-});
-test('CKP-PORT-06 a row opens 模型 and Esc or Back returns to the page before',async({page})=>{
+test('CKP-PORT-06 a row opens 模型 as its key does (D400); the Overview key returns to the overview',async({page})=>{
  await open(page);
- await page.locator('.hud .hp').first().click();await expect(page.locator('.fc')).toBeVisible();
- await expect(page.locator('.mfd-back')).toBeVisible();await page.keyboard.press('Escape');await expect(page.locator('.fc')).toHaveCount(0);
- await page.locator('.hud-dot').first().click();await expect(page.locator('.fc')).toBeVisible();
- await page.locator('.mfd-back').click();await expect(page.locator('.fc')).toHaveCount(0);
+ await page.locator('.hud .hp').first().click();await expect(page.locator('.pg-tune')).toBeVisible();
+ await expect(page.locator('.mfd-pk .pk-seg:not([hidden])')).toHaveCount(0);await expect(page.locator('[data-mfd="page:tune"]')).toHaveAttribute('aria-pressed','true');
+ await page.keyboard.press('Escape');await expect(page.locator('.pg-tune')).toBeVisible();
+ await page.locator('[data-mfd="page:overview"]').click();await expect(page.locator('.pg-tune')).toHaveCount(0);
+ await page.locator('.hud-dot').first().click();await expect(page.locator('.pg-tune')).toBeVisible();
+ await page.locator('[data-mfd="page:overview"]').click();await expect(page.locator('.pg-tune')).toHaveCount(0);
 });
 const fieldOpens=page=>page.evaluate(()=>window.__actions.filter(a=>a==='openField').length);
 test('CKP-PORT-06 a HUD click opens 模型 only; the port beside it still opens the field',async({page})=>{
  await open(page);await page.locator('.ck-port').click({position:{x:520,y:120}});await expect.poll(()=>fieldOpens(page)).toBe(1);
- await page.locator('.hud .hp').first().click();await expect(page.locator('.fc')).toBeVisible();expect(await fieldOpens(page)).toBe(1);
- await page.keyboard.press('Escape');await page.locator('.hud-dot').first().click();await expect(page.locator('.fc')).toBeVisible();expect(await fieldOpens(page)).toBe(1);
+ await page.locator('.hud .hp').first().click();await expect(page.locator('.pg-tune')).toBeVisible();expect(await fieldOpens(page)).toBe(1);
+ await page.locator('[data-mfd="page:overview"]').click();await page.locator('.hud-dot').first().click();await expect(page.locator('.pg-tune')).toBeVisible();expect(await fieldOpens(page)).toBe(1);
 });
 for(const key of ['Enter','Space'])test(`CKP-PORT-06 ${key} on a HUD row opens 模型 only; on the port's ⤢ key it opens the field`,async({page})=>{
  await open(page);await page.locator('.port-big[data-bigfield]').focus();await page.keyboard.press(key);await expect.poll(()=>fieldOpens(page)).toBe(1);
- await page.locator('.hud .hp').first().focus();await page.keyboard.press(key);await expect(page.locator('.fc')).toBeVisible();expect(await fieldOpens(page)).toBe(1);
+ await page.locator('.hud .hp').first().focus();await page.keyboard.press(key);await expect(page.locator('.pg-tune')).toBeVisible();expect(await fieldOpens(page)).toBe(1);
 });
 test('clearing the data leaves no HUD box and no Back button',async({page})=>{
- const {send,receive}=await open(page);await page.locator('.hud .hp').first().click();await expect(page.locator('.mfd-back')).toBeVisible();
- expect(await receive(send('clear',{viewRevision:'4'}))).toBe(true);await expect(page.locator('.hud')).toBeHidden();await expect(page.locator('.hud .hp')).toHaveCount(0);await expect(page.locator('.mfd-back')).toHaveCount(0);
- await page.keyboard.press('Escape');await expect(page.locator('.mfd-back')).toHaveCount(0);
+ const {send,receive}=await open(page);await page.locator('.hud .hp').first().click();await expect(page.locator('.pg-tune')).toBeVisible();
+ expect(await receive(send('clear',{viewRevision:'4'}))).toBe(true);await expect(page.locator('.hud')).toBeHidden();await expect(page.locator('.hud .hp')).toHaveCount(0);await expect(page.locator('.mfd-pk .pk-seg:not([hidden])')).toHaveCount(0);await expect(page.locator('.mfd-back')).toHaveCount(0);
+ await page.keyboard.press('Escape');await expect(page.locator('.mfd-pk .pk-seg:not([hidden])')).toHaveCount(0);
 });
 // Real public IDs and names from the publication: the roster key differs from the ID, and an older model shares a word.
 test('CKP-PORT-06 hovering a row lights its rocket by published name, for real public IDs',async({page})=>{
@@ -305,7 +345,7 @@ test('CKP-PORT-50 a session on a model outside its subscription does not list th
 const backing=page=>page.locator('.hud').evaluate(h=>{const cs=getComputedStyle(h),box=h.getBoundingClientRect(),alpha=(/rgba?\(([^)]+)\)/.exec(cs.backgroundColor)?.[1].split(',').map(Number)[3])??1;
  return {image:cs.backgroundImage,alpha,inside:[...h.querySelectorAll('.hp')].every(r=>{const b=r.getBoundingClientRect();return b.left>=box.left-.5&&b.right<=box.right+.5&&b.top>=box.top-.5&&b.bottom<=box.bottom+.5;}),
   names:[...h.querySelectorAll('.hp b')].map(b=>[getComputedStyle(b).fontSize,getComputedStyle(b).color])};});
-for(const [tier,cap] of [['tall',6],['compact',3]])test(`CKP-PORT-50 ${tier}: at most ${cap} rows of owned models on no panel, names 10 px white`,async({page})=>{
+for(const [tier,cap] of [['tall',6]])test(`CKP-PORT-50 ${tier}: at most ${cap} rows of owned models on no panel, names 10 px white`,async({page})=>{
  await open(page,{tier,sessions:[running('a','m6'),running('b','m7')]});
  await expect(page.locator('.hud .hp')).toHaveCount(cap);
  const b=await backing(page);
@@ -320,10 +360,4 @@ test('CKP-PORT-51 a green dot follows the ★ effort of each model a session is 
   const [rec,mark]=await Promise.all([row.locator('.hp-rec').boundingBox(),dot.boundingBox()]);expect(mark.x).toBeGreaterThanOrEqual(rec.x+rec.width);expect(mark.width).toBeLessThanOrEqual(6);}
  await expect(page.locator('.hud .hp[data-hud-model=m5] .hp-on')).toHaveCount(0);
  await expect(page.locator('.hud .hp[data-hud-model=m7] .hp-on')).toHaveAttribute('aria-label','Running');
-});
-test('CKP-PORT-51 the compact strip keeps the dot inside its row',async({page})=>{
- await open(page,{tier:'compact',sessions:[running('a','m7')]});
- const row=page.locator('.hud.hud-strip .hp').first();await expect(row.locator('.hp-on')).toHaveCount(1);
- const [r,d,hud]=await Promise.all([row.boundingBox(),row.locator('.hp-on').boundingBox(),page.locator('.hud').boundingBox()]);
- expect(d.y).toBeGreaterThanOrEqual(r.y-.5);expect(d.y+d.height).toBeLessThanOrEqual(r.y+r.height+.5);expect(d.x+d.width).toBeLessThanOrEqual(hud.x+hud.width+.5);
 });

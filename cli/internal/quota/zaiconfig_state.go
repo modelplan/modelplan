@@ -27,6 +27,10 @@ type ZaiConfigAccess struct {
 	// Never pass a token, account ID or path.
 	LoginGeneration string
 }
+
+// zaiConfigAfterAdmission is a test seam: it runs right after a read's final admission check.
+var zaiConfigAfterAdmission func()
+
 type zaiConfigAccessKey struct{}
 
 func WithZaiConfigAccess(ctx context.Context, access ZaiConfigAccess) context.Context {
@@ -93,6 +97,8 @@ func zaiConfigNext(state string) string {
 		return "Review ZaiConfig consent and privacy settings"
 	case "stale", "rate_limited":
 		return "Wait until the next eligible ZaiConfig read"
+	case "keychain":
+		return "Allow Keychain for ZCode in Settings"
 	default:
 		return "Check ZaiConfig connectivity and wait until the next eligible read"
 	}
@@ -207,6 +213,9 @@ func zaiConfigCachedEntryScope(s zaiConfigState, now time.Time, generation, scop
 		return codexbarEntry{Status: "error", ErrorCode: s.ErrorCode, ObservedAt: now.UTC(), Error: zaiConfigNext(s.Availability)}
 	}
 	e := *s.Good
+	if scope == consent.ScopeZaiAccountUsageSavedLogin {
+		e.ZCodeLoginGeneration = s.GoodGeneration
+	}
 	// The native dispatcher must receive the latest attempt's availability,
 	// independently of the retained historical payload. It persists this error
 	// in native.json, so RefreshNative -> Read cannot call a failed source ok.
@@ -269,6 +278,19 @@ func collectZaiConfig(ctx context.Context, _ *http.Client, cache string, now tim
 	// CLIJIT cancels in-flight reads on revocation. Never republish their result.
 	if _, blocked := zaiConfigAdmission(ctx); ctx.Err() != nil || blocked != "" {
 		return codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: zaiConfigNext("consent_required")}
+	}
+	if zaiConfigAfterAdmission != nil {
+		zaiConfigAfterAdmission()
+	}
+	// ZCode's sign-in route (macrev2-1284-5): the result is filed under the account the read itself
+	// opened, never under whatever the files say by now. A read that opened another account than
+	// the one this attempt was admitted for publishes nothing.
+	if e.zcodeMismatch {
+		return codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: zaiConfigNext("consent_required")}
+	}
+	if e.zcodeGeneration != "" {
+		access.LoginGeneration = e.zcodeGeneration
+		s.LoginGeneration = e.zcodeGeneration
 	}
 	if e.Status == "ok" {
 		e.Admission = access.Admission

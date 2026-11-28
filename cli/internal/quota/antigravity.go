@@ -5,11 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/modelplan/modelplan/cli/internal/toolcli"
 	"io"
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -40,12 +40,14 @@ func WithAntigravityServer(ctx context.Context, s AntigravityServer) context.Con
 var antigravityCommand = func(ctx context.Context, bin string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd, err := toolcli.Command(ctx, bin, args...)
+	if err != nil {
+		return nil, errors.New("local process metadata unavailable")
+	}
 	cmd.Stderr = io.Discard
-	cmd.WaitDelay = time.Second
 	var b bytes.Buffer
 	cmd.Stdout = &limited{w: &b, n: 1 << 20}
-	if cmd.Run() != nil {
+	if toolcli.Run(cmd) != nil {
 		return nil, errors.New("local process metadata unavailable")
 	}
 	return b.Bytes(), nil

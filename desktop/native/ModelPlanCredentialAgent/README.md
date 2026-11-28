@@ -8,7 +8,10 @@ The fence must compare the authoritative session, epoch, generation and delivery
 EngineClient retains explicit-action/receipt matching, replay protection and final private
 `credentials/result` delivery. A non-nil user action is not new consent authorization.
 
-Only Claude's saved-login scope and the fixed generic-password service are accepted.
+Only two fixed items are accepted, each by its provider and scope together: Claude's saved-login scope with the
+`Claude Code-credentials` service, and (D380) `zai.account_usage.saved_login` with ZCode 3.19+'s store key, service
+`ZCode Credential Encryption`, account hex(sha256(`~/.zcode/v2/credentials.json`)), which the agent derives from the
+user's home itself. For ZCode only a 43-character base64url key is returned; nothing is written, refreshed or deleted.
 Requests cannot select services, accounts, files or executables. Enumeration returns only attributes and persistent references; after uniqueness/service checks, a second single-match query reads data by that exact persistent reference. Ambiguous items fail.
 Background queries prohibit authentication UI. The reader requires the agent's injected operation checkpoint before each OS call; cancellation, deadline expiry or lost context after enumeration prevents the second interactive query entirely. A pre-call terminal result has no OSStatus or data. One worker performs the blocking read;
 logical timeout/cancel does not cancel the OS call, and its slot stays occupied until it

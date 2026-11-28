@@ -69,7 +69,8 @@ jobs:
     runs-on: ubuntu-24.04-arm
     # The 747-test webkit suite runs ~20 minutes on the hosted arm runner (main's last
     # run: 19m57s); the old 20-minute cap cancelled healthy runs that grew past it.
-    timeout-minutes: 30
+    # +10 minutes cover one CI retry round (playwright retries: 1) on a loaded runner.
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -93,6 +94,25 @@ jobs:
           node desktop/cockpit/node_modules/@playwright/test/cli.js --version >> .tmp/u11/subject.txt
       - name: WebKit lifecycle, callback counts and visual comparisons
         run: npm run test:webkit --prefix desktop/cockpit
+      - name: Verify walk failure evidence and replay
+        working-directory: desktop/cockpit
+        run: |
+          test -s .tmp/test-results/visual-capture/cockpit-closed-night.png
+          test -s .tmp/test-results/visual-capture/cockpit-closed-night.json
+          callback=$(find .tmp/test-results -name callback-counts.json -type f -print -quit)
+          test -n "$callback"
+          test -s "$callback"
+          find .tmp/test-results -type f -print0 | sort -z | xargs -0 sha256sum > .tmp/walk-suite-evidence.sha256
+          if COCKPIT_WALK_FORCE_FAILURE=1 npx playwright test --config ../tests/cockpit/playwright.config.mjs --output .tmp/walk-probe-results click-walk.spec.mjs --grep 'click walk: empty' > .tmp/walk-probe.log 2>&1; then
+            cat .tmp/walk-probe.log
+            exit 1
+          fi
+          cat .tmp/walk-probe.log
+          grep -q 'synthetic walk artifact probe' .tmp/walk-probe.log
+          test -s ../tests/cockpit/.tmp/walk/empty-failure.png
+          test -s ../tests/cockpit/.tmp/walk/empty-failure.json
+          COCKPIT_WALK_REPLAY=../tests/cockpit/.tmp/walk/empty-failure.json npx playwright test --config ../tests/cockpit/playwright.config.mjs --output .tmp/walk-probe-results click-walk.spec.mjs
+          sha256sum --check .tmp/walk-suite-evidence.sha256
       - run: node scripts/check-source-policy.mjs
       - name: Preserve bounded synthetic evidence
         if: always()
@@ -104,4 +124,6 @@ jobs:
             desktop/cockpit/.tmp/test-results/
             desktop/cockpit/.tmp/official/bundle-manifest.json
             desktop/cockpit/.tmp/official/VISUAL-LICENSE.md
+            desktop/tests/cockpit/.tmp/walk/
+          include-hidden-files: true
           retention-days: 14
