@@ -71,6 +71,12 @@ import XCTest
     for _ in 0..<Int(seconds * 60) where !condition() { fixture.page.verificationAdvanceRack(by: 1.0 / 60) }
   }
 
+  /// The close's motion runs on the manual clock, but the window is discarded by a real-time task (the motion's length
+  /// plus one beat), so after the motion is stepped the discard is awaited, never asserted at once.
+  private func finishClose(_ fixture: Fixture) async throws {
+    try await until("the close discards the cockpit") { fixture.page.window == nil }
+  }
+
   func testIdleAttachedSizeChangeRefreshesRackMask() throws {
     let fixture = try make(reduceMotion: true)
     defer { fixture.page.discard() }
@@ -157,7 +163,8 @@ import XCTest
     fixture.page.verificationManualRackClock = 1_000
     defer { fixture.page.verificationManualRackClock = nil }
     fixture.page.requestClose()
-    step(fixture) { fixture.page.window == nil }
+    step(fixture) { fixture.page.verificationRack.ext == 0 && !fixture.page.verificationRack.moving }
+    try await finishClose(fixture)
     XCTAssertNil(fixture.page.window, "closed")
     assertClampOpensBeforeDeparture(ticks.samples, home: home, label: "icon close")
     fixture.page.verificationRackDrawn = nil
@@ -420,7 +427,8 @@ import XCTest
     step(fixture, seconds: 10) { (fixture.page.window?.frame.minY ?? .infinity) > home.minY }
     XCTAssertNotNil(fixture.page.window)
     XCTAssertGreaterThan(fixture.page.window?.frame.minY ?? 0, home.minY, "the cockpit goes back up under the bar")
-    step(fixture) { fixture.page.window == nil }
+    step(fixture) { fixture.page.verificationRack.ext == 0 && !fixture.page.verificationRack.moving }
+    try await finishClose(fixture)
     XCTAssertNil(fixture.page.window)
     XCTAssertEqual(failures, [])
   }
