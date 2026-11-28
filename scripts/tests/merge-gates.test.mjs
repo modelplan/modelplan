@@ -1570,7 +1570,7 @@ test("D482 routing: privacy/consent/credentials/security, gates/CI/release and l
     "desktop/native/ModelPlanDock/Sources/ModelPlanDock/DockRevealMotion.swift", "cli/internal/render/quota.go",
     "desktop/cockpit/src/screens/today.ts", "scripts/tool.mjs", "cli/internal/advise/advise.go", "desktop/tests/cockpit/a.spec.mjs",
     "desktop/tests/cockpit/browser/deadline-refresh.spec.mjs", "desktop/official-visuals/cockpit/throttle/throttle.css",
-    ".github/workflows/ci.yml", ".github/workflows/desktop.yml", ".github/workflows/dock-journeys.yml",
+    ".github/workflows/desktop.yml", ".github/workflows/dock-journeys.yml", ".github/workflows/u11-native.yml", ".github/workflows/e2e-journey.yml",
   ]) assert.equal(cls([p]), R.NORMAL, p);
   assert.equal(R.pathTier(["cli/internal/quota/x.go"]), 2, "a tier-2 path ...");
   assert.equal(cls(["cli/internal/quota/x.go"]), R.NORMAL, "... is no longer IMPORTANT by itself");
@@ -1595,7 +1595,9 @@ test("D482 routing: privacy/consent/credentials/security, gates/CI/release and l
 
 test("macrevb-1311-1: an IMPORTANT PR is at least tier 1 (prReview); a NORMAL tier-0 PR needs no verdict", () => {
   assert.deepEqual(R.prReview({ paths: [".github/workflows/trusted-mac.yml"] }), { tier: 1, cls: R.IMPORTANT, why: "gates-ci: .github/workflows/trusted-mac.yml" });
-  assert.deepEqual(R.prReview({ paths: [".github/workflows/ci.yml"] }), { tier: 0, cls: R.NORMAL, why: "no important path" }, "a test leg in ci.yml is NORMAL");
+  assert.deepEqual(R.prReview({ paths: [".github/workflows/ci.yml"] }), { tier: 1, cls: R.IMPORTANT, why: "gates-ci: .github/workflows/ci.yml" }, "ci is a required gate input");
+  assert.equal(R.prReview({ paths: [".github/workflows/repo-checks.yml"] }).cls, R.IMPORTANT, "repo checks is a required gate input");
+  assert.deepEqual(R.prReview({ paths: [".github/workflows/desktop.yml"] }), { tier: 0, cls: R.NORMAL, why: "no important path" }, "a desktop.yml test leg is NORMAL");
   assert.equal(R.prReview({ paths: ["docs/a.md"], labels: ["review:gpt"] }).tier, 1);
   assert.equal(R.prReview({ paths: ["docs/a.md"], renamed: true }).tier, 1);
   assert.equal(R.prReview({ paths: ["docs/a.md"], override: 0, ledger: true }).tier, 1);
@@ -1604,7 +1606,7 @@ test("macrevb-1311-1: an IMPORTANT PR is at least tier 1 (prReview); a NORMAL ti
   for (const w of R.prPaths([file(".github/workflows/review-label.yml"), file(".github/workflows/pr-review.yml"), file(".github/workflows/pr-review-sol.yml"),
     file(".github/workflows/merge-gates.yml"), file(".github/workflows/merge-gates-probe.yml"), file(".github/workflows/mac-compile.yml"),
     file(".github/workflows/mac-compile-trigger.yml"), file(".github/workflows/mac-compile-sweep.yml"), file(".github/workflows/trusted-mac.yml"),
-    file(".github/workflows/data-sync.yml"), file(".github/workflows/post-merge-hosted.yml"), file(".github/workflows/release.yml"),
+    file(".github/workflows/data-sync.yml"), file(".github/workflows/post-merge-hosted.yml"), file(".github/workflows/ci.yml"), file(".github/workflows/repo-checks.yml"), file(".github/workflows/release.yml"),
     file(".github/workflows/macos-distribution.yml"), file(".github/workflows/u10-candidate.yml")]))
     assert.equal(R.prReview({ paths: [w] }).cls, R.IMPORTANT, w);
   const rl = evalPr({ files: [file(".github/workflows/review-label.yml")], comments: [comment(v("merge", H, "ghglm"))] });
