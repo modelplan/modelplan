@@ -509,6 +509,18 @@ test("D492 round 1: a body cut off after 200 headers retries once, then times ou
   await assert.rejects(P.openaiProvider({ key: "k", model: "m", effort: "medium", fetchImpl: async () => { throw new TypeError("fetch failed"); }, pollMs: 1, waitMs: 0 }).review("x"), (e) => e.kind === "other");
 });
 
+test("D492 round 2: one shared attempt budget: OpenAI 5x503 then a disconnect is six requests; GLM 503 then timeout is two", async () => {
+  const res = (status) => ({ ok: status < 300, status, json: async () => ({ error: { code: "server_error" } }) });
+  let n = 0;
+  const f = async () => { n++; if (n <= 5) return res(503); if (n === 6) throw new TypeError("fetch failed"); return res(200); };
+  await assert.rejects(P.openaiProvider({ key: "k", model: "m", effort: "medium", fetchImpl: f, pollMs: 1, waitMs: 0 }).review("x"), (e) => e.kind === "other" && /network error/.test(e.message));
+  assert.equal(n, 6, "the old single budget of 6 attempts, any mix");
+  let g = 0;
+  const gf = (url, init) => (++g === 1 ? Promise.resolve(res(503)) : new Promise((_, no) => init.signal.addEventListener("abort", () => no(init.signal.reason))));
+  await assert.rejects(P.glmProvider({ key: "k", baseUrl: "https://g/v4", fetchImpl: gf, waitMs: 0, timeoutMs: 20 }).review("x"), (e) => e.kind === "timeout");
+  assert.equal(g, 2, "two attempts in total, any mix");
+});
+
 test("providers: quota detection (codes, billing limit, sustained 429) and the GLM chat endpoint", async () => {
   const reply = (status, body) => ({ ok: status < 300, status, json: async () => body });
   const seq = (...rs) => { const calls = []; return { calls, f: async (url, init) => { calls.push({ url, init }); return rs.length > 1 ? rs.shift() : rs[0]; } }; };

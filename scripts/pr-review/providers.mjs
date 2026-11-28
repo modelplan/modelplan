@@ -31,22 +31,21 @@ export const NETWORK_RETRIES = 1;
 // off or aborted after the headers is a network error like a failed connect; only unparsable JSON becomes null.
 async function requestJson(fetchImpl, url, init, { retries = 5, waitMs = 8000, label, timeoutMs, bounded = false }) {
   const tmo = timeoutMs ?? (bounded ? REQUEST_TIMEOUT_MS : 180000);
-  const netMax = bounded ? Math.min(retries, NETWORK_RETRIES) : retries;
-  let netFails = 0;
+  const maxRetries = bounded ? Math.min(retries, NETWORK_RETRIES) : retries;   // ONE shared attempt budget, any mix of failures
   for (let attempt = 0; ; attempt++) {
     let r, j;
     try {
       r = await fetchImpl(url, { ...init, signal: AbortSignal.timeout(tmo) });
       j = await r.json().catch((e) => { if (e instanceof SyntaxError) return null; throw e; });
     } catch (e) {
-      if (netFails < netMax) { netFails++; await sleep(bounded ? waitMs : waitMs * netFails); continue; }
+      if (attempt < maxRetries) { await sleep(waitMs * (attempt + 1)); continue; }
       if (bounded) throw new ProviderError("timeout", `${label}: network error (${e.name}); ${label === "glm" ? "GLM" : label} timed out twice`);
       throw new ProviderError("other", `${label}: network error (${e.name})`);
     }
     const code = j?.error?.code ?? j?.error?.type ?? "";
     if (r.ok) return j;
     if (isQuotaFailure({ status: r.status, code, message: j?.error?.message })) throw new ProviderError("quota", `${label}: HTTP ${r.status} ${code}`);
-    if ((r.status === 429 || r.status >= 500) && attempt < retries) { await sleep(waitMs * (attempt + 1)); continue; }
+    if ((r.status === 429 || r.status >= 500) && attempt < maxRetries) { await sleep(waitMs * (attempt + 1)); continue; }
     // Only the status and the error code are reported; error bodies never echo the key, but nothing else is needed.
     const err = new ProviderError(r.status === 429 ? "quota" : "other", `${label}: HTTP ${r.status} ${code}${r.status === 429 ? " (sustained)" : ""}`);
     err.status = r.status;
