@@ -3,7 +3,7 @@
 // review from the interactive lanes into Actions. decideSol() picks whether one PR head gets a review, solPolicy() is
 // the coordinator's sol-consult.sh policy text, buildSolPrompt() the whole request, parseAnswer() checks the answer,
 // renderSolComment() writes the PR comment and agreement() compares a shadow verdict with the lane verdict.
-import { DEFAULT_GLM_TIERS, GPT_FALLBACK_MARKER, IMPORTANT, NORMAL, hasRename, needsCompile, eligibleLanes, gptFallbackVerdict, gptLabelled, isShadowLane, isTrusted, ledgerPr, pairLane, prTier, prPaths, reviewClass, reviewerLane, stickyLanes, tierOverride, verdicts, REVIEW_LANES } from "../merge-gates/rules.mjs";
+import { DEFAULT_GLM_TIERS, GPT_FALLBACK_MARKER, IMPORTANT, NORMAL, hasRename, needsCompile, eligibleLanes, gptFallbackVerdict, gptLabelled, isShadowLane, isTrusted, ledgerPr, pairLane, prPaths, prReview, reviewerLane, stickyLanes, tierOverride, verdicts, REVIEW_LANES } from "../merge-gates/rules.mjs";
 import { verdictLines } from "./brief.mjs";
 import { GLM_MODEL } from "./providers.mjs";
 
@@ -40,7 +40,9 @@ export const REVIEW_TIERS = Object.freeze([0, 1, 2]);
 // provider (ghsol) or a local Codex lane. On a NORMAL PR the GLM provider's verdict counts too.
 // The routing class of a PR from the REST pull request and files, as the gate computes it.
 // D482: items (rules.mjs feed()) give the trusted REVIEW-TIER override; the body gives the R13 ledger line.
-export const prClass = (pr, files, items = []) => reviewClass({ paths: prPaths(files), labels: pr?.labels, override: tierOverride(items), ledger: ledgerPr(pr), fileCount: files.length, renamed: hasRename(files) }).cls;
+// prRoute: { tier, cls } exactly as the gate computes them (rules.mjs prReview: an IMPORTANT PR is at least tier 1).
+export const prRoute = (pr, files, items = []) => prReview({ paths: prPaths(files), labels: pr?.labels, override: tierOverride(items), ledger: ledgerPr(pr), fileCount: files.length, renamed: hasRename(files) });
+export const prClass = (pr, files, items = []) => prRoute(pr, files, items).cls;
 // A fork or a stranger's PR (D395-4): reviewed only on the owner's dispatch, by GLM, as advice.
 export const outsidePr = (pr) => !isTrusted(pr?.user) || !pr?.head?.repo?.full_name || pr.head.repo.full_name !== pr.base?.repo?.full_name;
 // The paths themselves live in rules.mjs: the merge gate needs them too (a native PR cannot merge without mac-compile).
@@ -84,9 +86,8 @@ export function decideSol({ pr, files, items, lane, triggerSha = "", checks = { 
   if (!SHA.test(head)) return skip("head is not a full sha");
   if (triggerSha && triggerSha.toLowerCase() !== head) return skip("the trigger was for an older head");
   const paths = prPaths(files);
-  const tier = prTier(paths, tierOverride(items), ledgerPr(pr));   // D482: the gate's own tier rule (R13 ledger floor too)
+  const { tier, cls } = prRoute(pr, files, items);   // D482: the gate's own tier and class (R13 floor, IMPORTANT at least tier 1)
   if (!REVIEW_TIERS.includes(tier)) return skip(`tier ${tier} is unknown`);
-  const cls = prClass(pr, files, items);
   // Owner D374 (11-21): a ready PR is reviewed once ci.yml passes at the head, native or not. The mac-compile success
   // no longer gates the review; the merge gate (rules.mjs evaluatePr) still requires it for a native head before merge.
   // `compile` is reported only (the review sees the mac-compile status among the CI lines).
@@ -99,7 +100,7 @@ export function decideSol({ pr, files, items, lane, triggerSha = "", checks = { 
   // keeps nothing); a workflow assignment (ghsol or ghglm) is the provider pair, never one provider (D396-1).
   // An outside PR (owner dispatch, advice only) ignores any assignment too: nothing it posts can count (D395-4).
   const eligible = eligibleLanes(tier, glmTiers, cls);
-  const sticky = pairLane(cls === NORMAL || outside ? null : reviewerLane(items, gpt), eligible);   // D482: ghglm -> ghsol where GLM may not decide
+  const sticky = pairLane(cls === NORMAL || outside ? null : reviewerLane(items, gpt), eligible, cls);   // D482: ghglm -> ghsol where GLM may not decide
   // The run's own lanes: its Sol lane, and its GLM lane only while (ghglm) may decide this tier (SOL-8: a GLM verdict
   // left over from a wider REVIEW_GLM_TIERS is advice and does not settle the head).
   // A labelled PR: a GLM verdict settles the head only when it is the marked fallback verdict (GPT out of quota, which counts).
@@ -404,7 +405,7 @@ export function postProblem({ pr, items, head, lane, posted = lane, force = fals
   if (String(pr.head?.sha ?? "").toLowerCase() !== head) return `head moved to ${pr.head?.sha ?? "?"} after the review of ${head}`;
   // The tier is read again from the fresh feed and files (a trusted REVIEW-TIER while the model ran changes which lanes
   // may decide); the prepared tier is only the fallback when the caller has no file list.
-  const tier = files ? prTier(prPaths(files), tierOverride(items), ledgerPr(pr)) : Number(preparedTier);
+  const tier = files ? prRoute(pr, files, items).tier : Number(preparedTier);
   if (!REVIEW_TIERS.includes(tier)) return `tier ${tier} is unknown`;
   // D395: the class is read again too; without a file list it is IMPORTANT (fail closed: GLM decides nothing).
   const cls = files ? prClass(pr, files, items) : IMPORTANT;
@@ -421,7 +422,7 @@ export function postProblem({ pr, items, head, lane, posted = lane, force = fals
   if (lane === SOL_LANE && !advisory) {
     const eligible = eligibleLanes(Number(tier), glmTiers, cls);
     // NORMAL: no assignment holds the workflow back; otherwise a workflow assignment accepts either provider (D396-1).
-    const assigned = pairLane(cls === NORMAL ? null : reviewerLane(items, gpt), eligible);   // D482: ghglm -> ghsol where GLM may not decide
+    const assigned = pairLane(cls === NORMAL ? null : reviewerLane(items, gpt), eligible, cls);   // D482: ghglm -> ghsol where GLM may not decide
     const sticky = assigned && eligible.includes(assigned) ? assigned : null;
     const pinned = stickyLanes(sticky, eligible);
     if (assigned && !sticky) return `the assigned reviewer ${assigned} cannot review tier ${tier}`;

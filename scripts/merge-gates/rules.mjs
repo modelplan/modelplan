@@ -244,13 +244,22 @@ export function reviewClass({ paths = [], labels = [], override = null, ledger =
   for (const p of paths.filter((x) => !TEST_RE.test(x))) for (const a of ROUTING_AREAS) if (a.re.test(p)) return { cls: IMPORTANT, why: `${a.area}: ${p}` };
   return { cls: NORMAL, why: "no important path" };
 }
-// The GPT/GLM lanes whose verdict decides a head of this tier: Sol always; Terra on tier 1; (ghglm), by D395, on every
+// D482 (macrevb-1311-1): the PR's review tier and class together, the one entry point of the gate, the workflow reviewer and the
+// coordinator (decide.py review_tier). An IMPORTANT PR is at least importantMinTier (1): a workflow-only or docs-only IMPORTANT PR
+// (path tier 0) still needs an exact-head Sol verdict. A NORMAL tier-0 PR keeps needing none.
+export function prReview({ paths = [], labels = [], override = null, ledger = false, fileCount = paths.length, renamed = false } = {}) {
+  const route = reviewClass({ paths, labels, override, ledger, fileCount, renamed });
+  const base = prTier(paths, override, ledger);
+  return { tier: route.cls === IMPORTANT ? Math.max(reviewRouting.importantMinTier, base) : base, cls: route.cls, why: route.why };
+}
+// The GPT/GLM lanes whose verdict decides a head of this tier: Sol always; Terra on tier 1 (never on an IMPORTANT PR,
+// macrevb-1311-2); (ghglm), by D395, on every
 // tier-1/2 head of a NORMAL PR (cls) and never on an IMPORTANT one (D482: a Sol verdict is required there, whatever
 // REVIEW_GLM_TIERS says). Without a class (cls null: a caller that has none) glmTiers (D366/D469) decides as before.
 export function eligibleLanes(tier, glmTiers = DEFAULT_GLM_TIERS, cls = null) {
   // (ghglm) decides only tiers 1 and 2: tier 0 needs no verdict, so a GLM verdict never counts there.
   const glm = (tier === 1 || tier === 2) && (cls === NORMAL || (cls !== IMPORTANT && glmTiers.includes(tier)));
-  return [...SOL_LANES, ...(tier === 2 ? [] : TERRA_LANES), ...(glm ? [GLM_LANE] : [])];
+  return [...SOL_LANES, ...(tier === 2 || cls === IMPORTANT ? [] : TERRA_LANES), ...(glm ? [GLM_LANE] : [])];
 }
 // The workflow reviewer pair: "REVIEWER: ghsol" or "REVIEWER: ghglm" assigns the Actions workflow, whichever provider answers
 // (D396: GPT in the Zhipu peak, GLM otherwise, each the other's quota fallback). So a sticky (ghsol) also accepts the (ghglm)
@@ -259,8 +268,12 @@ export const stickyLanes = (sticky, eligible) =>
   !sticky ? null : ["(ghsol)", GLM_LANE].includes(sticky) ? ["(ghsol)", GLM_LANE].filter((l) => eligible.includes(l)) : [sticky];
 // D482: "REVIEWER: ghglm" names the workflow pair (D396-1). Where (ghglm) may not decide (an IMPORTANT PR) the pair's Sol
 // provider (ghsol) is that assignment, so an assignment made before the PR became IMPORTANT never stalls the workflow review.
-export const pairLane = (assigned, eligible) =>
-  assigned === GLM_LANE && !eligible.includes(GLM_LANE) && eligible.includes("(ghsol)") ? "(ghsol)" : assigned;
+// macrevb-1311-2: on an IMPORTANT PR any other assignment that cannot decide it (a stale Terra one) is dropped, so the workflow's
+// Sol reviewer takes the head (landing is stateless: assignments are dispatch hints only).
+export const pairLane = (assigned, eligible, cls = null) => {
+  const a = assigned === GLM_LANE && !eligible.includes(GLM_LANE) && eligible.includes("(ghsol)") ? "(ghsol)" : assigned;
+  return cls === IMPORTANT && a && !eligible.includes(a) ? null : a;
+};
 // Every lane that could be eligible on some tier (an assignment to anything else is never valid).
 // A shadow lane (any lane name ending in "shadow": (ghsolshadow), (gh-terra-shadow)) is advisory and counts nowhere.
 export const isShadowLane = (lane) => /shadow\)?$/i.test(String(lane));
@@ -759,10 +772,11 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   const design = designTouch(files, conf);
   const paths = prPaths(files);
   const override = tierOverride(items);
-  // D482: the tier is the trusted override or the path tier; a ledger PR (R13) at least ledgerMinTier (1) and IMPORTANT.
-  const tier = prTier(paths, override, ledgerPr(pr));
-  // D395/D482: on a NORMAL PR the (ghglm) verdict decides tiers 1 and 2 like a GPT lane; on an IMPORTANT one only Sol does.
-  const route = reviewClass({ paths, labels: pr.labels, override, ledger: ledgerPr(pr), fileCount: files.length, renamed: hasRename(files) });
+  // D482: the tier is the trusted override or the path tier; a ledger PR (R13) at least ledgerMinTier (1) and IMPORTANT; an
+  // IMPORTANT PR at least importantMinTier (1). On a NORMAL PR the (ghglm) verdict decides tiers 1 and 2 like a GPT lane; on an
+  // IMPORTANT one only Sol does.
+  const rv = prReview({ paths, labels: pr.labels, override, ledger: ledgerPr(pr), fileCount: files.length, renamed: hasRename(files) });
+  const tier = rv.tier, route = { cls: rv.cls, why: rv.why };
   const chain = carryChain(carryEdges(items), head, verifiedEdge);
   // labelled PR, GPT out of quota: the marked GLM verdict counts, on tiers 1 and 2 only (macrevb-1237-2: tier 0 stays advisory, so a
   // labelled tier-0 GLM block never vetoes)
@@ -784,7 +798,7 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   // head on a (ghglm) merge or any GPT (Sol or Terra) merge. A block from ANY of these lanes, Terra included, or an unnamed one blocks.
   const glmCounts = eligibleLanes(tier, glmTiers, route.cls).includes(GLM_LANE) || fbGlm !== null;
   // D482: Terra admits only tier 1 of a NORMAL PR (owner D149: Terra is advice on tier 2; coordinator lanes.sh lane_admits).
-  const eligible = [...SOL_LANES, ...(route.cls === NORMAL && tier === 1 ? TERRA_LANES : []), ...(glmCounts ? [GLM_LANE] : [])];
+  const eligible = [...eligibleLanes(tier, glmTiers, route.cls).filter((l) => l !== GLM_LANE), ...(glmCounts ? [GLM_LANE] : [])];
   const blockers = [...new Set([...SOL_LANES, ...TERRA_LANES, ...(glmCounts ? [GLM_LANE] : []), "(unnamed)"])];
   const assigned = reviewerLane(items, gpt);
   const sticky = assigned && eligible.includes(assigned) ? assigned : null;   // reported only

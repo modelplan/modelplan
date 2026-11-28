@@ -1591,6 +1591,18 @@ test("D482 routing: privacy/consent/credentials/security, gates/CI/release and l
   assert.doesNotMatch(R.REVIEW_ROUTING.ledger, /\(\?[<=!:P]/);
 });
 
+test("macrevb-1311-1: an IMPORTANT PR is at least tier 1 (prReview); a NORMAL tier-0 PR needs no verdict", () => {
+  assert.deepEqual(R.prReview({ paths: [".github/workflows/ci.yml"] }), { tier: 1, cls: R.IMPORTANT, why: "gates-ci: .github/workflows/ci.yml" });
+  assert.equal(R.prReview({ paths: ["docs/a.md"], labels: ["review:gpt"] }).tier, 1);
+  assert.equal(R.prReview({ paths: ["docs/a.md"], renamed: true }).tier, 1);
+  assert.equal(R.prReview({ paths: ["docs/a.md"], override: 0, ledger: true }).tier, 1);
+  assert.deepEqual(R.prReview({ paths: ["docs/a.md"] }), { tier: 0, cls: R.NORMAL, why: "no important path" });
+  const wf = evalPr({ files: [file(".github/workflows/ci.yml")] });
+  assert.deepEqual([wf.state, wf.tier, wf.review], [R.PENDING, 1, R.IMPORTANT], wf.why);
+  assert.equal(evalPr({ files: [file(".github/workflows/ci.yml")], comments: [comment(v("merge", H, "macrevb"))] }).state, R.SUCCESS);
+  assert.equal(evalPr({ files: [file("docs/a.md")] }).state, R.SUCCESS, "normal tier 0: no review");
+});
+
 // The shared vectors: decide.py review_class (the coordinator) runs the same "examples" of review-routing.json.
 test("D482 shared examples: reviewClass answers every example of review-routing.json", () => {
   assert.equal(R.REVIEW_ROUTING.version, 2);

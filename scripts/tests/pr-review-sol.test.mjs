@@ -46,7 +46,10 @@ test("decide: open, ready, trusted same-repository tier 1 and 2 heads only; the 
   assert.deepEqual(decide({ comments: [comment("REVIEWER: ghsol")] }).providers, ["openai", "glm"], "assigned ghsol: only GPT counts (GLM is the advisory fallback)");
   assert.deepEqual(decide({ files: t1n, comments: [comment("REVIEWER: ghglm")], glmTiers: [1] }).providers, ["openai", "glm"], "D396-1: a workflow assignment is the provider pair");
   assert.deepEqual(decide({ comments: [comment("REVIEWER: ghglm")], glmTiers: [1, 2] }).providers, ["openai", "glm"], "D482: on an IMPORTANT PR a ghglm assignment is the pair's Sol side (GLM advisory)");
-  assert.equal(decide({ files: t2, comments: [comment("REVIEWER: macrevc")] }).why, "the assigned reviewer (macrevc) cannot review tier 2", "an invalid assignment spends no tokens");
+  // macrevb-1311-2: on an IMPORTANT PR an assignment that cannot decide it (a stale Terra one) is dropped: the Sol workflow reviews
+  const staleTerra = decide({ files: t2, comments: [comment("REVIEWER: macrevc")] });
+  assert.deepEqual([staleTerra.review, staleTerra.providers[0]], [true, "openai"], "a stale Terra assignment never holds the Sol review");
+  assert.deepEqual([decide({ comments: [comment("REVIEWER: macrevc")] }).review], [true], "important tier 1 too");
   assert.equal(decide({ files: t2, comments: [comment("REVIEWER: ghglm")] }).review, true, "D482: REVIEWER: ghglm on an IMPORTANT PR is the workflow pair, so ghsol reviews");
   assert.equal(decide({ pr: { draft: true } }).why, "draft");
   assert.equal(decide({ pr: { state: "closed" } }).why, "PR is closed");
@@ -102,7 +105,8 @@ test("decide: no tokens are spent on a head that already has a verdict (shadow: 
   assert.equal(decide({ comments: [comment(v("merge", H, "ghsol"))], force: true }).why, "this lane already reviewed this head", "force never duplicates a lane's verdict (macrevb-1108-2)");
   assert.equal(decide({ comments: [comment(v("block", H, "macrevb"))], force: true }).review, true, "force still reviews beside another counting lane");
   assert.equal(decide({ comments: [comment(v("block", H, "macrevb"))] }).why, "a counting verdict already exists at this head");
-  assert.equal(decide({ comments: [comment(v("merge", H, "macrevc"))] }).why, "a counting verdict already exists at this head", "Terra counts on tier 1");
+  assert.equal(decide({ files: t1n, comments: [comment(v("merge", H, "macrevc"))] }).why, "a counting verdict already exists at this head", "Terra counts on tier 1 of a NORMAL PR");
+  assert.equal(decide({ comments: [comment(v("merge", H, "macrevc"))] }).review, true, "macrevb-1311-2: a Terra merge never settles an IMPORTANT head; Sol work stays available");
   assert.equal(decide({ files: t2, comments: [comment(v("merge", H, "macrevc"))] }).review, true, "Terra does not count on tier 2");
   assert.equal(decide({ comments: [comment(`VERDICT: merge @ ${H}`)] }).why, "a counting verdict already exists at this head", "unnamed counts");
   assert.equal(decide({ comments: [comment(v("merge", H, "glm"))] }).review, true);
@@ -125,11 +129,12 @@ test("decide: delta from the latest earlier GPT verdict, carrying its R19 record
   assert.deepEqual(d.record, { sha: OLD, lane: "(macrevb)", text: `Record: ${OLD}\nR17 mapping -> ok, body\nF1 -> open, test x` });
   assert.equal(decide({ comments: [comment(v("block", OLD, "glm"))] }).since, null, "GLM is not a GPT lane");
   // A later verdict without a record still sets the delta base; the record comes from the latest comment that has one.
-  const d2 = decide({ comments: [comment(prior), comment(v("merge", BASE, "macrevc"))] });
+  const d2 = decide({ files: t1n, comments: [comment(prior), comment(v("merge", BASE, "macrevc"))] });
   assert.equal(d2.since, OLD, "the delta starts at the record's head, so record and scope line up (SOL-5)");
   assert.equal(d2.record.sha, OLD);
   assert.equal(d2.earlier.length, 2, "the later verdict without a record is still passed on");
-  assert.equal(decide({ comments: [comment(v("merge", BASE, "macrevc"))] }).since, BASE, "no record anywhere: the latest verdict");
+  assert.equal(decide({ files: t1n, comments: [comment(v("merge", BASE, "macrevc"))] }).since, BASE, "no record anywhere: the latest verdict");
+  assert.equal(decide({ comments: [comment(v("merge", BASE, "macrevc"))] }).since, null, "a Terra review is no delta base on an IMPORTANT PR");
 });
 
 test("policy: verbatim the sol-consult.sh policy text", { skip: !existsSync(process.env.SOL_CONSULT_SH ?? "/home/dev/coordinator/sol-consult.sh") && "sol-consult.sh is not on this machine" }, () => {
@@ -782,7 +787,9 @@ test("post: a late assignment, a late counting verdict and a forced duplicate be
   assert.equal(post([comment("REVIEWER: ghsol")], { posted: "ghglm" }), null, "a GLM fallback post with ghsol assigned");
   assert.equal(post([comment("REVIEWER: ghsol")], { posted: "ghglm", glmTiers: [] }), null, "IMPORTANT, tier not listed: the advisory GLM post is admitted whatever is assigned (macrev2-1254)");
   assert.equal(post([comment("REVIEWER: ghsol")]), null);
-  assert.match(post([comment(v("merge", H, "macrevc"))]), /counting verdict already exists/);
+  assert.match(post([comment(v("merge", H, "macrevc"))], { files: t1n }), /counting verdict already exists/);
+  assert.equal(post([comment(v("merge", H, "macrevc"))]), null, "macrevb-1311-2: on an IMPORTANT PR a Terra merge leaves the Sol post admitted");
+  assert.equal(post([comment("REVIEWER: macrevc")]), null, "... and a stale Terra assignment does not reject it");
   assert.match(post([comment(`VERDICT: merge @ ${H}`)]), /counting verdict already exists/);
   assert.equal(post([comment(v("merge", H, "macrevc"))], { force: true }), null, "force lifts only the other-lane check");
   assert.match(post([comment(v("merge", H, "ghsol"))], { force: true }), /already has a verdict/);
@@ -820,7 +827,8 @@ test("post: a tier change between prepare and post suppresses a provider that lo
   assert.match(post([comment("REVIEW-TIER: 2")]), /^scope changed, full review required/, "stale prepared tier 1, fresh override 2");
   assert.match(post([comment("REVIEW-TIER: 2")], { posted: "ghsol" }), /^scope changed, full review required/, "Sol prepared for tier 1 may not count on tier 2");
   assert.equal(post([comment("REVIEW-TIER: 2")], { posted: "ghsol", tier: 2 }), null, "prepared for tier 2: Sol posts");
-  assert.match(post([comment("REVIEW-TIER: 0")], { posted: "ghsol" }), /tier 0 gets only the advisory GLM review/);
+  assert.match(post([comment("REVIEW-TIER: 0")], { posted: "ghsol", files: t1n }), /tier 0 gets only the advisory GLM review/);
+  assert.equal(post([comment("REVIEW-TIER: 0")], { posted: "ghsol" }), null, "macrevb-1311-1: an IMPORTANT PR stays at least tier 1, so Sol posts");
   assert.match(post([], { files: t2 }), /^scope changed, full review required/, "the files moved the tier to 2");
   assert.equal(post([comment("REVIEW-TIER: 2")], { files: null }), null, "without a file list only the prepared tier is known (the script always passes files)");
   assert.match(readFileSync(join(root, "scripts/pr-review/sol-post.mjs"), "utf8"), /files, glmTiers/, "sol-post passes the fresh files");
@@ -830,15 +838,15 @@ test("post: a tier change between prepare and post suppresses a provider that lo
 test("stale scope: a delta prepared at tier 1 is not posted as a counting verdict at tier 2; fresh preparation is full", () => {
   const rec = (sha, lane) => comment(`Record: ${sha}\nR17 -> ok\n\n${v("merge", sha, lane)}`);
   const prior = [rec(OLD, "macrevc")];                       // Terra predecessor: counts on tier 1 only
-  const prepared = decide({ comments: prior });
+  const prepared = decide({ files: t1n, comments: prior });
   assert.equal(prepared.tier, 1);
   assert.equal(prepared.since, OLD, "tier 1 prepares a delta from the Terra review");
   const now = [...prior, comment("REVIEW-TIER: 2")];
-  const post = (cs, over = {}) => S.postProblem({ pr: pr(), items: R.feed(cs), head: H, lane: "ghsol", posted: "ghsol", tier: prepared.tier, files: t1, glmTiers: [], ...over });
+  const post = (cs, over = {}) => S.postProblem({ pr: pr(), items: R.feed(cs), head: H, lane: "ghsol", posted: "ghsol", tier: prepared.tier, files: t1n, glmTiers: [], ...over });
   assert.equal(post(prior), null, "unchanged tier posts");
   assert.match(post(now), /^scope changed, full review required/, "the stale delta is suppressed");
   assert.match(post(now, { lane: "ghsolshadow", posted: "ghsolshadow" }), /^scope changed/, "shadow lane too");
-  const fresh = decide({ comments: now });
+  const fresh = decide({ files: t1n, comments: now });
   assert.equal(fresh.tier, 2);
   assert.equal(fresh.since, null, "fresh preparation at tier 2 is a full review");
   const note = S.renderScopeNote({ head: H, lane: "ghsol", preparedTier: 1, tier: 2 });
@@ -1094,25 +1102,55 @@ test("D395-4: an outside PR reviewed on the owner's dispatch posts its advisory 
   assert.match(R.evaluatePr({ pr: pr(fork), items: R.feed([...assigned, comment(v("merge", H, "ghglm"))]), files, runs: [], statuses: [], verifiedEdge: () => false, conf: { include: [], exclude: [], pinonly: [] } }).why, /coordinator decides/);
 });
 
-test("macrevb-1237-2: a tier-0 PR labelled review:gpt gets one advisory GLM result: no GPT attempt, no fallback marker, no veto", () => {
-  const docs = [{ filename: "docs/a.md" }];
-  const p = pr({ labels: [{ name: "review:gpt" }] });
-  const d = S.decideSol({ pr: p, files: docs, items: [], lane: S.SOL_LANE, triggerSha: H, checks: green });
-  assert.deepEqual([d.review, d.tier, d.providers], [true, 0, ["glm"]]);
-  // the post script's rule (postWhy): a labelled PR answered by GLM says GPT quota out, except on tier 0
+// macrevb-1311-1 (supersedes macrevb-1237-2 under D482): an IMPORTANT PR is at least tier 1, so a docs-only PR labelled review:gpt,
+// a renamed docs file and a workflow-only change all need (and dispatch) an exact-head Sol review; a NORMAL tier-0 PR needs none.
+test("macrevb-1311-1: tier-0 IMPORTANT PRs (review:gpt docs, renamed docs, workflow-only) wait for an exact-head Sol verdict and dispatch Sol", () => {
+  const docs = [{ filename: "docs/a.md" }], moved = [{ filename: "docs/b.md", status: "renamed", previous_filename: "docs/a.md" }];
+  const wf = [{ filename: ".github/workflows/ci.yml" }];
+  const labelled = pr({ labels: [{ name: "review:gpt" }] });
+  const conf = { include: [], exclude: [], pinonly: [] };
+  const ci = [{ path: ".github/workflows/ci.yml", status: "completed", conclusion: "success", head_sha: H, head_repository: { full_name: "modelplan/modelplan" }, head_branch: "feature/x", event: "pull_request", pull_requests: [{ number: 7 }] }];
+  const gate = (p, files, cs) => R.evaluatePr({ pr: p, items: R.feed(cs), files, runs: ci, statuses: [], verifiedEdge: () => false, conf, glmTiers: [1, 2] });
+  for (const [p, files, name] of [[labelled, docs, "review:gpt docs"], [pr(), moved, "renamed docs"], [pr(), wf, "workflow-only"]]) {
+    assert.equal(R.pathTier(R.prPaths(files)) === 0 || name === "renamed docs", true, name);
+    const none = gate(p, files, []);
+    assert.deepEqual([none.state, none.tier, none.review], [R.PENDING, 1, R.IMPORTANT], `${name}: ${none.why}`);
+    assert.equal(gate(p, files, [comment(v("merge", H, "ghglm"))]).state, R.PENDING, `${name}: GLM does not admit`);
+    assert.equal(gate(p, files, [comment(v("merge", H, "macrevc"))]).state, R.PENDING, `${name}: Terra does not admit`);
+    assert.equal(gate(p, files, [comment(v("merge", H, "ghsol"))]).state, R.SUCCESS, `${name}: Sol admits`);
+    const d = S.decideSol({ pr: p, files, items: [], lane: S.SOL_LANE, triggerSha: H, checks: green, glmTiers: [1, 2] });
+    assert.deepEqual([d.review, d.tier, d.providers[0]], [true, 1, "openai"], `${name}: dispatches Sol`);
+    assert.equal(S.decideSol({ pr: p, files, items: R.feed([comment(v("merge", H, "ghglm"))]), lane: S.SOL_LANE, triggerSha: H, checks: green, glmTiers: [1, 2] }).review, true, `${name}: a GLM verdict does not settle it`);
+    assert.equal(S.postProblem({ pr: p, items: [], head: H, lane: S.SOL_LANE, posted: S.SOL_LANE, tier: 1, files, glmTiers: [1, 2] }), null, `${name}: Sol posts`);
+  }
+  // a NORMAL tier-0 PR keeps needing no review (one advisory GLM result)
+  const n = gate(pr(), docs, []);
+  assert.deepEqual([n.state, n.tier, n.review], [R.SUCCESS, 0, R.NORMAL]);
+  const dn = S.decideSol({ pr: pr(), files: docs, items: [], lane: S.SOL_LANE, triggerSha: H, checks: green });
+  assert.deepEqual([dn.review, dn.tier, dn.providers], [true, 0, ["glm"]]);
+  // the post script's rule (postWhy) is unchanged
   assert.equal(S.postWhy({ quota: "x", provider: "glm", gptRequested: true, tier: 0 }), "quota fallback to glm");
   assert.equal(S.postWhy({ quota: "x", provider: "glm", gptRequested: true, tier: 1 }), "review:gpt requested; GPT quota out; quota fallback to glm");
-  assert.match(readFileSync(join(root, "scripts/pr-review/sol-post.mjs"), "utf8"), /postWhy\(\{ quota: read\(join\(dir, "why"\)\), note: read\(join\(dir, "note"\)\)/);
-  const answer = S.parseAnswer(`BLOCKER X-1 the docs are wrong\nTrigger: reading the page.\nConsequence: wrong advice.\nAcceptance test: page fixed.\n\nRecord: ${H}\n\nVERDICT: block`, H);
-  assert.ok(answer.ok, answer.why);
-  const body = S.renderSolComment({ answer, head: H, lane: "ghglm", mode: "full", base: BASE, tier: 0, gptFallback: false });
-  assert.ok(!body.includes(R.GPT_FALLBACK_MARKER));
-  assert.equal(S.postProblem({ pr: p, items: [], head: H, lane: S.SOL_LANE, posted: "ghglm", tier: 0, files: docs }), null);
-  // once per head: the posted GLM result settles the labelled tier-0 head
-  assert.equal(S.decideSol({ pr: p, files: docs, items: R.feed([comment(body)]), lane: S.SOL_LANE, triggerSha: H, checks: green }).why, "this lane already reviewed this head");
-  // the gate never vetoes tier 0 on it, marked or not
-  const gate = (b) => R.evaluatePr({ pr: p, items: R.feed([comment(b)]), files: docs, runs: [], statuses: [], verifiedEdge: () => false, conf: { include: [], exclude: [], pinonly: [] } });
-  assert.doesNotMatch(gate(body).why, /VERDICT block/);
+});
+
+// macrevb-1311-2: one IMPORTANT tier-1 fixture through evaluation, dispatch and posting; Terra admission stays for NORMAL tier 1.
+test("macrevb-1311-2: on an IMPORTANT tier-1 PR a Terra merge or a stale Terra assignment never settles or pins the head", () => {
+  const conf = { include: [], exclude: [], pinonly: [] };
+  const ci = [{ path: ".github/workflows/ci.yml", status: "completed", conclusion: "success", head_sha: H, head_repository: { full_name: "modelplan/modelplan" }, head_branch: "feature/x", event: "pull_request", pull_requests: [{ number: 7 }] }];
+  const gate = (files, cs) => R.evaluatePr({ pr: pr(), items: R.feed(cs), files, runs: ci, statuses: [], verifiedEdge: () => false, conf });
+  const terra = [comment(v("merge", H, "macrevc"))], pinned = [comment("REVIEWER: macrevc")];
+  assert.equal(gate(t1, terra).state, R.PENDING);
+  assert.deepEqual(R.eligibleLanes(1, [], R.IMPORTANT), R.SOL_LANES);
+  assert.equal(decide({ comments: terra }).review, true);
+  assert.equal(S.postProblem({ pr: pr(), items: R.feed(terra), head: H, lane: S.SOL_LANE, posted: S.SOL_LANE, tier: 1, files: t1 }), null);
+  const dp = decide({ comments: pinned });
+  assert.deepEqual([dp.review, dp.providers[0]], [true, "openai"]);
+  assert.equal(S.postProblem({ pr: pr(), items: R.feed(pinned), head: H, lane: S.SOL_LANE, posted: S.SOL_LANE, tier: 1, files: t1 }), null);
+  assert.equal(gate(t1, [...pinned, comment(v("merge", H, "ghsol"))]).state, R.SUCCESS);
+  // NORMAL tier 1: Terra still admits and settles
+  assert.equal(gate(t1n, terra).state, R.SUCCESS);
+  assert.equal(decide({ files: t1n, comments: terra }).why, "a counting verdict already exists at this head");
+  assert.ok(R.eligibleLanes(1, [], R.NORMAL).includes("(macrevc)"));
 });
 
 test("quota classifier: every OpenAI credit, billing or quota failure and every Zhipu balance code is quota; a 402 is quota; other errors are not", async () => {

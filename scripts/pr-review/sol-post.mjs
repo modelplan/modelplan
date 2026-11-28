@@ -5,9 +5,9 @@
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { client } from "../merge-gates/github.mjs";
-import { feed, isShadowLane, ledgerPr, parseGlmTiers, prPaths, prTier, tierOverride, TRUSTED } from "../merge-gates/rules.mjs";
+import { feed, isShadowLane, parseGlmTiers, TRUSTED } from "../merge-gates/rules.mjs";
 import { secretHits } from "./brief.mjs";
-import { postWhy, agreement, parseAnswer, postLane, postProblem, noVerdictNoted, oversizeNoted, glmAdvisory, prClass, waitNoted, renderNoVerdictNote, renderOversizeNote, renderScopeNote, renderSolComment, renderWaitNote, scopeNoted, SCOPE_CHANGED } from "./sol.mjs";
+import { postWhy, agreement, parseAnswer, postLane, postProblem, noVerdictNoted, oversizeNoted, glmAdvisory, prClass, prRoute, waitNoted, renderNoVerdictNote, renderOversizeNote, renderScopeNote, renderSolComment, renderWaitNote, scopeNoted, SCOPE_CHANGED } from "./sol.mjs";
 
 const env = process.env;
 const dir = join(env.RUNNER_TEMP, "pr-review-sol");
@@ -41,7 +41,7 @@ const files = await gh.all(`/pulls/${n}/files`);
 const prAfter = await gh.get(`/pulls/${n}`);
 const check = { items, head, lane: env.LANE, posted: waiting || oversize ? null : lane, force: env.FORCE === "true", tier: Number(env.TIER), files, glmTiers: parseGlmTiers(env.REVIEW_GLM_TIERS) };
 const late = postProblem({ pr, ...check }) ?? postProblem({ pr: prAfter, ...check });
-const tierNow = prTier(prPaths(files), tierOverride(items), ledgerPr(pr));   // fresh, as postProblem used it
+const tierNow = prRoute(pr, files, items).tier;   // fresh, as postProblem used it
 if (late?.startsWith(SCOPE_CHANGED)) {
   // The prepared scope no longer fits the trusted tier: post a non-counting notice once, never a verdict.
   if (!scopeNoted(items, head)) {
