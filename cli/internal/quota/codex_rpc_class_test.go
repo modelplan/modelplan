@@ -4,6 +4,7 @@ package quota
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -190,7 +191,7 @@ func TestCodexBinPicksTheNewestInstalledCLI(t *testing.T) {
 	if got := CodexBin(home); got != newer {
 		t.Fatalf("picked %s, want the newest %s", got, newer)
 	}
-	if v := codexMemoLoad("").versionAt(newer, now); v != "0.161.2" {
+	if v := codexMemoLoad("").versionAt(context.Background(), newer, now); v != "0.161.2" {
 		t.Fatalf("version %q", v)
 	}
 	asked := func() int { b, _ := os.ReadFile(calls); return strings.Count(string(b), "\n") }
@@ -357,7 +358,7 @@ func TestCodexBinPrefersTheDesktopAppCLI(t *testing.T) {
 		return []string{filepath.Join(apps, "ChatGPT.app", "Contents", "Resources", "codex"), filepath.Join(apps, "ChatGPT.app", "Contents", "Resources", "codex-cli", "bin", "codex"), filepath.Join(apps, "Codex.app", "Contents", "Resources", "codex")}
 	}
 	// No app: the newest installed copy.
-	if p, source := codexChoice(codexMemoLoad(""), home); p != npm || source != "npm" {
+	if p, source := codexChoice(context.Background(), codexMemoLoad(""), home); p != npm || source != "npm" {
 		t.Fatalf("without an app: %s (%s)", p, source)
 	}
 	// An app CLI that does not answer --version is skipped; the next app place that does is used,
@@ -368,7 +369,7 @@ func TestCodexBinPrefersTheDesktopAppCLI(t *testing.T) {
 	codexAppPaths = func(string) []string {
 		return []string{filepath.Join(apps, "ChatGPT.app", "Contents", "Resources", "codex"), bundled, filepath.Join(apps, "Codex.app", "Contents", "Resources", "codex")}
 	}
-	if p, source := codexChoice(codexMemoLoad(""), home); p != bundled || source != "app" {
+	if p, source := codexChoice(context.Background(), codexMemoLoad(""), home); p != bundled || source != "app" {
 		t.Fatalf("with the app: %s (%s)", p, source)
 	}
 	if got := CodexBin(home); got != bundled {
@@ -376,11 +377,11 @@ func TestCodexBinPrefersTheDesktopAppCLI(t *testing.T) {
 	}
 	// An explicit path wins: CodexBar's CODEX_CLI_PATH as well as MODELPLAN_CODEX.
 	t.Setenv("CODEX_CLI_PATH", brew)
-	if p, source := codexChoice(codexMemoLoad(""), home); p != brew || source != "override" {
+	if p, source := codexChoice(context.Background(), codexMemoLoad(""), home); p != brew || source != "override" {
 		t.Fatalf("CODEX_CLI_PATH: %s (%s)", p, source)
 	}
 	t.Setenv("MODELPLAN_CODEX", npm)
-	if p, _ := codexChoice(codexMemoLoad(""), home); p != npm {
+	if p, _ := codexChoice(context.Background(), codexMemoLoad(""), home); p != npm {
 		t.Fatalf("MODELPLAN_CODEX: %s", p)
 	}
 }
@@ -475,7 +476,7 @@ func TestCodexProtocolFailureOfTheAppCLIFallsBackOnce(t *testing.T) {
 			resetCodexVersions(t)
 			codexAppPaths = func(string) []string { return []string{app} }
 			cache := t.TempDir()
-			if p, source := codexChoice(codexMemoLoad(cache), home); p != app || source != "app" {
+			if p, source := codexChoice(context.Background(), codexMemoLoad(cache), home); p != app || source != "app" {
 				t.Fatalf("first choice %s (%s)", p, source)
 			}
 			err := RefreshCodexAccountDiscover(context.Background(), cache, home, acctNow)
@@ -484,7 +485,7 @@ func TestCodexProtocolFailureOfTheAppCLIFallsBackOnce(t *testing.T) {
 				if err == nil || s.Status == "ok" || s.ErrorCode != c.code || countCalls(t, calls+".npm", "app-server") != 0 {
 					t.Fatalf("a %s moved to another CLI: %v %+v, npm app-server starts %d", c.code, err, s, countCalls(t, calls+".npm", "app-server"))
 				}
-				if p, _ := codexChoice(codexMemoLoad(cache), home); p != app {
+				if p, _ := codexChoice(context.Background(), codexMemoLoad(cache), home); p != app {
 					t.Fatalf("a %s pinned another CLI: %s", c.code, p)
 				}
 				return
@@ -492,7 +493,7 @@ func TestCodexProtocolFailureOfTheAppCLIFallsBackOnce(t *testing.T) {
 			if err != nil || s.Status != "ok" || s.CLI == nil || s.CLI.Source != "npm" || s.CLI.Version != "0.146.0" || countCalls(t, calls+".npm", "app-server") != 1 {
 				t.Fatalf("no single fallback read: %v %+v", err, s)
 			}
-			if p, _ := codexChoice(codexMemoLoad(cache), home); p != npm {
+			if p, _ := codexChoice(context.Background(), codexMemoLoad(cache), home); p != npm {
 				t.Fatalf("working copy not kept: %s", p)
 			}
 		})
@@ -657,5 +658,91 @@ func TestCodexProtocolFailureOfAnExplicitCLITriesNothingElse(t *testing.T) {
 	}
 	if s := loadAccount(cache); s == nil || s.Status == "ok" || s.CLI == nil || s.CLI.Source != "override" || countCalls(t, calls, "app-server") != 0 {
 		t.Fatalf("snapshot %+v", s)
+	}
+}
+
+// Review macrevb-1316-3: consent revoked while a version probe of the read runs. The consent
+// writer does not wait for the reader lock, so the revocation is saved mid-read; no app-server, and
+// no fallback, may start after it, and nothing is recorded.
+func TestCodexRevokedDuringVersionDiscoveryStartsNothingMore(t *testing.T) {
+	isolateHome(t)
+	home, _ := os.UserHomeDir()
+	grantCodexRuntime(t)
+	dir := t.TempDir()
+	started, release, calls := filepath.Join(dir, "probe-started"), filepath.Join(dir, "release"), filepath.Join(dir, "calls")
+	bin := filepath.Join(home, ".local", "bin", "codex")
+	codexStub(t, bin, "0.161.2", codexInitOK, codexRateOK, calls)
+	// The version probe signals, then waits until the test has saved the revocation.
+	script := string(mustRead(t, bin))
+	script = strings.Replace(script, "[ \"$1\" = --version ] && {", "[ \"$1\" = --version ] && { : > '"+started+"'; while [ ! -e '"+release+"' ]; do sleep 0.05; done;", 1)
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	second := codexStub(t, filepath.Join(home, ".nvm", "versions", "node", "v22.21.1", "bin", "codex"), "0.146.0", codexInitOK, codexRateOK, calls)
+	t.Setenv("PATH", filepath.Dir(bin)+string(os.PathListSeparator)+filepath.Dir(second))
+	t.Setenv("MODELPLAN_CODEX", "")
+	t.Setenv("CODEX_CLI_PATH", "")
+	resetCodexVersions(t)
+	cache := t.TempDir()
+	done := make(chan error, 1)
+	go func() { done <- RefreshCodexAccountDiscover(context.Background(), cache, home, acctNow) }()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if _, err := os.Stat(started); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the version probe never started")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if err := consent.Change(consent.Path(), func(s *consent.State) error {
+		return consent.Set(s, "codex", false, "", "", acctNow)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if state, mode := consent.Current(); state.Allows("codex", consent.Runtime, mode) {
+		t.Fatal("precondition: the revocation is saved")
+	}
+	if err := os.WriteFile(release, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("a revoked read reported success")
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatal("the read did not end")
+	}
+	if n := countCalls(t, calls, "app-server"); n != 0 {
+		t.Fatalf("app-server started %d time(s) after the revocation", n)
+	}
+	if n := countCalls(t, calls, "--version"); n != 1 {
+		t.Fatalf("%d version probes, want only the one already running", n)
+	}
+	if s := loadAccount(cache); s != nil && s.Status == "ok" {
+		t.Fatalf("a reading was recorded after the revocation: %+v", s)
+	}
+}
+
+// The gate refuses every start once admission no longer holds, and allows them without a gate.
+func TestCodexLaunchGateRefusesEveryStart(t *testing.T) {
+	isolateHome(t)
+	calls := filepath.Join(t.TempDir(), "calls")
+	bin := codexStub(t, filepath.Join(t.TempDir(), "codex"), "1.0.0", codexInitOK, codexRateOK, calls)
+	refused := withCodexLaunchGate(context.Background(), func() bool { return false })
+	if _, err := askCodex(refused, bin); !errors.Is(err, errCodexLaunchRevoked) {
+		t.Fatalf("app-server: %v", err)
+	}
+	resetCodexVersions(t)
+	if v := codexMemoLoad("").versionAt(refused, bin, acctNow); v != "" {
+		t.Fatalf("version probe ran: %q", v)
+	}
+	if b, _ := os.ReadFile(calls); len(b) != 0 {
+		t.Fatalf("programs started: %s", b)
+	}
+	if v := codexMemoLoad("").versionAt(context.Background(), bin, acctNow); v != "1.0.0" {
+		t.Fatalf("a refused probe was remembered: %q", v)
 	}
 }

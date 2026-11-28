@@ -439,7 +439,7 @@ func off() bool {
 // $CODEX_CLI_PATH; else the CLI the ChatGPT or Codex desktop app carries; else the newest of every
 // codex on PATH and in the usual install places (hooks run with a short PATH). Empty when there is none.
 func CodexBin(home string) string {
-	p, _ := codexChoice(codexMemoLoad(""), home)
+	p, _ := codexChoice(context.Background(), codexMemoLoad(""), home)
 	return p
 }
 
@@ -455,7 +455,7 @@ type AccountRefresh struct {
 // RefreshAccountNow runs RefreshCodexAccount and says what came of it: that call returns nil
 // both when it is too soon to ask and when it caches a failure.
 func RefreshAccountNow(ctx context.Context, cache, codex string, now time.Time) *AccountRefresh {
-	return refreshAccountNow(ctx, cache, func() string { return codex }, now)
+	return refreshAccountNow(ctx, cache, func(context.Context) string { return codex }, now)
 }
 
 // RefreshAccountNowDiscover is RefreshAccountNow with the Codex CLI found only once the read is
@@ -470,14 +470,14 @@ func RefreshCodexAccountDiscover(ctx context.Context, cache, home string, now ti
 	return refreshCodexAccount(ctx, cache, codexDiscover(cache, home), now)
 }
 
-func codexDiscover(cache, home string) func() string {
-	return func() string {
-		p, _ := codexChoice(codexMemoLoad(cache), home)
+func codexDiscover(cache, home string) func(context.Context) string {
+	return func(ctx context.Context) string {
+		p, _ := codexChoice(ctx, codexMemoLoad(cache), home)
 		return p
 	}
 }
 
-func refreshAccountNow(ctx context.Context, cache string, resolve func() string, now time.Time) *AccountRefresh {
+func refreshAccountNow(ctx context.Context, cache string, resolve func(context.Context) string, now time.Time) *AccountRefresh {
 	r := &AccountRefresh{Source: "codex"}
 	failure := func() string {
 		if s := loadAccount(cache); s != nil && s.Status != "ok" {
@@ -507,12 +507,12 @@ func refreshAccountNow(ctx context.Context, cache string, resolve func() string,
 // (or the failure, so a missing login is not retried for half an hour once firstReadRetries are
 // spent). One refresh at a time.
 func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time) error {
-	return refreshCodexAccount(ctx, cache, func() string { return codex }, now)
+	return refreshCodexAccount(ctx, cache, func(context.Context) string { return codex }, now)
 }
 
 // refreshCodexAccount resolves the Codex CLI (resolve) only after the off switch, the consent
 // admission, the lock, the budget and the fence have all let the read go ahead.
-func refreshCodexAccount(ctx context.Context, cache string, resolve func() string, now time.Time) error {
+func refreshCodexAccount(ctx context.Context, cache string, resolve func(context.Context) string, now time.Time) error {
 	codex := ""
 	if cache == "" {
 		return errors.New("reader budget unavailable")
@@ -536,7 +536,7 @@ func refreshCodexAccount(ctx context.Context, cache string, resolve func() strin
 	// transient failure); its own result then sets the next automatic read.
 	shortcut := false
 	commit := func(s *accountSnap) error {
-		s.CLI = codexCLIInfo(cache, codex)
+		s.CLI = codexCLIInfo(ctx, cache, codex)
 		s.Admission = state.CaptureStamp(consent.ScopeCodexRuntimeUsage)
 		s.Failures = nextFailures(previous, s, now)
 		wait := AccountEvery
@@ -595,7 +595,13 @@ func refreshCodexAccount(ctx context.Context, cache string, resolve func() strin
 	if !consent.CurrentFence(state.Fence()) {
 		return errors.New("consent changed; refresh stopped")
 	}
-	if codex = resolve(); codex == "" {
+	// Review macrevb-1316-3: discovery, the app-server and a fallback each start a program, and
+	// the consent writer does not wait for the reader lock. Every start re-checks the admission
+	// (the consent store's fence) first, so nothing starts after a revocation is saved.
+	ctx = withCodexLaunchGate(ctx, func() bool { return consent.CurrentFence(state.Fence()) })
+	if codex = resolve(ctx); codexLaunchRefused(ctx) != nil {
+		return errCodexLaunchRevoked
+	} else if codex == "" {
 		return commit(&accountSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Status: "error", Error: "codex not found", ErrorCode: "not_found"})
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
@@ -605,6 +611,9 @@ func refreshCodexAccount(ctx context.Context, cache string, resolve func() strin
 		if alt, altResp := codexFallbackRead(ctx, cache, codex); altResp != nil {
 			codex, resp, err = alt, altResp, nil
 		}
+	}
+	if errors.Is(err, errCodexLaunchRevoked) || err != nil && codexLaunchRefused(ctx) != nil {
+		return errCodexLaunchRevoked // consent changed mid-read: nothing is recorded
 	}
 	if err != nil {
 		// Runtime and process errors may contain credentials, paths or identities.
@@ -706,6 +715,9 @@ type rlResponse struct {
 }
 
 func askCodex(ctx context.Context, codex string) (*rlResponse, error) {
+	if err := codexLaunchRefused(ctx); err != nil {
+		return nil, err
+	}
 	cmd, err := toolcli.CommandContext(ctx, codex, "app-server")
 	if err != nil {
 		return nil, err

@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -121,15 +122,15 @@ func codexPathKey(p string) string {
 
 // codexChoice is the codex a read runs and its source: the first of codexOrder, unless the desktop
 // app's CLI failed the protocol and another copy worked (the memo's pin).
-func codexChoice(m *codexMemo, home string) (string, string) {
-	order, override := codexOrder(m, home)
+func codexChoice(ctx context.Context, m *codexMemo, home string) (string, string) {
+	order, override := codexOrder(ctx, m, home)
 	if len(order) == 0 {
 		return "", ""
 	}
 	if override {
 		return order[0], "override"
 	}
-	if alt := m.pinned(order); alt != "" {
+	if alt := m.pinned(ctx, order); alt != "" {
 		return alt, codexSource(alt)
 	}
 	return order[0], codexSource(order[0])
@@ -147,7 +148,7 @@ func codexOverride() string {
 // codexOrder lists the codex binaries a read may run, best first: an explicit path alone; else the
 // desktop apps' CLIs that answer --version, then the installed copies (the newest-rule pick first,
 // then the rest in lookup order). override reports the explicit path.
-func codexOrder(m *codexMemo, home string) (order []string, override bool) {
+func codexOrder(ctx context.Context, m *codexMemo, home string) (order []string, override bool) {
 	if p := codexOverride(); p != "" {
 		return []string{p}, true
 	}
@@ -161,11 +162,11 @@ func codexOrder(m *codexMemo, home string) (order []string, override bool) {
 		if err != nil || !info.Mode().IsRegular() || info.Mode()&0o111 == 0 || toolcli.InsideOtherApp(p) {
 			continue
 		}
-		if m.versionAt(p, now) != "" {
+		if m.versionAt(ctx, p, now) != "" {
 			order = append(order, p)
 		}
 	}
-	if best := newestCodex(m, home, exe); best != "" {
+	if best := newestCodex(ctx, m, home, exe); best != "" {
 		order = append(order, best)
 		for _, c := range codexCandidates(home, exe) {
 			if c != best {
@@ -183,16 +184,16 @@ type codexProtocolError struct{ error }
 
 func (e codexProtocolError) Unwrap() error { return e.error }
 
-func (m *codexMemo) appKey(p string) string {
-	return codexFileKey(p) + "|" + m.versionAt(p, codexClock())
+func (m *codexMemo) appKey(ctx context.Context, p string) string {
+	return codexFileKey(p) + "|" + m.versionAt(ctx, p, codexClock())
 }
 
 // pinned is the remembered working copy while it still applies to the first app CLI in order.
-func (m *codexMemo) pinned(order []string) string {
+func (m *codexMemo) pinned(ctx context.Context, order []string) string {
 	if m.Pin == nil {
 		return ""
 	}
-	if len(order) == 0 || codexPathKey(order[0]) != m.Pin.App || m.appKey(order[0]) != m.Pin.AppKey {
+	if len(order) == 0 || codexPathKey(order[0]) != m.Pin.App || m.appKey(ctx, order[0]) != m.Pin.AppKey {
 		m.Pin = nil
 		m.save()
 		return ""
@@ -214,7 +215,7 @@ func codexFallbackRead(ctx context.Context, cache, failed string) (string, *rlRe
 	}
 	home, _ := os.UserHomeDir()
 	m := codexMemoLoad(cache)
-	order, _ := codexOrder(m, home)
+	order, _ := codexOrder(ctx, m, home)
 	next := ""
 	for i, p := range order {
 		if p == failed && i+1 < len(order) {
@@ -230,7 +231,7 @@ func codexFallbackRead(ctx context.Context, cache, failed string) (string, *rlRe
 		return "", nil
 	}
 	if codexSource(failed) == "app" {
-		m.Pin = &codexPinRecord{App: codexPathKey(failed), AppKey: m.appKey(failed), Alt: codexPathKey(next)}
+		m.Pin = &codexPinRecord{App: codexPathKey(failed), AppKey: m.appKey(ctx, failed), Alt: codexPathKey(next)}
 		m.save()
 	}
 	return next, resp
@@ -309,18 +310,18 @@ func codexCandidates(home, exe string) []string {
 // newestCodex is the candidate with the newest version. The first one in lookup order stays the
 // choice unless it answers with a version and another answers with a newer one: a copy that does
 // not answer is never passed over for one that merely does.
-func newestCodex(m *codexMemo, home, exe string) string {
+func newestCodex(ctx context.Context, m *codexMemo, home, exe string) string {
 	candidates := codexCandidates(home, exe)
 	if len(candidates) == 0 {
 		return ""
 	}
 	now := codexClock()
-	best, bestVersion := candidates[0], m.versionAt(candidates[0], now)
+	best, bestVersion := candidates[0], m.versionAt(ctx, candidates[0], now)
 	if bestVersion == "" {
 		return best
 	}
 	for _, c := range candidates[1:] {
-		v := m.versionAt(c, now)
+		v := m.versionAt(ctx, c, now)
 		if v != "" && codexNewer(v, bestVersion) {
 			best, bestVersion = c, v
 		}
@@ -337,7 +338,7 @@ func codexFileKey(p string) string {
 }
 
 // versionAt is the binary's version, asked at most once a minute and again only after it changed.
-func (m *codexMemo) versionAt(p string, now time.Time) string {
+func (m *codexMemo) versionAt(ctx context.Context, p string, now time.Time) string {
 	key, id := codexFileKey(p), codexPathKey(p)
 	if m.cache == "" {
 		codexMemory.Lock()
@@ -346,6 +347,9 @@ func (m *codexMemo) versionAt(p string, now time.Time) string {
 	probe, seen := m.Versions[id]
 	if seen && (probe.Key == key || !now.Before(probe.At) && now.Sub(probe.At) < codexVersionEvery) {
 		return probe.Version
+	}
+	if codexLaunchRefused(ctx) != nil {
+		return "" // consent changed: no program starts, and nothing is remembered
 	}
 	v := askCodexVersion(p)
 	if m.Versions == nil {
@@ -451,7 +455,7 @@ func cmpInt(x, y int) int {
 }
 
 // codexCLIInfo describes the binary a read ran, for doctor: its source and version only.
-func codexCLIInfo(cache, codex string) *codexCLI {
+func codexCLIInfo(ctx context.Context, cache, codex string) *codexCLI {
 	if codex == "" {
 		return nil
 	}
@@ -460,7 +464,29 @@ func codexCLIInfo(cache, codex string) *codexCLI {
 	if codexOverride() == codex {
 		source = "override"
 	}
-	info := &codexCLI{Source: source, Version: m.versionAt(codex, codexClock())}
+	info := &codexCLI{Source: source, Version: m.versionAt(ctx, codex, codexClock())}
 	m.save()
 	return info
+}
+
+// codexLaunchGate (review macrevb-1316-3): every Codex program a read starts (a version probe, the
+// app-server, a fallback) asks this gate first. refreshCodexAccount installs one that re-reads the
+// consent store, so a revocation saved while the read runs (the consent writer does not wait for
+// the reader lock) stops every later start.
+type codexLaunchGateKey struct{}
+
+// errCodexLaunchRevoked: consent changed after the read was admitted; nothing more is started.
+var errCodexLaunchRevoked = errors.New("consent changed; refresh stopped")
+
+func withCodexLaunchGate(ctx context.Context, admitted func() bool) context.Context {
+	return context.WithValue(ctx, codexLaunchGateKey{}, admitted)
+}
+
+// codexLaunchRefused is errCodexLaunchRevoked when the read's admission no longer holds; nil
+// without a gate (a caller outside a read, such as CodexBin).
+func codexLaunchRefused(ctx context.Context) error {
+	if admitted, ok := ctx.Value(codexLaunchGateKey{}).(func() bool); ok && !admitted() {
+		return errCodexLaunchRevoked
+	}
+	return nil
 }
