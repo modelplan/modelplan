@@ -79,8 +79,7 @@ unlisted, changed or symlinked content. Caps: 4096 files, 8 MiB/file, 64 MiB tot
 8192 walked entries. Remote/subframe/new-window navigation is denied; the sole
 `cockpit` handler checks actual WK frame, origin and current page URL. JSON uses
 argument transport, strict reply field sets, duplicate/nesting rejection, a
-1 MiB cap and canonical decimal UInt64 strings. No private WebKit selector is in
-this product's release build; optional verification hooks are compile gated.
+1 MiB cap and canonical decimal UInt64 strings. One private WebKit key is used in the release build: the cockpit window and the field panel clear the web view's `drawsBackground` through key-value coding so the transparent areas show the desktop. Optional verification hooks are compile gated.
 
 The first actual preflight found no installed page API at navigation completion. The local scheme handler
 initially supplied a plain URLResponse; WebKit requires an HTTP response with
