@@ -353,3 +353,19 @@ dl.ss{display:grid;grid-template-columns:52px minmax(0,1fr);gap:4px 6px;margin:2
 .md-e .md-cur{overflow:hidden;text-overflow:ellipsis}.md-e .md-star{margin-left:0}
 .md-bar{height:4px;border-radius:2px;background:linear-gradient(90deg,color-mix(in srgb,var(--lcd-ink) 55%,transparent) var(--p,0%),var(--lcd-rule) var(--p,0%))}
 .md-list[data-usage="false"] .md-bar,.md-row.idle .md-bar{visibility:hidden}
+/* D470 去向 on history.usage (master spec §2.3, §6.1): tokens the big figure, ≈$ small, share as a 2 pt bar under the row.
+   Project rows 22.5 pt (7 visible), session rows 30 pt with a meta line (6 visible); the list scrolls (CKP-MFD-68). */
+.wd.wu{grid-template-columns:6px minmax(0,1fr) auto 40px 30px;min-height:22.5px;background:none;border:0;padding:0;cursor:default}
+button.wd.wu{cursor:pointer}
+button.wd.wu:hover,.wd.wu:hover{background-color:var(--lcd-ghost)}
+.wu-t{font:400 12px/1 var(--f-lcd);color:var(--text);text-align:right}
+.wu-bar{position:absolute;left:0;bottom:0;height:2px;width:var(--p,0%);background:var(--v,color-mix(in srgb,var(--lcd-ink) 60%,transparent));pointer-events:none}
+.wu-bucket .wd-n{color:var(--muted)}
+.wu-cut{flex:none;margin:2px 0 0;font:9.5px/13px var(--f-lcd);color:var(--muted)}
+.wu-run{font-weight:400;color:var(--teal,var(--lcd-ink));margin-right:3px}
+.wd.wu-s{min-height:30px}
+.wu-s .wd-n{display:flex;flex-direction:column;line-height:13px}
+.wu-meta{font-size:9.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis}
+.wu-review .wd-n em{font-style:normal;margin-left:4px}
+.wu-other{color:var(--muted)}
+.wu-back{flex:none;align-self:flex-start;font:10px/15px var(--f-lcd);color:var(--text);background:none;border:0;padding:0;cursor:pointer}

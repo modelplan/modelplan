@@ -82,8 +82,8 @@ func TestZCodeDatabase(t *testing.T) {
 	if r, _ := projector(cache, false)("zcode", repo, nativeProject{ID: "prj-opaque"}); r != w.Top[0].Ref {
 		t.Fatal("the session's project_id names its project")
 	}
-	if r, _ := projector(cache, false)("zcode", repo, nativeProject{}); r != "" {
-		t.Fatal("a ZCode session without a project_id has no project")
+	if i := projectorInfo(cache, false)("zcode", repo, nativeProject{}); i.Kind != KindRepo {
+		t.Fatal("a ZCode session without a project_id is still in its repository (D470)")
 	}
 	// End-to-end times include the wait for the first token: never a generation sample.
 	if r := v.WorkloadRate("zcode"); r.N != 0 || r.Value != nil {
@@ -145,8 +145,8 @@ func TestOpenCodeDatabase(t *testing.T) {
 	if ref, label := projector(cache, true)("opencode", root, nativeProject{ID: "prj-1", Name: "Acme App"}); ref == "" || label != "Acme App" || ref != *r.Top[0].ProjectRef {
 		t.Fatalf("project = %q %q, want the session's project", ref, label)
 	}
-	if ref, _ := projector(cache, true)("opencode", root, nativeProject{ID: "global", Name: "/"}); ref != "" {
-		t.Fatal("OpenCode's global project is no project")
+	if i := projectorInfo(cache, true)("opencode", root, nativeProject{ID: "global", Name: "/"}); i.Kind != KindNone || i.Label != "" {
+		t.Fatal("OpenCode's global project is no project: a bucket")
 	}
 	b, _ := os.ReadFile(PerfPath(cache))
 	for _, leak := range []string{"secret reply", "ses-a", "msg-1", root} {

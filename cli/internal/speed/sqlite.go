@@ -23,7 +23,7 @@ import (
 // last time. Only finished requests count, each once (by a hash of its own id), and only those
 // that started after the ledger did. A row that starts long before the newest one counted is a
 // copy of history (OpenCode copies messages into a forked session) and is not counted again.
-// Prompts, replies, titles and ids are never read into the ledger; the session id only becomes a
+// Prompts and replies are never read into the ledger; a session title is read only while project labels are on (D470); the session id only becomes a
 // hashed key, the working directory a project reference.
 
 // DBCursor is how far one database was read.
@@ -456,4 +456,51 @@ func nullCount(n sql.NullInt64) *int64 {
 	}
 	x := n.Int64
 	return &x
+}
+
+// dbSession: a tool database's own record of one session: where it ran and the tool's project.
+type dbSession struct {
+	id, cwd string
+	np      nativeProject
+}
+
+// reattributeDB recomputes, once, the project of this source's sessions recorded under an older project rule,
+// from the tool's session table (macrevb-1299-4): a session with no new requests is migrated too, and its counts
+// and the database cursor are untouched. A session the table no longer names has no project.
+func (l *PerfLedger) reattributeDB(path, source string, sessions func(db *sql.DB) ([]dbSession, error)) bool {
+	if l.project == nil {
+		return false
+	}
+	stale := map[string][]*PerfSession{}
+	for i := range l.Sessions {
+		if s := &l.Sessions[i]; s.Source == source && s.ProjectRule < projectRule {
+			stale[s.Key] = append(stale[s.Key], s)
+		}
+	}
+	if len(stale) == 0 {
+		return false
+	}
+	db, err := openRO(path)
+	if err != nil {
+		return false
+	}
+	defer db.Close()
+	rows, err := sessions(db)
+	if err != nil {
+		return false
+	}
+	for _, r := range rows {
+		key := fileKey(source + ":" + r.id)
+		for _, s := range stale[key] {
+			l.attribute(s, key, source, r.cwd, r.np, s.GrantEpoch)
+		}
+	}
+	for key, ss := range stale {
+		for _, s := range ss {
+			if s.ProjectRule < projectRule {
+				l.dropStale(s, key, source)
+			}
+		}
+	}
+	return true
 }

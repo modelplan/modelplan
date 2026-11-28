@@ -247,17 +247,11 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 			}
 		}
 		// G3-100: a real project whose records hold no readable name is not "no project"; glm-909-1: neither is
-		// one whose name `project-labels off` withholds. The state says which, so the strip never guesses.
-		state := wire.ProjectNone
-		switch {
-		case session.ProjectRef == nil:
-		case !labels:
-			state = wire.ProjectHidden
-		case label != nil:
-			state = wire.ProjectNamed
-		default:
-			state, label = wire.ProjectUnnamed, unnamedProjectLabel(*session.ProjectRef)
-		}
+		// one whose name `project-labels off` withholds. The state says which, so the strip never guesses. D470:
+		// a bucket kind (independent chat, home, none) is "no project" whatever its reference.
+		title, kindName, _ := perf.SessionInfo(session.Ref, session.Source)
+		kind := usageKind(kindName)
+		state, label := cockpitProjectState(session.ProjectRef, label, kind, labels)
 		// The live record's account is the same evidence the working signal binds on. A reference
 		// outside this cockpit's subscriptions stays unbound; never substitute a source-wide one.
 		var subscription *string
@@ -272,10 +266,18 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 		}
 		// CKP-STRIP-16 (owner D277): the strip shows how long the session has run and what it has produced.
 		started, tokens := cockpitSessionExtent(session, perf.Ledger.Sessions)
-		result.Sessions = append(result.Sessions, wire.CockpitSession{SessionRef: session.Ref, Source: session.Source, SubscriptionRef: subscription, Model: model, Effort: effort, ProjectLabel: label, ProjectState: state, LastObservedAt: session.LastAt, State: session.Status, Rate: session.Rate.Value, Fast: fast, StartedAt: started, ObservedTotalTokens: tokens, ModelDisplay: cockpitUnlistedModelDisplay(model, session.Model)})
+		result.Sessions = append(result.Sessions, wire.CockpitSession{SessionRef: session.Ref, Source: session.Source, SubscriptionRef: subscription, Model: model, Effort: effort, ProjectLabel: label, ProjectState: state, LastObservedAt: session.LastAt, State: session.Status, Rate: session.Rate.Value, Fast: fast, StartedAt: started, ObservedTotalTokens: tokens, ModelDisplay: cockpitUnlistedModelDisplay(model, session.Model), ProjectKind: kind})
+		if labels && safeCockpitTitle(title) {
+			result.Sessions[len(result.Sessions)-1].Title = &title
+		}
 	}
 	if appserver.CockpitSessionsEnabled(ctx) {
 		result.RecentSessions = cockpitRecentSessions(perf.Ledger.Sessions, allowed, sourceScope, byRef, labels, view.PublicModels, now)
+		var pricer speed.Pricer
+		if publishesPrices(view.PublicModels) {
+			pricer = newPublicationPricer(view.PublicModels, view.PublicSpeedTiers)
+		}
+		enrichRecentSessions(result.RecentSessions, perf, pricer)
 	}
 	inUse := map[string]bool{}
 	for _, session := range result.Sessions {

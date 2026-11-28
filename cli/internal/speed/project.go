@@ -2,9 +2,7 @@ package speed
 
 import (
 	"bytes"
-	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -16,25 +14,13 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/profile"
 )
 
-// A session's project is the tool's own notion of a project, never ModelPlan's guess (owner
-// decision G3-100; docs/personal-snapshot.md). It is known by an opaque reference: a keyed
-// hash of the tool's project identity, with a random key kept beside the ledger
-// (<cache>/observed/project-key), so the reference says nothing about the path and cannot be
-// matched across machines. Per tool:
-//   - Codex: the project folder Codex lists (a [projects."<path>"] table in config.toml, or a
-//     saved workspace root of the desktop app) that contains the session's working directory or
-//     its repository root; none when no such folder exists.
-//   - Claude Code: the session's working directory, which is what names ~/.claude/projects/<dir>.
-//     Worktrees and subfolders are projects of their own, as Claude shows them.
-//   - OpenCode: the project row its session belongs to (its name, else its worktree's folder);
-//     the "global" project is no project.
-//   - ZCode: the session's project_id; its label is the folder name from ZCode's own session record
-//     (ZCode stores no separate project name).
-//   - Any other source: none.
-//
-// A session without a project carries an empty reference; the apps show "No project". The label
-// is stored only while project labels are on: the default, until the user turns them off
-// (`modelplan project-labels off`, which deletes the stored labels). Labels never leave the machine.
+// A session's project follows owner decision D470 (projectid.go): the git repository root with worktrees merged,
+// else a workspace the tool names, else a bucket (independent chats, the home folder, none). It is known by an
+// opaque reference: a keyed hash of the project identity, with a random key kept beside the ledger
+// (<cache>/observed/project-key), so the reference says nothing about the path and cannot be matched across
+// machines. The label is stored only while project labels are on: the default, until the user turns them off
+// (`modelplan project-labels off`, which deletes the stored labels and titles). Labels and titles never leave the
+// machine.
 
 const maxProjects = 500
 
@@ -79,21 +65,25 @@ func SetProjectLabels(file, cache string, on bool) error {
 	return ClearProjectLabels(cache)
 }
 
-// ClearProjectLabels removes every stored project label from perf.json; the references stay.
+// ClearProjectLabels removes every stored project label and title from perf.json, and the remembered worktrees
+// (macrevb-1299-5); the references stay.
 func ClearProjectLabels(cache string) error {
 	unlock, ok := lock(cache, "perf.lock")
 	if !ok {
 		return errors.New("perf.json is busy; try again")
 	}
 	defer unlock()
+	if err := forgetRemembered(cache); err != nil {
+		return err
+	}
 	l, ok := LoadPerf(cache)
 	if !ok || l.Since.IsZero() {
 		return nil // nothing of ours to change
 	}
 	changed := false
 	for i := range l.Sessions {
-		if l.Sessions[i].ProjectLabel != "" {
-			l.Sessions[i].ProjectLabel, changed = "", true
+		if l.Sessions[i].ProjectLabel != "" || l.Sessions[i].Title != "" {
+			l.Sessions[i].ProjectLabel, l.Sessions[i].Title, changed = "", "", true
 		}
 	}
 	for i := range l.Live {
@@ -108,47 +98,33 @@ func ClearProjectLabels(cache string) error {
 	return write(PerfPath(cache), append(b, '\n'))
 }
 
-// nativeProject is a project a tool's own store names for a session (OpenCode, ZCode).
-type nativeProject struct{ ID, Name string }
+// nativeProject is what a tool's own store names for a session: its project (OpenCode, ZCode), its thread id
+// (Codex, to tell an independent chat) and its generated title.
+type nativeProject struct{ ID, Name, Thread, Title string }
 
 // projector names a session's project: its reference and, with labels on, its label. Nil when the
 // key cannot be read or made; sessions then carry no project.
 func projector(cache string, labels bool) func(source, cwd string, np nativeProject) (ref, label string) {
+	f := projectorInfo(cache, labels)
+	if f == nil {
+		return nil
+	}
+	return func(source, cwd string, np nativeProject) (string, string) {
+		i := f(source, cwd, np)
+		return i.Ref, i.Label
+	}
+}
+
+// projectorInfo is projector with the project's kind (projectid.go).
+func projectorInfo(cache string, labels bool) func(source, cwd string, np nativeProject) projectInfo {
 	key := projectKey(cache)
 	if key == nil {
 		return nil
 	}
-	var codex *codexProjects
-	return func(source, cwd string, np nativeProject) (string, string) {
-		var id, name string
-		switch source {
-		case "claude-code":
-			id, name = cwdProject(cwd)
-		case "codex":
-			if codex == nil {
-				codex = loadCodexProjects()
-			}
-			id, name = codex.lookup(cwd)
-		case "opencode":
-			if np.ID != "" && np.ID != "global" {
-				id, name = "opencode:"+np.ID, nativeLabel(np.Name)
-			}
-		case "zcode":
-			if np.ID != "" && np.ID != "global" {
-				// ZCode stores no project name; its own record of the session folder gives the folder name.
-				id, name = "zcode:"+np.ID, nativeLabel(cwd)
-			}
-		}
-		if id == "" {
-			return "", ""
-		}
-		m := hmac.New(sha256.New, key)
-		m.Write([]byte(id))
-		ref := hex.EncodeToString(m.Sum(nil)[:16])
-		if !labels {
-			name = ""
-		}
-		return ref, name
+	r := newProjectResolver(cache, key, labels)
+	return func(source, cwd string, np nativeProject) projectInfo {
+		defer r.save()
+		return r.resolve(source, cwd, np)
 	}
 }
 
@@ -198,16 +174,6 @@ func projectKey(cache string) []byte {
 	return k
 }
 
-// cwdProject: Claude Code's project, the session's working directory. "" for one that is not
-// absolute.
-func cwdProject(cwd string) (id, name string) {
-	if cwd == "" || len(cwd) > 4096 || !filepath.IsAbs(cwd) {
-		return "", ""
-	}
-	dir := filepath.Clean(cwd)
-	return "cwd:" + dir, filepath.Base(dir)
-}
-
 // gitRoot: the folder of the checkout's repository (the one holding the common .git directory)
 // that a working directory belongs to, "" when it is in none. Found by reading .git files.
 func gitRoot(cwd string) string {
@@ -216,6 +182,9 @@ func gitRoot(cwd string) string {
 		dir = real
 	}
 	for d, i := dir, 0; i < 64; i++ {
+		if _, err := os.Lstat(filepath.Join(d, ".git")); err == nil && gitCommonDir(d) == "" {
+			return "" // a broken checkout (macrevb-1303-5): never a parent repository instead
+		}
 		if common := gitCommonDir(d); common != "" {
 			if filepath.Base(common) == ".git" {
 				return filepath.Dir(common)

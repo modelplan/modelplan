@@ -276,15 +276,29 @@ func observeAccounting(cache, source string, paths []string, now time.Time) erro
 // accountingRows merges copies across files. Identical Codex events within one
 // file retain an occurrence ordinal; copied files repeat the same ordinal.
 func accountingRows(cache string) ([]PerfRow, map[string]bool) {
+	rows, sources, _ := accountingRowsBySession(cache)
+	return rows, sources
+}
+
+// SessionResponse is one counted response and the model and source it ran under, kept per session log
+// (the log's file key, as PerfSession.Key) for pricing a session (D470 3).
+type SessionResponse struct {
+	Source, Model string
+	GrantEpoch    *GrantEpoch
+	Response
+}
+
+func accountingRowsBySession(cache string) ([]PerfRow, map[string]bool, map[string][]SessionResponse) {
 	l, ok := loadAccounting(cache)
 	if !ok {
-		return nil, nil
+		return nil, nil, nil
 	}
 	clear := LoadCleared(cache)
 	type stamped struct {
 		usageRecord
 		source string
 		epoch  *GrantEpoch
+		file   string
 	}
 	seen := map[string]stamped{}
 	replayAt, sideAt, replayRequestless, sideRequestless := map[string]string{}, map[string]string{}, map[string]string{}, map[string]string{}
@@ -325,7 +339,7 @@ func accountingRows(cache string) ([]PerfRow, map[string]bool) {
 			}
 			old, exists := seen[id]
 			if !exists || old.Sidechain && !r.Sidechain || old.Sidechain == r.Sidechain && (r.Sum() > old.Sum() || r.Sum() == old.Sum() && old.Imported && !r.Imported) {
-				seen[id] = stamped{r, f.Source, f.Epoch}
+				seen[id] = stamped{r, f.Source, f.Epoch, key}
 			}
 			if atKey != "" {
 				replayAt[atKey] = id
@@ -340,6 +354,10 @@ func accountingRows(cache string) ([]PerfRow, map[string]bool) {
 				}
 			}
 		}
+	}
+	bySession := map[string][]SessionResponse{}
+	for _, v := range seen {
+		bySession[v.file] = append(bySession[v.file], SessionResponse{Source: v.source, Model: v.Model, GrantEpoch: v.epoch, Response: Response{At: v.At, Tier: responseTier(v.Tier), Buckets: v.usageBuckets}})
 	}
 	rows := map[string]*PerfRow{}
 	for _, v := range seen {
@@ -366,10 +384,10 @@ func accountingRows(cache string) ([]PerfRow, map[string]bool) {
 		out = append(out, *r)
 	}
 	sort.Slice(out, func(i, j int) bool { a, b := out[i], out[j]; return a.Day+a.Source+a.Model < b.Day+b.Source+b.Model })
-	return out, sources
+	return out, sources, bySession
 }
 func accountingOverlay(cache string, l PerfLedger) PerfLedger {
-	l.UsageRows, _ = accountingRows(cache)
+	l.UsageRows, _, l.UsageSessions = accountingRowsBySession(cache)
 	return l
 }
 
@@ -663,6 +681,7 @@ type accountingTee struct {
 func (p *accountingTee) line(start, end int64, b []byte) {
 	// A Claude Code line is validated and reduced once for both readers.
 	if c, ok := p.parser.(*claudeParser); ok && p.usage.source == "claude-code" {
+		c.noteTitle(b)
 		doc := claudeDoc(b)
 		if doc == nil {
 			return // not JSON: both readers skip it

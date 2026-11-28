@@ -25,7 +25,8 @@ const clipped=page=>page.locator('#cockpit').evaluate(root=>{
 // record strip's status word are sized for today's two languages. The test fails on any other clipped label, and also when
 // one of these stops clipping, so the list can only shrink.
 // D405: the wider big screen fits the fourth page key's pseudo-long label, so only the record strip's word is left.
-const known=['section.ck-tape:5>div.t-lines:0>button.tl:2>span.t-live:6'];
+// D470: the tape gained the title and cost columns, so the status word is now the ninth cell (t-live:8).
+const known=['section.ck-tape:5>div.t-lines:0>button.tl:2>span.t-live:8'];
 for(const tier of ['tall'])
 test(`pseudo-long English keeps key labels inside their boxes (${tier})`,async({page})=>{
  const found={};

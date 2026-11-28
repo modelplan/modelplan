@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: 1f286906cbe9c169c771dfd7c6218a91f1c46c54bc2a4adaaba67db3d1e3cd7c
+// Schema SHA-256: 77ab0a3846434b576890312894e91668d98a0b261bdc0a151d5aa5e4f8331b7a
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -49,6 +49,17 @@ export type WireCockpitAlert = {
   readonly "source": string;
   readonly "subscriptionRef": string;
   readonly "windowId": string;
+};
+
+export type WireCockpitBackgroundReview = {
+  readonly "costState": "priced" | "partial" | "unpriced";
+  readonly "costUsd": number | null;
+  readonly "lastObservedAt": string;
+  readonly "model": string | null;
+  readonly "modelApprox": boolean;
+  readonly "runs": number;
+  readonly "share": number;
+  readonly "tokens": WireCockpitUsageTokens;
 };
 
 export type WireCockpitCost = {
@@ -161,6 +172,7 @@ export type WireCockpitHistory = {
   readonly "sources": ReadonlyArray<string>;
   readonly "subscriptions": ReadonlyArray<WireCockpitSubscriptionHistory>;
   readonly "tools": WireCockpitEntityRanking;
+  readonly "usage"?: WireCockpitUsage;
   readonly "version": number;
 };
 
@@ -256,14 +268,19 @@ export type WireCockpitRankedProject = {
 };
 
 export type WireCockpitRecentSession = {
+  readonly "costUsd"?: number;
   readonly "effort": string | null;
   readonly "lastObservedAt": string;
   readonly "model": string;
+  readonly "modelApprox"?: boolean;
+  readonly "projectKind"?: "repo" | "workspace" | "independent" | "home" | "none";
   readonly "projectLabel": string | null;
   readonly "projectState"?: "named" | "unnamed" | "hidden" | "none";
   readonly "sessionRef": string;
   readonly "source": string;
   readonly "subscriptionRef": string | null;
+  readonly "title"?: string;
+  readonly "totalTokens"?: number;
 };
 
 export type WireCockpitResetCount = {
@@ -279,6 +296,7 @@ export type WireCockpitSession = {
   readonly "model": string;
   readonly "modelDisplay"?: string;
   readonly "observedTotalTokens"?: number;
+  readonly "projectKind"?: "repo" | "workspace" | "independent" | "home" | "none";
   readonly "projectLabel": string | null;
   readonly "projectState"?: "named" | "unnamed" | "hidden" | "none";
   readonly "rate": number | null;
@@ -287,6 +305,7 @@ export type WireCockpitSession = {
   readonly "startedAt"?: string;
   readonly "state": string;
   readonly "subscriptionRef": string | null;
+  readonly "title"?: string;
 };
 
 export type WireCockpitSourceBucket = {
@@ -365,6 +384,83 @@ export type WireCockpitToday = {
   readonly "observedOutputTokens": number;
   readonly "observedTotalTokens"?: number;
   readonly "source": string;
+};
+
+export type WireCockpitUsage = {
+  readonly "measure": string;
+  readonly "recent30d": WireCockpitUsageWindow;
+  readonly "recent7d": WireCockpitUsageWindow;
+  readonly "today": WireCockpitUsageWindow;
+};
+
+export type WireCockpitUsageOther = {
+  readonly "costState": "priced" | "partial" | "unpriced";
+  readonly "costUsd": number | null;
+  readonly "count": number;
+  readonly "share": number;
+  readonly "tokens": WireCockpitUsageTokens;
+};
+
+export type WireCockpitUsageProject = {
+  readonly "costState": "priced" | "partial" | "unpriced";
+  readonly "costUsd": number | null;
+  readonly "effort": string | null;
+  readonly "firstObservedAt": string;
+  readonly "kind": "repo" | "workspace" | "independent" | "home" | "none";
+  readonly "label": string | null;
+  readonly "lastObservedAt": string;
+  readonly "model": string | null;
+  readonly "modelApprox": boolean;
+  readonly "ref": string;
+  readonly "running": boolean;
+  readonly "sessions": number;
+  readonly "share": number;
+  readonly "sources": ReadonlyArray<string>;
+  readonly "subscriptionRefs": ReadonlyArray<string>;
+  readonly "tokens": WireCockpitUsageTokens;
+};
+
+export type WireCockpitUsageSession = {
+  readonly "costState": "priced" | "partial" | "unpriced";
+  readonly "costUsd": number | null;
+  readonly "effort": string | null;
+  readonly "firstObservedAt": string;
+  readonly "lastObservedAt": string;
+  readonly "model": string | null;
+  readonly "modelApprox": boolean;
+  readonly "projectKind": "repo" | "workspace" | "independent" | "home" | "none";
+  readonly "projectLabel": string | null;
+  readonly "projectRef": string | null;
+  readonly "projectState": "named" | "unnamed" | "hidden" | "none";
+  readonly "running": boolean;
+  readonly "sessionRef": string;
+  readonly "share": number;
+  readonly "source": string;
+  readonly "subscriptionRef": string | null;
+  readonly "title": string | null;
+  readonly "tokens": WireCockpitUsageTokens;
+};
+
+export type WireCockpitUsageTokens = {
+  readonly "cacheRead": number;
+  readonly "cacheWrite": number;
+  readonly "complete": boolean;
+  readonly "input": number;
+  readonly "output": number;
+  readonly "total": number;
+};
+
+export type WireCockpitUsageWindow = {
+  readonly "backgroundReview": WireCockpitBackgroundReview | null;
+  readonly "costState": "priced" | "partial" | "unpriced";
+  readonly "costUsd": number | null;
+  readonly "otherProjects": WireCockpitUsageOther;
+  readonly "otherSessions": WireCockpitUsageOther;
+  readonly "projectCount": number;
+  readonly "projects": ReadonlyArray<WireCockpitUsageProject>;
+  readonly "sessionCount": number;
+  readonly "sessions": ReadonlyArray<WireCockpitUsageSession>;
+  readonly "tokens": WireCockpitUsageTokens;
 };
 
 export type WireCredits = {
@@ -788,6 +884,68 @@ export const definitions: Readonly<Record<string, Schema>> = {
       "windowId",
       "severity",
       "remainingPercent"
+    ],
+    "type": "object"
+  },
+  "CockpitBackgroundReview": {
+    "additionalProperties": false,
+    "properties": {
+      "costState": {
+        "enum": [
+          "priced",
+          "partial",
+          "unpriced"
+        ],
+        "type": "string"
+      },
+      "costUsd": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "lastObservedAt": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "model": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "modelApprox": {
+        "type": "boolean"
+      },
+      "runs": {
+        "type": "integer"
+      },
+      "share": {
+        "maximum": 1,
+        "minimum": 0,
+        "type": "number"
+      },
+      "tokens": {
+        "$ref": "#/$defs/CockpitUsageTokens"
+      }
+    },
+    "required": [
+      "runs",
+      "tokens",
+      "share",
+      "costUsd",
+      "costState",
+      "model",
+      "modelApprox",
+      "lastObservedAt"
     ],
     "type": "object"
   },
@@ -1349,6 +1507,9 @@ export const definitions: Readonly<Record<string, Schema>> = {
       "tools": {
         "$ref": "#/$defs/CockpitEntityRanking"
       },
+      "usage": {
+        "$ref": "#/$defs/CockpitUsage"
+      },
       "version": {
         "maximum": 1,
         "minimum": 1,
@@ -1839,6 +2000,9 @@ export const definitions: Readonly<Record<string, Schema>> = {
   "CockpitRecentSession": {
     "additionalProperties": false,
     "properties": {
+      "costUsd": {
+        "type": "number"
+      },
       "effort": {
         "anyOf": [
           {
@@ -1854,6 +2018,19 @@ export const definitions: Readonly<Record<string, Schema>> = {
         "type": "string"
       },
       "model": {
+        "type": "string"
+      },
+      "modelApprox": {
+        "type": "boolean"
+      },
+      "projectKind": {
+        "enum": [
+          "repo",
+          "workspace",
+          "independent",
+          "home",
+          "none"
+        ],
         "type": "string"
       },
       "projectLabel": {
@@ -1894,6 +2071,15 @@ export const definitions: Readonly<Record<string, Schema>> = {
         ],
         "maxLength": 16,
         "pattern": "^[a-f0-9]{16}$"
+      },
+      "title": {
+        "maxLength": 96,
+        "minLength": 1,
+        "type": "string"
+      },
+      "totalTokens": {
+        "minimum": 0,
+        "type": "integer"
       }
     },
     "required": [
@@ -1974,6 +2160,16 @@ export const definitions: Readonly<Record<string, Schema>> = {
         "minimum": 0,
         "type": "integer"
       },
+      "projectKind": {
+        "enum": [
+          "repo",
+          "workspace",
+          "independent",
+          "home",
+          "none"
+        ],
+        "type": "string"
+      },
       "projectLabel": {
         "anyOf": [
           {
@@ -2029,6 +2225,11 @@ export const definitions: Readonly<Record<string, Schema>> = {
             "type": "null"
           }
         ]
+      },
+      "title": {
+        "maxLength": 96,
+        "minLength": 1,
+        "type": "string"
       }
     },
     "required": [
@@ -2392,6 +2593,465 @@ export const definitions: Readonly<Record<string, Schema>> = {
       "observedOutputTokens",
       "generationTps",
       "bindingBasis"
+    ],
+    "type": "object"
+  },
+  "CockpitUsage": {
+    "additionalProperties": false,
+    "properties": {
+      "measure": {
+        "type": "string"
+      },
+      "recent30d": {
+        "$ref": "#/$defs/CockpitUsageWindow"
+      },
+      "recent7d": {
+        "$ref": "#/$defs/CockpitUsageWindow"
+      },
+      "today": {
+        "$ref": "#/$defs/CockpitUsageWindow"
+      }
+    },
+    "required": [
+      "measure",
+      "today",
+      "recent7d",
+      "recent30d"
+    ],
+    "type": "object"
+  },
+  "CockpitUsageOther": {
+    "additionalProperties": false,
+    "properties": {
+      "costState": {
+        "enum": [
+          "priced",
+          "partial",
+          "unpriced"
+        ],
+        "type": "string"
+      },
+      "costUsd": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "count": {
+        "type": "integer"
+      },
+      "share": {
+        "maximum": 1,
+        "minimum": 0,
+        "type": "number"
+      },
+      "tokens": {
+        "$ref": "#/$defs/CockpitUsageTokens"
+      }
+    },
+    "required": [
+      "count",
+      "tokens",
+      "share",
+      "costUsd",
+      "costState"
+    ],
+    "type": "object"
+  },
+  "CockpitUsageProject": {
+    "additionalProperties": false,
+    "properties": {
+      "costState": {
+        "enum": [
+          "priced",
+          "partial",
+          "unpriced"
+        ],
+        "type": "string"
+      },
+      "costUsd": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "effort": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "firstObservedAt": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "kind": {
+        "enum": [
+          "repo",
+          "workspace",
+          "independent",
+          "home",
+          "none"
+        ],
+        "type": "string"
+      },
+      "label": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "lastObservedAt": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "model": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "modelApprox": {
+        "type": "boolean"
+      },
+      "ref": {
+        "maxLength": 64,
+        "type": "string"
+      },
+      "running": {
+        "type": "boolean"
+      },
+      "sessions": {
+        "type": "integer"
+      },
+      "share": {
+        "maximum": 1,
+        "minimum": 0,
+        "type": "number"
+      },
+      "sources": {
+        "items": {
+          "type": "string"
+        },
+        "maxItems": 16,
+        "type": "array"
+      },
+      "subscriptionRefs": {
+        "items": {
+          "type": "string"
+        },
+        "maxItems": 16,
+        "type": "array"
+      },
+      "tokens": {
+        "$ref": "#/$defs/CockpitUsageTokens"
+      }
+    },
+    "required": [
+      "ref",
+      "kind",
+      "label",
+      "sessions",
+      "sources",
+      "subscriptionRefs",
+      "firstObservedAt",
+      "lastObservedAt",
+      "running",
+      "tokens",
+      "share",
+      "costUsd",
+      "costState",
+      "model",
+      "modelApprox",
+      "effort"
+    ],
+    "type": "object"
+  },
+  "CockpitUsageSession": {
+    "additionalProperties": false,
+    "properties": {
+      "costState": {
+        "enum": [
+          "priced",
+          "partial",
+          "unpriced"
+        ],
+        "type": "string"
+      },
+      "costUsd": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "effort": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "firstObservedAt": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "lastObservedAt": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "model": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "modelApprox": {
+        "type": "boolean"
+      },
+      "projectKind": {
+        "enum": [
+          "repo",
+          "workspace",
+          "independent",
+          "home",
+          "none"
+        ],
+        "type": "string"
+      },
+      "projectLabel": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "projectRef": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "maxLength": 64
+      },
+      "projectState": {
+        "enum": [
+          "named",
+          "unnamed",
+          "hidden",
+          "none"
+        ],
+        "type": "string"
+      },
+      "running": {
+        "type": "boolean"
+      },
+      "sessionRef": {
+        "maxLength": 16,
+        "pattern": "^[a-f0-9]{16}$",
+        "type": "string"
+      },
+      "share": {
+        "maximum": 1,
+        "minimum": 0,
+        "type": "number"
+      },
+      "source": {
+        "type": "string"
+      },
+      "subscriptionRef": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "maxLength": 16,
+        "pattern": "^[a-f0-9]{16}$"
+      },
+      "title": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "tokens": {
+        "$ref": "#/$defs/CockpitUsageTokens"
+      }
+    },
+    "required": [
+      "sessionRef",
+      "source",
+      "subscriptionRef",
+      "projectRef",
+      "projectKind",
+      "projectLabel",
+      "projectState",
+      "title",
+      "firstObservedAt",
+      "lastObservedAt",
+      "running",
+      "tokens",
+      "share",
+      "costUsd",
+      "costState",
+      "model",
+      "modelApprox",
+      "effort"
+    ],
+    "type": "object"
+  },
+  "CockpitUsageTokens": {
+    "additionalProperties": false,
+    "properties": {
+      "cacheRead": {
+        "minimum": 0,
+        "type": "integer"
+      },
+      "cacheWrite": {
+        "minimum": 0,
+        "type": "integer"
+      },
+      "complete": {
+        "type": "boolean"
+      },
+      "input": {
+        "minimum": 0,
+        "type": "integer"
+      },
+      "output": {
+        "minimum": 0,
+        "type": "integer"
+      },
+      "total": {
+        "minimum": 0,
+        "type": "integer"
+      }
+    },
+    "required": [
+      "total",
+      "input",
+      "output",
+      "cacheRead",
+      "cacheWrite",
+      "complete"
+    ],
+    "type": "object"
+  },
+  "CockpitUsageWindow": {
+    "additionalProperties": false,
+    "properties": {
+      "backgroundReview": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/CockpitBackgroundReview"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "costState": {
+        "enum": [
+          "priced",
+          "partial",
+          "unpriced"
+        ],
+        "type": "string"
+      },
+      "costUsd": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "otherProjects": {
+        "$ref": "#/$defs/CockpitUsageOther"
+      },
+      "otherSessions": {
+        "$ref": "#/$defs/CockpitUsageOther"
+      },
+      "projectCount": {
+        "type": "integer"
+      },
+      "projects": {
+        "items": {
+          "$ref": "#/$defs/CockpitUsageProject"
+        },
+        "maxItems": 200,
+        "type": "array"
+      },
+      "sessionCount": {
+        "type": "integer"
+      },
+      "sessions": {
+        "items": {
+          "$ref": "#/$defs/CockpitUsageSession"
+        },
+        "maxItems": 200,
+        "type": "array"
+      },
+      "tokens": {
+        "$ref": "#/$defs/CockpitUsageTokens"
+      }
+    },
+    "required": [
+      "tokens",
+      "costUsd",
+      "costState",
+      "sessionCount",
+      "projectCount",
+      "projects",
+      "sessions",
+      "otherProjects",
+      "otherSessions",
+      "backgroundReview"
     ],
     "type": "object"
   },

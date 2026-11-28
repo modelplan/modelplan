@@ -74,3 +74,33 @@ test('glm-909-1 a project whose name the CLI hides reads "--", not "No project",
  expect(await receive(send('display',{data:unnamed}))).toBe(true);
  await expect(page.locator('.t-proj').first()).toHaveText('未命名项目');
 });
+
+// macrevb-1303-3: the D470 ranking (去向) and the tape titles follow the same setting: with project names off, no
+// project or session name reaches the page, a hover or an accessibility label, while counts and tokens stay.
+function withUsage(data){
+ const tokens={total:6000,input:3000,output:1500,cacheRead:750,cacheWrite:750,complete:true};
+ const w={tokens,costUsd:null,costState:'unpriced',projectCount:1,sessionCount:1,
+  projects:[{ref:'p1',kind:'repo',label:'synthproj',sessions:1,sources:['codex'],subscriptionRefs:[],firstObservedAt:'2026-10-20T10:00:00Z',lastObservedAt:'2026-10-20T14:00:00Z',running:false,tokens,share:1,costUsd:null,costState:'unpriced',model:null,modelApprox:false,effort:null}],
+  sessions:[{sessionRef:'1111111111111111',source:'codex',subscriptionRef:null,projectRef:'p1',projectKind:'repo',projectLabel:'synthproj',projectState:'named',title:'synthtitle',firstObservedAt:'2026-10-20T10:00:00Z',lastObservedAt:'2026-10-20T14:00:00Z',running:false,tokens,share:1,costUsd:null,costState:'unpriced',model:null,modelApprox:false,effort:null}],
+  otherProjects:{count:0,tokens:{...tokens,total:0},share:0,costUsd:null,costState:'unpriced'},otherSessions:{count:0,tokens:{...tokens,total:0},share:0,costUsd:null,costState:'unpriced'},backgroundReview:null};
+ data.history={version:1,sources:['local-history'],coverage:'local-history',recordingSince:null,dailyFrom:null,subscriptions:[],
+  models:{measure:'observed-output-tokens',attribution:'unattributed',recent7d:{entities:0,totalObservedOutputTokens:0,top:[]},recent30d:{entities:0,totalObservedOutputTokens:0,top:[]}},
+  tools:{measure:'observed-output-tokens',attribution:'unattributed',recent7d:{entities:0,totalObservedOutputTokens:0,top:[]},recent30d:{entities:0,totalObservedOutputTokens:0,top:[]}},
+  daily:[],hourly:[],projects:{recent7d:[],recent30d:[]},cycles:[],usage:{measure:'total-tokens',today:w,recent7d:w,recent30d:w}};
+ data.details.sessions[0].title='synthtitle';
+ return data;
+}
+const USAGE_NAMES=/synthproj|synthtitle/;
+test('macrevb-1303-3 Breakdown and tape: turning project names off removes delivered names and titles at once',async({page})=>{
+ const {send,receive,data}=await open(page,true);
+ expect(await receive(send('display',{data:withUsage(data)}))).toBe(true);
+ await page.locator('[data-mfd="page:where"]').click();
+ await expect(page.locator('.mfd-page .wd.wu').first()).toContainText('synthproj');
+ expect(await receive(send('appearance',{...appearance,showProjectNames:false}))).toBe(true);
+ await expect(page.locator('.mfd-page .wd.wu').first()).toContainText('Project name hidden');
+ expect(await everything(page)).not.toMatch(USAGE_NAMES);
+ await page.locator('.mfd-ok [data-opt="where"] [data-choice="time"]').click();
+ await expect(page.locator('.mfd-page .wd.wu').first()).toContainText('Untitled session');
+ expect(await everything(page)).not.toMatch(USAGE_NAMES);
+ await expect(page.locator('.mfd-page .wu-t').first()).toHaveText('6k');
+});

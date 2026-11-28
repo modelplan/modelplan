@@ -125,8 +125,40 @@ func ObserveOpenCode(cache, home string, in Ingest, now time.Time) error {
 		return nil
 	}
 	return observePerf(cache, now, in, func(l *PerfLedger) bool {
-		return l.scanDB(path, "opencode", ParserOpenCode, openCodeAnchor, openCodePostClear, now, readOpenCode)
+		migrated := l.reattributeDB(path, "opencode", openCodeSessions)
+		return l.scanDB(path, "opencode", ParserOpenCode, openCodeAnchor, openCodePostClear, now, readOpenCode) || migrated
 	})
+}
+
+// openCodeSessions: every session's folder and project, as readOpenCode joins them.
+func openCodeSessions(db *sql.DB) ([]dbSession, error) {
+	for _, t := range []string{"session_v2", "session"} {
+		if !hasColumns(db, t, "id", "directory") {
+			continue
+		}
+		join, pid, pname := "", "''", "''"
+		if hasColumns(db, t, "project_id") {
+			pid = "COALESCE(s.project_id, '')"
+			if hasColumns(db, "project", "id", "worktree") {
+				join = " LEFT JOIN project p ON p.id = s.project_id"
+				pname = "COALESCE(NULLIF(" + projectNameExpr(db) + ", ''), p.worktree, '')"
+			}
+		}
+		rows, err := db.Query(`SELECT COALESCE(s.id, ''), COALESCE(s.directory, ''), ` + pid + `, ` + pname + ` FROM ` + t + ` s` + join)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		var out []dbSession
+		for rows.Next() {
+			var s dbSession
+			if rows.Scan(&s.id, &s.cwd, &s.np.ID, &s.np.Name) == nil && s.id != "" {
+				out = append(out, s)
+			}
+		}
+		return out, rows.Err()
+	}
+	return nil, nil
 }
 
 // openCodeAnchor: a message's own id and creation time, which a replaced database does not repeat.

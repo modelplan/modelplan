@@ -30,7 +30,7 @@ const cells=row=>row.evaluate(e=>[...e.children].map(c=>c.className.split(' ')[0
 
 test('CKP-STRIP-16 a line reads chip, tool, project, model and effort, elapsed, tokens, then the right end',async({page})=>{
  await open(page,stripData());const rows=page.locator('.ck-tape .t-observed');await expect(rows).toHaveCount(3);
- expect(await cells(rows.first())).toEqual(['chip','t-tool','t-proj','t-me','t-elapsed','t-tok','t-live']);
+ expect(await cells(rows.first())).toEqual(['chip','t-tool','t-proj','t-title','t-me','t-elapsed','t-tok','t-cost','t-live']);
  const first=rows.nth(0);
  await expect(first.locator('.t-tool')).toHaveText('Claude');await expect(first.locator('.t-proj')).toHaveText('modelplans.ai');
  await expect(first.locator('.t-me')).toHaveText('Opus 5.5 High');await expect(first.locator('.t-elapsed')).toHaveText('42m');await expect(first.locator('.t-tok')).toHaveText('310k');
@@ -117,4 +117,18 @@ test('macrev2-1024-3 the minute tick keeps the keyboard focus on the same listed
  await line.focus();await expect(line).toBeFocused();
  expect(await receive(send('tick',{nowUnixMs:String(NOW+60000),reason:'deadline'}))).toBe(true);
  await expect(page.locator(`.ck-tape .t-observed[data-session="${session.sessionRef}"]`)).toBeFocused();
+});
+
+// D470 (macrevb-1303-8): the tool's own session title follows the project, and the session's ≈$ so far follows its
+// tokens, small; an unknown title or cost leaves its cell empty and out of the label.
+test('D470 a line carries the session title after the project and its ≈$ after the tokens',async({page})=>{
+ const data=stripData();
+ data.details.sessions[0].title='Fix the tape';data.details.sessions[0].projectLabel='sample-site';
+ data.details.recentSessions=[{sessionRef:'0000000000000001',source:'claude-code',subscriptionRef:null,model:'unknown',effort:null,projectLabel:'sample-site',projectState:'named',lastObservedAt:ago(0),totalTokens:310000,costUsd:4.2}];
+ await open(page,data);const first=page.locator('.ck-tape .t-observed').first(),second=page.locator('.ck-tape .t-observed[data-session="0000000000000002"]');
+ await expect(first.locator('.t-title')).toHaveText('Fix the tape');await expect(first.locator('.t-cost')).toHaveText('≈$4.2');
+ await expect(first).toHaveAttribute('aria-label','Claude · sample-site · Fix the tape · Opus 5.5 High · Elapsed 42m · 310k tokens · ≈$4.2 · Running · Session rate 61 t/s');
+ await expect(second.locator('.t-title')).toHaveText('');await expect(second.locator('.t-cost')).toHaveText('');
+ const size=await first.locator('.t-cost').evaluate(e=>({scroll:e.scrollWidth,client:e.clientWidth,font:parseFloat(getComputedStyle(e).fontSize),tok:parseFloat(getComputedStyle(e.previousElementSibling).fontSize)}));
+ expect(size.scroll).toBeLessThanOrEqual(size.client);expect(size.font).toBeLessThan(size.tok);
 });
