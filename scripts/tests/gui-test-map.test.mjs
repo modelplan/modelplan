@@ -15,7 +15,7 @@ const root = new URL("../..", import.meta.url).pathname;
 const map = M.parseMap(readFileSync(join(root, M.MAP_PATH), "utf8"));
 const partition = JSON.parse(readFileSync(join(root, "desktop/native/tools/ci/native-test-partition.json"), "utf8")).packages["app-integration"];
 // The same declaration check gui-scope and the gate's evidence use (gui-map.mjs declaredClasses).
-const declaredAll = M.declaredClasses(root, map.packages);
+const { plain: declaredAll, conditional: conditionalAll } = M.classDeclarations(root, map.packages);
 const declared = (dir) => new Set([...declaredAll].filter((q) => map.packages[q.slice(0, q.indexOf(":"))] === dir).map((q) => q.slice(q.indexOf(":") + 1)));
 function tracked() {
   try { return execFileSync("git", ["ls-files", "-z"], { cwd: root, encoding: "utf8", maxBuffer: 64 << 20 }).split("\0").filter(Boolean); }
@@ -30,6 +30,8 @@ test("the shipped map is valid: known packages, every class declared there, app-
     const have = declared(map.packages[pkg]);
     assert.ok(have.size > 10, `${pkg}: test classes found`);
     for (const a of map.areas) for (const c of a.classes[pkg] ?? []) {
+      // R11: a mapped class is declared outside every #if; a conditionally compiled one may not be in the build at all.
+      assert.ok(!conditionalAll.has(`${pkg}:${c}`), `${a.area}: ${pkg} class ${c} is declared under #if; conditionally compiled classes are never mapped`);
       assert.ok(have.has(c), `${a.area}: ${pkg} class ${c} is not declared in ${map.packages[pkg]}`);
       // A headless class never runs on the GUI leg (the partition narrows each leg to its own share): mapping it would
       // gate a PR on a run that cannot test it.
@@ -164,7 +166,8 @@ print(json.dumps(out))`;
   const found = JSON.parse(r.stdout);
   for (const [area, f] of named) {
     const mapped = new Set(M.mappedClasses([f], [map]).filter((q) => q.startsWith("app-integration:")).map((q) => q.slice(16)));
-    const missing = found[f].filter((c) => !mapped.has(c));
+    // The seeding rule skips conditionally compiled classes (R11).
+    const missing = found[f].filter((c) => !mapped.has(c) && !conditionalAll.has(`app-integration:${c}`));
     assert.deepEqual(missing, [], `${area}: ${f} misses classes that name its declarations`);
   }
 });
@@ -229,4 +232,41 @@ test("round trip: the capped 3,000-file run records all@<hash> under the limit a
     assert.equal(fine.absentRecord, "none");
     assert.equal(gate(fine, required, full).state, "success");
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("#if scanning: nesting, #elseif, #else and #endif; a class inside any block is conditional", () => {
+  const src = [
+    "import XCTest",
+    "final class PlainTests: XCTestCase {",
+    "  #if DEBUG",
+    "  func testX() {}",
+    "  #endif",
+    "}",
+    "#if A",
+    "final class InATests: XCTestCase {}",
+    "  #if B",
+    "  final class NestedTests: XCTestCase {}",
+    "  #endif",
+    "final class StillInATests: XCTestCase {}",
+    "#elseif C",
+    "final class InElseifTests: XCTestCase {}",
+    "#else",
+    "@MainActor final class InElseTests: XCTestCase {}",
+    "#endif",
+    "final class AfterTests: XCTestCase {}",
+  ].join("\n");
+  const r = M.scanClasses(src);
+  assert.deepEqual([...r.plain].sort(), ["AfterTests", "PlainTests"]);
+  assert.deepEqual([...r.conditional].sort(), ["InATests", "InElseTests", "InElseifTests", "NestedTests", "StillInATests"]);
+  // The shipped tree: DockStripRealServerTests sits under #if MODELPLAN_DOCK_REAL_STRIP_JOURNEY and counts as conditional.
+  assert.ok(conditionalAll.has("app-integration:DockStripRealServerTests"));
+  assert.ok(!declaredAll.has("app-integration:DockStripRealServerTests"), "never counted as declared at a head either");
+});
+
+// macrev2 round 3 closure test (R11): a ring-renderer change selects D65ZeroQuotaTests and no conditionally compiled class.
+test("ring closure: a ring-renderer change selects D65ZeroQuotaTests and no conditionally compiled class", () => {
+  const sel = M.mappedClasses(["desktop/native/ModelPlanDock/Native/DockInstrumentRenderer.swift"], [map]);
+  assert.ok(sel.includes("app-integration:D65ZeroQuotaTests"));
+  assert.deepEqual(sel.filter((q) => conditionalAll.has(q)), []);
+  assert.ok(!sel.includes("app-integration:DockStripRealServerTests"));
 });

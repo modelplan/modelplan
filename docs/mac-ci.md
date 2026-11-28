@@ -254,7 +254,11 @@ queue. The queue's full GUI leg and the nightly stay as they are.
   status item and Settings. Each entry-point file (the status-item application `EngineDockMenuApplication.swift`, the
   normal entry, the rows console, the menu bar, the application factories, the static Dock preview host and the Settings
   hosts) has its own `entry-*` area with every class whose tests name its declarations. Every source file a non-curated
-  area names must cover at least what `gui_test_selection.py` finds for it; the Settings area is marked `"curated": true`. `scripts/tests/gui-test-map.test.mjs` (repo checks) keeps it valid: every class is declared
+  area names must cover at least what `gui_test_selection.py` finds for it; the Settings area is marked `"curated": true`.
+  Conditionally compiled classes are never mapped (R11): a mapped class must be declared outside every `#if` block
+  (any condition, nesting and `#elseif`/`#else` included), the map test fails otherwise, and the seeding rule skips them.
+  Journeys behind a compile flag (for example `DockStripRealServerTests` under `MODELPLAN_DOCK_REAL_STRIP_JOURNEY`) stay
+  covered where their flag is enabled (their own dispatch or the queue leg); the PR-stage gate does not claim them. `scripts/tests/gui-test-map.test.mjs` (repo checks) keeps it valid: every class is declared
   in its package, `app-integration` classes are on the GUI share (not headless), and every glob, and every brace
   alternative, matches a tracked file. Add an area, or classes, when a GUI test starts covering new code. A map change
   is reviewed like the gate itself (`scripts/merge-gates/gui-map.mjs` is the shared selector).

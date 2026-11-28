@@ -176,20 +176,46 @@ export function makeAbsent(absent) {
   return plain.length <= RECORD_MAX ? plain : `many:${list.length}`;
 }
 
-// The XCTestCase classes declared in each package's test sources under root (the map test uses the same check).
-const CLASS_RE = /^[ \t]*(?:@[A-Za-z0-9_]+(?:\([^)]*\))?[ \t]+)*(?:(?:final|open|public|internal|private|fileprivate) )*class ([A-Za-z0-9_]+)[ \t]*:[ \t]*[A-Za-z0-9_., ]*XCTestCase/gm;
-export function declaredClasses(root, packages) {
-  const out = new Set();
+// The XCTestCase classes of one Swift source, split by whether the declaration sits inside a conditional compilation
+// block (#if ... #elseif ... #else ... #endif, nested, any condition). R11 (round 3): conditionally compiled classes are
+// never mapped, because the leg cannot know whether Swift compiled them; the map test rejects them.
+const CLASS_LINE = /^[ \t]*(?:@[A-Za-z0-9_]+(?:\([^)]*\))?[ \t]+)*(?:(?:final|open|public|internal|private|fileprivate) )*class ([A-Za-z0-9_]+)[ \t]*:[ \t]*[A-Za-z0-9_., ]*XCTestCase/;
+export function scanClasses(text) {
+  const plain = new Set(), conditional = new Set();
+  let depth = 0;
+  for (const line of text.split("\n")) {
+    const d = /^[ \t]*#(if|elseif|else|endif)\b/.exec(line);
+    if (d) {
+      if (d[1] === "if") depth++;
+      else if (d[1] === "endif") depth = Math.max(0, depth - 1);
+      continue;
+    }
+    const m = CLASS_LINE.exec(line);
+    if (m) (depth > 0 ? conditional : plain).add(m[1]);
+  }
+  return { plain, conditional };
+}
+
+// "<pkg>:<Class>" sets over each package's test sources under root: plain = declared outside every #if (and never
+// inside one), conditional = declared inside one somewhere. gui-scope, the gate's evidence and the map test use it.
+export function classDeclarations(root, packages) {
+  const plain = new Set(), conditional = new Set();
   for (const [pkg, dir] of Object.entries(packages)) {
     const base = join(root, dir);
     if (!existsSync(base)) continue;
     for (const e of readdirSync(base, { recursive: true, withFileTypes: true })) {
       if (!e.isFile() || !e.name.endsWith(".swift")) continue;
-      for (const m of readFileSync(join(e.parentPath ?? e.path, e.name), "utf8").matchAll(CLASS_RE)) out.add(`${pkg}:${m[1]}`);
+      const r = scanClasses(readFileSync(join(e.parentPath ?? e.path, e.name), "utf8"));
+      for (const c of r.plain) plain.add(`${pkg}:${c}`);
+      for (const c of r.conditional) conditional.add(`${pkg}:${c}`);
     }
   }
-  return out;
+  for (const q of conditional) plain.delete(q);
+  return { plain, conditional };
 }
+
+// The classes that count as declared at the head: only unconditional declarations.
+export const declaredClasses = (root, packages) => classDeclarations(root, packages).plain;
 
 export const bareNames = (qualified) => [...new Set(qualified.map((q) => q.slice(q.indexOf(":") + 1)))].sort();
 
