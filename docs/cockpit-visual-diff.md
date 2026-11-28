@@ -58,10 +58,12 @@ run for the head:
 - Merge group: the group commit's diff against the queue base may change only the union of its PRs' declared areas,
   unless one of them has a VISUAL-ACCEPT at its head.
 - A PR run made before D489 landed has no visual job and is not judged at PR level; its merge group's run has the job.
-- The report must be for the comparison the gate computes now (R11 ruling). Its base must equal that base exactly, and
-  its head must be the evaluated head. There is no ancestry proof and no search over earlier merges.
-  - PR: the base is the first parent of the PR's current merge ref, read from GitHub. Any other report, an older merge
-    of the same head included, leaves the gate PENDING: "visual report is for another base — re-run U11".
+- The report is bound to the comparison the gate computes now (R11 ruling, amended). There is no ancestry proof and no
+  search over earlier merges.
+  - PR: the report's head must be the PR head and the run must be that head's run; otherwise the gate is PENDING
+    ("visual report is for another base — re-run U11"). A report for the PR head against a base other than the current
+    merge ref's first parent is judged normally (declarations and accepts apply). The status notes "report base <8> ≠
+    current base <8>; the merge queue re-checks against the exact base", so PRs do not stall after every main move.
   - Merge group: the base is `merge_group.base_sha`, read from the queue branch name
     `gh-readonly-queue/main/pr-<n>-<base sha>`, and the head is the group commit. Any other report FAILS the group.
 

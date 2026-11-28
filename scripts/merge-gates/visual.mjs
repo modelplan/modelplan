@@ -133,21 +133,27 @@ export function visualState(visual, bind) {
   const b = bind(record.meta, run);
   if (!b) return fail("visual report not bound: no binding");
   if (b.problem) return { state: b.state, why: b.problem, outside: [] };
-  return judgeVisual(record, b);
+  const v = judgeVisual(record, b);
+  return b.note ? { ...v, why: `${v.why}; ${b.note}`, note: b.note } : v;
 }
 
 const short = (sha) => String(sha ?? "none").slice(0, 8);
 export const OTHER_BASE = "visual report is for another base — re-run U11";
-// R11 ruling (#1320 round 3): a report counts only when its base is exactly the base the gate computes now and its head
-// is the evaluated head. No ancestry proof, no search over earlier merges.
-const mismatch = (meta, base, head) => !base || meta.base !== base || meta.head !== head;
+// R11 ruling (#1320 round 3, amended): no ancestry proof, no search over earlier merges. A merge group's report counts
+// only for its exact base and head; at PR level the head must match and a base difference is noted, not blocking.
+const mismatch = (meta, base, head) => !base || meta.base !== base || meta.head !== head;   // bindGroup
 const detail = (meta, base, head) => `(report base ${short(meta.base)} head ${short(meta.head)}; expected base ${short(base)} head ${short(head)})`;
 
 // A PR: expectedBase is the first parent of the PR's current merge ref, read by the gate from GitHub (null when it
-// cannot be read). Any other report, an older merge of the same head included, is PENDING until U11 re-runs.
+// cannot be read). A report for another head, or from another head's run, is PENDING until U11 re-runs. Amended ruling
+// (no stuck PRs after every main move): a report for the PR head against another base is judged normally, and the
+// status notes the base difference; the merge group then re-checks against its exact base (bindGroup).
 export function bindPr(head, decl, expectedBase) {
-  return (meta, run) => (run.head_sha !== head || mismatch(meta, expectedBase, head)
-    ? { state: "pending", problem: `${OTHER_BASE} ${detail(meta, expectedBase, head)}` } : decl);
+  return (meta, run) => {
+    if (run.head_sha !== head || meta.head !== head) return { state: "pending", problem: `${OTHER_BASE} ${detail(meta, expectedBase, head)}` };
+    if (meta.base !== expectedBase) return { ...decl, note: `report base ${short(meta.base)} ≠ current base ${short(expectedBase)}; the merge queue re-checks against the exact base` };
+    return decl;
+  };
 }
 
 // The merge_group.base_sha of a queue run: GitHub names the queue branch gh-readonly-queue/main/pr-<n>-<base sha>.

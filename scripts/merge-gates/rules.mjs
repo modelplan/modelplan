@@ -854,6 +854,7 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   const declared = parseVisualChange(pr.body);
   extra.visual = { declared: declared.areas, present: declared.present, accepted: visualAccepted(items, head) };
   const vis = visualState(visual, bindPr(head, extra.visual, visual?.expectedBase ?? null));
+  if (vis?.note && vis.state !== FAILURE) notes.push(vis.note);
   if (vis?.state === FAILURE) return res(FAILURE, say(vis.why), extra);
   if (vis && extra.visual.accepted && vis.outside.length) notes.push("VISUAL-ACCEPT");
   const guiClasses = dataSync ? [] : requiredGuiClasses(paths, guiMaps, { truncated: files.length >= FILE_LIST_LIMIT });

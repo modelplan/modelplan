@@ -8,7 +8,7 @@ import * as R from "../merge-gates/rules.mjs";
 const H = "a".repeat(40), OLD = "b".repeat(40), BASE = "c".repeat(40);
 const ME = { login: "guanbear", id: 11829005 };
 const comment = (body, user = ME) => ({ user, body, created_at: "2026-11-28T00:00:00Z" });
-const AREAS = { canopy: ["window"], grip: ["levers"], band: [], hull: [] };
+const AREAS = { canopy: ["window"], grip: ["levers"], band: [], hull: [], mfd: ["big-screen"] };
 const note = (title, message) => ({ title, annotation_level: "notice", message: typeof message === "string" ? message : JSON.stringify(message) });
 const meta = (over = {}) => note(V.META_TITLE, { v: 1, base: BASE, subject: H, head: H, areas: AREAS, ...over });
 const box = (x, y, w, h, cover) => [x, y, w, h, Object.values(cover).reduce((s, n) => s + n, 0), cover];
@@ -59,7 +59,7 @@ test("box classification: every key of a box must share an area with the declara
   const outside = V.parseVisualRecord(record({ "full-day-zh-CN": [box(300, 900, 4, 4, { "": 10, band: 6 })] }));
   const r = V.judgeVisual(outside, { declared: ["band", "wing"], present: true });
   assert.equal(r.state, "failure", "the pixels in no area fail even with band declared");
-  assert.match(r.why, /in band; unknown area wing \(known: canopy, grip, band, hull\)/);
+  assert.match(r.why, /in band; unknown area wing \(known: canopy, grip, band, hull, mfd\)/);
   assert.equal(V.judgeVisual(V.parseVisualRecord(record()), {}).why, "visual: no pixel change");
 });
 
@@ -131,36 +131,44 @@ const zeroWith = (over) => [meta(over), ...record().slice(1)];
 const greenRun = (over = {}) => ({ id: 4, path: V.VISUAL_WORKFLOW, status: "completed", conclusion: "success", head_sha: H, ...over });
 const job = { name: "visual", conclusion: "success" };
 
-test("bindPr: report base must equal the current merge ref's first parent and head the PR head, else pending", () => {
+test("bindPr: a report for another head or another head's run is pending; another base is judged with a note", () => {
   const decl = { declared: [], present: false, accepted: false };
   const st = (annotations, expectedBase = BASE, run = greenRun()) => V.visualState({ run, job, annotations, expectedBase }, V.bindPr(H, decl, expectedBase));
   assert.equal(st(record()).state, "success", "report for the current base");
+  assert.equal(st(record()).why, "visual: no pixel change", "no note at the current base");
   for (const [why, r] of [
     ["missing head", st(zeroWith({ head: undefined }))],
     ["other head", st(zeroWith({ head: OLD }))],
-    ["other base", st(zeroWith({ base: OLD }))],
-    ["merge ref unreadable", st(record(), null)],
     ["another head's run", st(record(), BASE, greenRun({ head_sha: OLD }))],
   ]) { assert.equal(r.state, "pending", why); assert.match(r.why, /^visual report is for another base — re-run U11 \(report base/, why); }
+  for (const [why, r] of [["other base", st(zeroWith({ base: OLD }))], ["merge ref unreadable", st(record(), null)]]) {
+    assert.equal(r.state, "success", why);
+    assert.match(r.why, /; report base (bbbbbbbb|cccccccc) ≠ current base (cccccccc|none); the merge queue re-checks against the exact base$/, why);
+  }
 });
 
-test("reviewer case macrevb-1320-2: a coherent zero-change report of an earlier merge of the same head never passes", () => {
-  // main moved from A to B; the PR head H is unchanged. The selected comparison (base B) changes the MFD, undeclared; the
-  // run carries a self-consistent report for the earlier merge (base A, same head, zero change).
+test("reviewer case macrevb-1320-2: at PR level the earlier-base report is judged with a note; the merge group fails it", () => {
+  // main moved from A to B; the PR head H is unchanged. The run carries a self-consistent report for the earlier merge
+  // (base A, same head) with an undeclared MFD change.
   const A = "1".repeat(40), B = "2".repeat(40);
-  const earlier = [meta({ base: A }), ...record().slice(1)];
-  const selected = [meta({ base: B }), ...record({ "full-night-en": [box(398, 598, 4, 4, { mfd: 16 })] }).slice(1)];
+  const mfd = record({ "full-night-en": [box(398, 598, 4, 4, { mfd: 16 })] }).slice(1);
+  const earlier = [meta({ base: A }), ...mfd], earlierZero = [meta({ base: A }), ...record().slice(1)];
   const prRuns = [runOf(".github/workflows/ci.yml"), runOf(V.VISUAL_WORKFLOW, 2)];
-  const ev = (annotations, comments = []) => R.evaluatePr({ pr: pr(""), items: R.feed([...comments, comment(`VERDICT: merge @ ${H} (ghglm)`)], []), files: [{ filename: "desktop/cockpit/src/cockpit.css" }],
+  const ev = (annotations, { comments = [], body = "" } = {}) => R.evaluatePr({ pr: pr(body), items: R.feed([...comments, comment(`VERDICT: merge @ ${H} (ghglm)`)], []), files: [{ filename: "desktop/cockpit/src/cockpit.css" }],
     runs: prRuns, statuses: [], verifiedEdge: () => false, conf, visual: { run: prRuns[1], job, annotations, expectedBase: B } });
-  const old = ev(earlier);
-  assert.equal(old.state, R.PENDING, old.why);
-  assert.match(old.why, /^visual report is for another base — re-run U11/);
-  assert.equal(ev(earlier, [comment(`VISUAL-ACCEPT @ ${H}`)]).state, R.PENDING, "a trusted accept does not make another comparison count");
-  const now = ev(selected);
-  assert.equal(now.state, R.FAILURE, "the selected comparison gets the usual pixel judgment");
-  assert.match(now.why, /full-night-en 398,598 4x4 \(16 px\) in mfd/);
-  assert.equal(ev(selected, [comment(`VISUAL-ACCEPT @ ${H}`)]).state, R.SUCCESS);
+  const undeclared = ev(earlier);
+  assert.equal(undeclared.state, R.FAILURE, "judged normally: the undeclared change fails");
+  assert.match(undeclared.why, /full-night-en 398,598 4x4 \(16 px\) in mfd.*report base 11111111 ≠ current base 22222222; the merge queue re-checks against the exact base/);
+  assert.equal(ev(earlier, { body: "Visual-change: mfd" }).state, R.SUCCESS, "declaration applies");
+  assert.equal(ev(earlier, { comments: [comment(`VISUAL-ACCEPT @ ${H}`)] }).state, R.SUCCESS, "accept applies");
+  assert.match(ev(earlierZero).why, /report base 11111111 ≠ current base 22222222/, "zero change passes at PR level, with the note");
+  // the same earlier-base report in the merge group (base_sha B) fails: the binding check before main
+  const qr = (path, id) => runOf(path, id, { head_branch: `gh-readonly-queue/main/pr-7-${B}`, event: "merge_group", pull_requests: [] });
+  const queueRuns = R.QUEUE_WORKFLOWS.map((p, i) => qr(p, i + 1)), vrun = queueRuns.find((r) => r.path === V.VISUAL_WORKFLOW);
+  const step = { pr: 7, mergeProof: { ok: true }, prResult: { state: R.SUCCESS, why: "ok", hostedExempt: true, visual: { declared: [], present: false, accepted: true } } };
+  const g = R.evaluateGroup({ steps: [step], queueRuns, groupSha: H, visual: { run: vrun, job, annotations: earlierZero } });
+  assert.equal(g.state, R.FAILURE, "even zero change and an accept do not bind another base in the group");
+  assert.match(g.why, /^group visual report is for another comparison \(report base 11111111 head aaaaaaaa; expected base 22222222 head aaaaaaaa\)/);
 });
 
 test("bindGroup: report head is the group commit and base the queue branch's merge_group.base_sha, else failure", () => {
