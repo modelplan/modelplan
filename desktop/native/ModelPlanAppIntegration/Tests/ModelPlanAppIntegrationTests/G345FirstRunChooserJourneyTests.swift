@@ -406,7 +406,8 @@ private actor G345Engine: EngineClient {
             subscriptions: [SettingsSubscription(id: "codex", name: .init("Codex", "Codex"), vendor: "codex", source: .unavailable, causeCode: "not_found")],
             orderedIDs: ["codex"], hiddenIDs: [], canSave: true))
         let status = try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == "subscriptions.status.codex" } as? NSTextField)
-        XCTAssertEqual(status.stringValue, "Can't find the Codex command")
+        // Master spec §3.4 (D474): the Settings row says the same rung of the one reading ladder as the widget card.
+        XCTAssertEqual(status.stringValue, "No reading · Needs Codex CLI")
         let fix = try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == "subscriptions.fix.codex" } as? NSButton)
         XCTAssertEqual(fix.title, "Open install page"); XCTAssertTrue(fix.isEnabled, "the link is live, not a disabled button")
     }

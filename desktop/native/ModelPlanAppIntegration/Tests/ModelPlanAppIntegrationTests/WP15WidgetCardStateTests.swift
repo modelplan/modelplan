@@ -230,6 +230,21 @@ actor WP15Engine: EngineClient {
             .allSatisfy { DockNoticeProjection.candidates(for: $0, at: base).isEmpty })
     }
 
+    /// Master spec S2 / C30 (D474): the status menu's one alert line is the worst quota alert in the SHORT form, with
+    /// the reset time; a normal subscription adds none.
+    func testMenuAlertLineIsTheWorstShortSentence() async throws {
+        for language in [SettingsLanguage.english, .chinese] {
+            let (app, _) = try await launch([.tight, .keptRecent], language: language)
+            let line = MenuAlertLine.text(app.composition.presentedContent, redBelow: 25, now: base, language: language)
+            let expected = AlertSentence.quota(subscription: .init("Tight", "Tight"), window: language == .english ? .init("5h", "5h") : .init("5小时", "5小时"),
+                                               remaining: 9, runOutMinutes: 40, resetMinutes: 120).short.value(language)
+            XCTAssertEqual(line, expected)
+            XCTAssertEqual(line, language == .english ? "Tight 5h 9% · est. 40m · resets 2h00" : "Tight 5小时 9% · 预估40m · 2h00后重置")
+            let (calm, _) = try await launch([.keptRecent], language: language)
+            XCTAssertNil(MenuAlertLine.text(calm.composition.presentedContent, redBelow: 25, now: base, language: language), "a kept reading never alerts")
+        }
+    }
+
     /// DOCK-3.8-50, -51, -52 (board-3 "快用完，而且有储备"), English and Chinese.
     func testTightCardHasAgeHeaderRunOutRowTodayHalvesBrightReserveAndTheAlertSentence() async throws {
         for language in [SettingsLanguage.english, .chinese] {
@@ -240,17 +255,23 @@ actor WP15Engine: EngineClient {
             XCTAssertEqual(content.sourceAndAge, en ? "Updated 2 min ago" : "2 分钟前更新", "the header is only the age")
             XCTAssertEqual(content.stateLabel, "")
             let five = try XCTUnwrap(content.rows.first { $0.id == "quota:" + WP15Rows.session })
-            XCTAssertEqual(five.value, "9%"); XCTAssertEqual(five.detail, en ? "out ~40m" : "约40m用完")
+            // Master spec decision 1 (D474): line 1 the real reset, line 2 the estimate (red at the red line).
+            XCTAssertEqual(five.value, "9%"); XCTAssertEqual(five.detail, en ? "resets in 2h00" : "2h00 后重置")
+            XCTAssertEqual(five.secondLine, en ? "est. out in 40m" : "预估 40m 用完"); XCTAssertEqual(five.secondLineTone, .critical)
             XCTAssertTrue(five.emphasised, "the tightest row is lit"); XCTAssertEqual(five.tone, .critical)
             let week = try XCTUnwrap(content.rows.first { $0.id == "quota:" + WP15Rows.weekly })
             XCTAssertEqual(week.value, "42%"); XCTAssertEqual(week.detail, en ? "resets in 2d10h" : "2d10h 后重置"); XCTAssertFalse(week.emphasised)
+            XCTAssertEqual(week.secondLine, en ? "lasts to reset" : "够用到重置"); XCTAssertEqual(week.secondLineTone, .unknown, "ink-3, never coloured")
             let today = try XCTUnwrap(content.rows.first { $0.id == "today" })
-            XCTAssertEqual(today.label, en ? "Today" : "今日")
+            XCTAssertEqual(today.label, en ? "Today" : "今天", "C23: 今天 everywhere")
             XCTAssertEqual(today.value, "6.8M", "no ≈$ until WP-06"); XCTAssertEqual(today.detail, en ? "● 2 running" : "● 2 个在跑")
             let reserve = try XCTUnwrap(content.rows.first { $0.id == "reserve" })
             XCTAssertTrue(reserve.emphasised, "a usable reset brightens the reserve line under an alert")
-            let order = content.rows.filter { $0.kind != .alert }.map(\.id)
+            let order = content.rows.map(\.id)
             XCTAssertLessThan(try XCTUnwrap(order.firstIndex(of: "today")), try XCTUnwrap(order.firstIndex(of: "reserve")), "quota, today, reserve")
+            // Master spec C2 (D474): the footer sentence is back in amber, red and used-up states; the 接下来 block sits above it.
+            XCTAssertEqual(try XCTUnwrap(content.rows.first { $0.id == "next.0" }).value, en ? "Next" : "接下来")
+            XCTAssertLessThan(try XCTUnwrap(order.firstIndex(of: "next.0")), order.count - 1, "接下来 above the footer")
             let footer = try XCTUnwrap(content.rows.last, "the alert sentence closes the card")
             XCTAssertEqual(footer.kind, .alert); XCTAssertEqual(footer.tone, .critical)
             let expected = AlertSentence.quota(subscription: .init("Tight", "Tight"), window: en ? .init("5h", "5h") : .init("5小时", "5小时"),
@@ -269,6 +290,7 @@ actor WP15Engine: EngineClient {
         XCTAssertEqual(recent.sourceAndAge, "30 分钟前更新"); XCTAssertEqual(recent.stateLabel, "")
         let week = try XCTUnwrap(recent.rows.first { $0.id == "quota:" + WP15Rows.weekly })
         XCTAssertEqual(week.value, "63%"); XCTAssertEqual(week.tone, .normal); XCTAssertEqual(week.detail, "5d5h 后重置")
+        XCTAssertEqual(week.secondLine, "", "a kept reading makes no claim on line 2")
         XCTAssertFalse(recent.rows.contains { $0.kind == .alert }, "a kept reading never alerts")
         XCTAssertEqual(recent.rows.first { $0.id == "kept-cause" }?.kind, .footnote)
         XCTAssertNil(recent.rows.first { $0.id == "today" }, "no today half: no today row, never -- · -- t/s")
@@ -289,9 +311,10 @@ actor WP15Engine: EngineClient {
         let ring = try reading(app, .unread)
         XCTAssertEqual(ring.readout, "--"); XCTAssertEqual(ring.status, .unknown)
         let content = try card(app, .unread)
-        XCTAssertEqual(content.rows.first { $0.id == "cause" }?.value, "未登录")
+        // Master spec §3.4 (D474): one reading ladder: the rung, then the one step.
+        XCTAssertEqual(content.rows.first { $0.id == "cause" }?.value, "读不到 · 需要登录")
         XCTAssertEqual(content.rows.first { $0.id == "cause" }?.kind, .event)
-        XCTAssertEqual(content.rows.first { $0.id == "cause-step" }?.value, "打开 Unread 并登录")
+        XCTAssertEqual(content.rows.first { $0.id == "cause-step" }?.value, "打开 Unread")
         XCTAssertEqual(content.actionLabel, "重新读取")
         XCTAssertEqual(content.sourceAndAge, "未读取"); XCTAssertEqual(content.stateLabel, "")
         XCTAssertFalse(content.rows.contains { $0.kind == .alert })
@@ -333,7 +356,7 @@ actor WP15Engine: EngineClient {
         let (app, _) = try await launch([.tight, .tightExpiredReserve])
         XCTAssertEqual(try card(app, .tight).rows.first { $0.id == "reserve" }?.emphasised, true, "a usable reset is lit")
         let content = try card(app, .tightExpiredReserve)
-        XCTAssertTrue(content.rows.contains { $0.kind == .alert }, "the alert still shows")
+        XCTAssertTrue(content.rows.contains { $0.kind == .alert }, "master spec C2: the alert still shows")
         let reserve = try XCTUnwrap(content.rows.first { $0.id == "reserve" })
         XCTAssertTrue(reserve.detail.contains("expired"), reserve.detail)
         XCTAssertFalse(reserve.emphasised, "an expired reset is not the action to take")

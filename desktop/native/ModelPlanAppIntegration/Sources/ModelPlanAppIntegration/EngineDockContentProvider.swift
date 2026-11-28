@@ -123,7 +123,7 @@ public enum EngineDeadlineFacts {
             includeDate(event.expiresAt)
             // D166: the confirmed dot ends before the event does; recompute then on the existing deadline path.
             if event.status == "confirmed" {
-                includeDate((event.confirmedAt ?? event.publishedAt).addingTimeInterval(DockResetSignal.confirmedDotLifetime))
+                includeDate((event.confirmedAt ?? event.publishedAt).addingTimeInterval(DockResetSignal.confirmedDotHardCap))
             } else if let through = event.scheduledThrough {
                 // The card turns to "awaiting confirmation" when the forecast window ends.
                 includeDate(through)
@@ -146,9 +146,44 @@ public enum EngineDeadlineFacts {
     public private(set) var retainedWindows: [EngineRetainedWindow] = []
     /// WP-06 hook: the estimated cost text for a member's today row ("≈$10.2"). Unset in WP-15, so no ≈$ is shown yet.
     public var todayCost: ((String) -> String?)?
+    /// Master spec §2.1 / DOCK-3.8-51 (D474, C23): a verified subscription's today figures from `cost.daily` (total tokens,
+    /// priced + unpriced, and the ≈$ text when any usage is priced); nil without a cost section. Keyed by subscription ref.
+    public var todayFigures: ((String) -> (tokens: Int64, cost: String?)?)?
     /// Consumers must discard session placement and scope for these members on every refresh.
     public private(set) var memberInstability:[String:Bool] = [:]
     public var language="en"
+    /// D466 / DOCK-3.7-05: the shared news clock (also handed to the Dock host, which records looks). Every refresh ticks
+    /// it with the items drawn; an item it retired is left out of the dot, the card block and the alert row alike.
+    public var newsClock = DockNewsClockStore()
+    /// Whether the Mac is awake and unlocked now; presence is counted only while true.
+    public var isPresent: () -> Bool = { true }
+    /// Called after every refresh ticked the clock; the cockpit's news bridge re-answers the page from it.
+    public var onNewsTick: (() -> Void)?
+    /// Master spec decision 3 / C45 (D474): the members that had a good reading on this Mac (`seen-subscriptions.json`).
+    /// With a store, a ring exists only for a member seen before or with a good reading now; nil (previews, tests that
+    /// do not install it) keeps every member, as the cockpit page does without a `seen` message.
+    public var seenSubscriptions: DockSeenSubscriptionsStore?
+    /// The one event a member's widget slot, card news block and pointer dots show (D466), from its admitted events:
+    /// an announcement already confirmed gives way to its confirmation; a confirmed direct reset whose window reading
+    /// has restarted is no longer news (macrev2-1289-4, DOCK-3.7-03; a banked reset never is); a retired item is filtered
+    /// out before the newest is chosen (macrev2-1289-2), so a still-live older event takes the slot.
+    static func newsEvent(_ events: [EngineResetEvent], account: RowsAccount, clock: DockNewsClockStore, at now: Date) -> EngineResetEvent? {
+        let confirmedIDs = Set(events.filter { $0.status == "confirmed" }.compactMap(\.confirms))
+        return events.filter { event in
+            guard event.status != "announced" || !confirmedIDs.contains(event.id) else { return false }
+            if event.status == "confirmed", !event.isResetCredit, event.restartedReading(in: account, at: now) { return false }
+            let anchor = event.status == "confirmed" ? (event.confirmedAt ?? event.publishedAt) : event.publishedAt
+            return clock.isLive(DockNewsClock.key(eventID: event.id, status: event.status), anchor: anchor, at: now)
+        }.max { $0.publishedAt < $1.publishedAt }
+    }
+    /// The one question every surface asks (the cockpit's alert list and key dot ask it too): is this event still news?
+    public func isNews(eventID: String, status: String, anchor: Date, at now: Date) -> Bool {
+        newsClock.isLive(DockNewsClock.key(eventID: eventID, status: status), anchor: anchor, at: now)
+    }
+    /// The user looked at this event (opened the cockpit on it, or the alert list): its 30 minutes start.
+    public func recordNewsLook(eventID: String, status: String, at now: Date) {
+        newsClock.look([DockNewsClock.key(eventID: eventID, status: status)], at: now)
+    }
     private var english:Bool { language == "en" }
     private func text(_ value:RowsText) -> String { english ? value.en : value.zh }
     private func text(_ value:RowsName) -> String { english ? value.en : value.zh }
@@ -198,9 +233,17 @@ public enum EngineDeadlineFacts {
             }
         }
         var passSignals:[DockSubscriptionSignal] = []
+        var passNewsKeys:[String] = []
+        var passSeen:[(key:String,durable:Bool)] = []
+        let wirePeaks=value.peaks
         for member in members {
             let row=member.row
             let input = makeInput(member, now: context.now)
+            // Decision 3: a good reading now (current or kept) records the member; one never read on this Mac has no
+            // ring (Settings and the grey line carry it). A numbered fallback is remembered for this session only.
+            let goodNow = value.status == .ready && (member.account.valueState == .current || member.account.valueState == .retained)
+            if goodNow { passSeen.append((member.id, member.isStable)) }
+            if let seen = seenSubscriptions, value.status == .ready, !seen.shows(member.id, goodNow: goodNow) { continue }
             inputs.append(input)
             let message = message(row, now: context.now)
             let account=member.account
@@ -222,10 +265,15 @@ public enum EngineDeadlineFacts {
                 event.rowID == member.rowID && event.publishedAt <= context.now && context.now < event.expiresAt &&
                 (event.planIDs.map { $0.contains(member.account.plan.id) } ?? true)
             }
-            let confirmedIDs=Set(memberEvents.filter{$0.status == "confirmed"}.compactMap(\.confirms))
-            let preferred=memberEvents.filter { $0.status != "announced" || !confirmedIDs.contains($0.id) }
-                .max { $0.publishedAt < $1.publishedAt }
             var signal=DockSubscriptionSignal(id:member.id);signal.dataState=input.dataState
+            // D466: the news clock retires an announcement 30 min after a look, after 3 present hours, or 24 h after it
+            // was confirmed (published, for an announcement). A retired event is not news on any surface.
+            // macrev2-1289-2: retired items are filtered out before the newest is chosen, so a still-live older event
+            // takes the slot once its newer neighbour retires.
+            // macrev2-1289-4 (DOCK-3.7-03, C19): a confirmed direct reset whose window reading has restarted is no longer
+            // news, on the dot and the card alike (the cockpit's news-clock.ts does the same); a banked reset never is.
+            let preferred=Self.newsEvent(memberEvents, account: member.account, clock: newsClock, at: context.now)
+            if let event=preferred { passNewsKeys.append(DockNewsClock.key(eventID:event.id,status:event.status)) }
             if let event=preferred {
                 if event.status == "confirmed" {
                     let confirmedAt=event.confirmedAt ?? event.publishedAt
@@ -233,7 +281,9 @@ public enum EngineDeadlineFacts {
                     reset.kind=event.isResetCredit ? .resetCredit : .directReset
                     // A local reading that restarted after the confirmation is an observation, not proof of the
                     // public event (same predicate as the notification).
-                    reset.restartedReading = event.restartedReading(in: member.account)
+                    reset.restartedReading = event.restartedReading(in: member.account, at: context.now)
+                    // The clock, not the 3 h default, bounds the dot (D466); 24 h stays the hard cap.
+                    reset.confirmedDotUntil = confirmedAt.addingTimeInterval(DockResetSignal.confirmedDotHardCap)
                     signal.reset=reset
                 } else {
                     var reset=DockResetSignal(id:event.id,status:.announced,announcedAt:event.publishedAt,scheduledThrough:event.expiresAt,expiresAt:event.expiresAt)
@@ -246,7 +296,8 @@ public enum EngineDeadlineFacts {
                 let wording = EngineResetEventWording(english: english)
                 reserve.append(.init(id: "reset-event:" + event.id + ":" + event.status, kind: .notice,
                     label: wording.label(event), value: wording.title(event, now: context.now),
-                    detail: wording.detail(rose: signal.reset?.restartedReading == true),
+                    detail: event.isResetCredit && event.status == "confirmed" ? wording.bankedConfirmedDetail(event, now: context.now)
+                                                                                : wording.detail(rose: signal.reset?.readingRetiresDot == true),
                     pill: event.status == "confirmed" ? (english ? "Confirmed" : "已确认") : (english ? "Announced" : "已预告")))
             }
             if let today { reserve.append(today) }
@@ -327,7 +378,7 @@ public enum EngineDeadlineFacts {
             let cause = needsKeychain ? nil : causeLine(member, now: context.now)
             let keychainReason: String = english ? "Keychain access needed" : "需要允许读取钥匙串"
             let messageReason: String = text(message.0.text)
-            let reasonText: String
+            var reasonText: String
             if needsKeychain {
                 reasonText = keychainReason
             } else if let causeReason = cause?.reason {
@@ -335,7 +386,7 @@ public enum EngineDeadlineFacts {
             } else {
                 reasonText = messageReason
             }
-            let nextStepText: String
+            var nextStepText: String
             if let causeNext = cause?.nextStep {
                 nextStepText = causeNext
             } else if let messageNext = message.1 {
@@ -343,14 +394,35 @@ public enum EngineDeadlineFacts {
             } else {
                 nextStepText = ""
             }
+            // Master spec §3.4 (D474): an unreadable card says its rung of the one reading ladder ("读不到 · 需要登录") and the
+            // one step ("打开 Codex"). A step the card's own button already is ("重新读取", D41 "允许读取") is not repeated.
+            let ladderCodes = needsKeychain ? ["keychain_unset"] : [message.0.code.rawValue] + (account.lastFailure.map { [$0.code.rawValue] } ?? [])
+            if cardState == .error, let rung = ladderCodes.lazy.compactMap({ ReadingLadder.entry(code: $0, tool: row.id, toolName: member.name(english: self.english)) }).first {
+                let language: SettingsLanguage = english ? .english : .chinese
+                reasonText = rung.title.value(language)
+                switch rung.kind {
+                case .cannotParse: nextStepText = ""
+                case .notReported: nextStepText = rung.detail?.value(language) ?? ""
+                case .needsPermission where needsKeychain: nextStepText = ""
+                default: nextStepText = rung.action.value(language)
+                }
+            }
             let planName: String = account.plan.name.map { text($0) } ?? ""
             let linkList = preferred.map(resetEventLinks) ?? []
-            let presentation = DockContentRow(input: input, reason: reasonText, nextStep: nextStepText,
+            var presentation = DockContentRow(input: input, reason: reasonText, nextStep: nextStepText,
                 originalObservedAt: date(account.observedAt), plan: planName,
                 sourceName: sourceName(account.route), resetTimes: resets, windowDescriptions: descriptions,
                 additionalRows: reserve, resetCountExpiry: resetCount?.expiry, links: linkList,
                 windowObservations: observations, cardReadingState: cardState,
                 runOutTimes: runOutTimes(member, forecasts: value.forecasts, now: context.now))
+            let memberPeaks=wirePeaks.filter { $0.rowId == member.rowID }
+            presentation.peaks=memberPeaks.compactMap { peak in
+                guard let from=date(peak.startsAt) else { return nil }
+                let to=date(peak.endsAt)
+                if let to, to <= from { return nil }
+                return DockPeakWindow(from:from,to:to)
+            }
+            presentation.hasPeakRules = !memberPeaks.isEmpty || member.rowID.hasPrefix("declared:") || member.rowID == "zai"
             reasons[member.id] = presentation
             if needsKeychain { reasons[member.id]?.actionLabel = english ? "Allow reading" : "允许读取" }
             // DOCK-3.8-53 (WP-15; was D87 slice 9's Settings link): any other named cause offers one more read.
@@ -418,6 +490,9 @@ public enum EngineDeadlineFacts {
         }
         let content = DockContent(snapshot: .init(inputs: inputs, subscriptions: subscriptions + accountless,presentationRows: reasons),
                      menuStatusLines: lines.isEmpty ? [status] : lines, emptyText: status, signals:passSignals)
+        seenSubscriptions?.record(passSeen)
+        newsClock.tick(shown:passNewsKeys,present:isPresent(),at:context.now)
+        onNewsTick?()
         verifiedWindows = passWindows; retainedWindows = passRetained; recomputeDeadline = passDeadline
         memberInstability = passInstability; signals = passSignals
         return .init(content: content, deadline: passDeadline, verifiedWindows: passWindows, retainedWindows: passRetained)
@@ -428,8 +503,17 @@ public enum EngineDeadlineFacts {
         let today = member.account.today
         let language: SettingsLanguage = english ? .english : .chinese
         let running = today?.runningSessions.flatMap { $0 > 0 ? WidgetCardText.running($0).value(language) : nil }
-        return DockTodayRow.make(label: WidgetCardText.today.value(language), cost: todayCost?(member.id),
-                                 tokens: today?.observedTotalTokens ?? today?.observedOutputTokens, running: running, tokensPerSecond: today?.generationTps)
+        // The cost section's total tokens and ≈$ when the reply has them (the cockpit's own sums); "未计价" when the
+        // tokens have no public price. Without it, the account's own today tokens as before.
+        let figures = member.subscriptionRef.flatMap { ref in member.isStable && member.id == ref ? todayFigures?(ref) : nil }
+        var tokens = today?.observedTotalTokens ?? today?.observedOutputTokens
+        var cost = todayCost?(member.id)
+        if let figures, figures.tokens > 0 {
+            tokens = figures.tokens
+            cost = cost ?? figures.cost ?? WidgetCardText.unpriced.value(language)
+        }
+        return DockTodayRow.make(label: WidgetCardText.today.value(language), cost: cost,
+                                 tokens: tokens, running: running, tokensPerSecond: today?.generationTps)
     }
     /// WP-15: the producer's run-out forecast (WP-03) for a current window of this same verified subscription, when it
     /// falls before the window's reset; the card writes "约40m用完" in place of the reset time and the footer can alert.
@@ -639,6 +723,8 @@ public enum EngineDeadlineFacts {
         let account=member.account
             let accountCurrent = rowCurrent && account.valueState == .current && (date(account.freshUntil).map { now < $0 } ?? true)
             var currentReading = false, keptReading = false
+            // Decision 2 (D474): the admitted run-out of a current window (before its reset) is what turns a ring amber.
+            let runOuts = runOutTimes(member, forecasts: source.dockContent.forecasts, now: now)
             for window in account.windows {
                 let current = accountCurrent && window.current && (date(window.validUntil).map { now < $0 } ?? true)
                 let period:DockQuotaPeriod
@@ -659,6 +745,7 @@ public enum EngineDeadlineFacts {
                     (period == .week && ["main", "weekly"].contains(window.limitKey)) ||
                     (period == .month && ["main", "monthly"].contains(window.limitKey))
                 projected.isGeneral = window.modelScope == nil && window.poolKey == "main" && generalLimit
+                if current { projected.runOutAt = runOuts[window.id] }
                 if current { currentReading = currentReading || window.remainingPercent != nil }
                 else if let kept = retainedWindow(member, window, now: now) {
                     // DOCK-3.2-50: the earlier reading stays until its window resets; the host re-checks it.

@@ -63,7 +63,17 @@ import ModelPlanSettings
         XCTAssertEqual(host.menuNotice?.shape, .hollow)
         var opened = false; host.showConsole = { opened = true }
         host.perform(NSSelectorFromString("openConsole"))
-        XCTAssertTrue(opened); XCTAssertNil(host.menuNotice)
+        // Master spec C6 / §5.1 (D474): opening the cockpit is no look, so the menu-bar dot stays; the first look clears it.
+        XCTAssertTrue(opened); XCTAssertEqual(host.menuNotice?.shape, .hollow)
+        let clock = DockNewsClockStore()
+        let key = try XCTUnwrap(signal.reset?.newsKey)
+        clock.tick(shown: [key], present: true, at: now)
+        host.newsClock = clock
+        host.newsLooksChanged()
+        XCTAssertNotNil(host.menuNotice, "drawn but not looked at: the dot stays")
+        clock.look([key], at: now)
+        host.newsLooksChanged()
+        XCTAssertNil(host.menuNotice, "the first look clears the menu-bar dot")
         XCTAssertEqual(DockNoticeProjection.selected(for: signal, at: now)?.shape, .hollow)
     }
     func testSliverPulseRetiresWhenNoticeIsRemoved() throws {

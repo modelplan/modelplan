@@ -78,8 +78,8 @@ final class D166ResetCreditTests: XCTestCase {
         XCTAssertEqual(credit.confirmedAtBasis, "observed")
         let zh = EngineResetEventWording(english: false, calendar: shanghai), en = EngineResetEventWording(english: true, calendar: shanghai)
         let now = at("2026-11-12T11:00:00Z")
-        XCTAssertEqual(zh.title(credit, now: now), "已确认 · 18:20")
-        XCTAssertEqual(en.title(credit, now: now), "Confirmed · 18:20")
+        XCTAssertEqual(zh.title(credit, now: now), "已确认 · 今天 18:20")
+        XCTAssertEqual(en.title(credit, now: now), "Confirmed · Today 18:20")
         XCTAssertEqual(zh.notification(credit, rose: false).title, "Codex 额外重置已确认")
         XCTAssertEqual(zh.notification(credit, rose: false).body, "余量以本机读数为准。")
 
@@ -87,8 +87,8 @@ final class D166ResetCreditTests: XCTestCase {
         let reset = try decoded(liveShapedRows(direct))
         XCTAssertFalse(reset.isResetCredit)
         XCTAssertEqual(zh.label(reset), "↺ 额度重置")
-        XCTAssertEqual(zh.title(reset, now: now), "已确认 · 18:20 前", "a first-seen time is only an upper bound")
-        XCTAssertEqual(en.title(reset, now: now), "Confirmed by 18:20")
+        XCTAssertEqual(zh.title(reset, now: now), "已确认 · 今天 18:20", "D466: an absolute time, never \"18:20 前\"")
+        XCTAssertEqual(en.title(reset, now: now), "Confirmed · Today 18:20")
         XCTAssertEqual(en.notification(reset, rose: true).title, "Codex limit reset confirmed")
         XCTAssertEqual(zh.notification(reset, rose: true).body, "已生效：本机读数已回升。")
         XCTAssertEqual(zh.detail(rose: true), "本机读数已回升 · 余量以本机读数为准")
@@ -120,39 +120,124 @@ final class D166ResetCreditTests: XCTestCase {
         let event = EngineResetEvent(id: "event", rowID: "codex", provider: "openai", status: "confirmed",
             publishedAt: confirmed.addingTimeInterval(-3600), expiresAt: confirmed.addingTimeInterval(24 * 3600), planIDs: nil,
             confirms: "event", kind: "reset_credit", confirmedAt: confirmed, confirmedAtBasis: "published")
-        XCTAssertEqual(EngineResetEventWording(english: true, calendar: shanghai).title(event, now: confirmed), "Confirmed · 18:20")
+        XCTAssertEqual(EngineResetEventWording(english: true, calendar: shanghai).title(event, now: confirmed), "Confirmed · Today 18:20")
     }
 
     /// macrev2-862-3: a routine refresh of a window that began before the confirmation is not a restart;
     /// only a current window that began after it is. Reset credits never claim one.
+    /// macrev2-1289-4 (round 4): the evidence is a window longer than 5 h (here the weekly one); a 5-hour window restarts on
+    /// its own schedule and never proves a reset. The cases moved from 5-hour to weekly windows with the same intent.
     func testRestartedReadingNeedsAWindowThatBeganAfterTheConfirmation() throws {
-        let confirmed = at("2026-11-12T10:00:00Z")
-        func account(observed: Date, resets: Date, duration: Int64 = 18000) throws -> RowsAccount {
+        let confirmed = at("2026-11-12T10:00:00Z"), now = confirmed.addingTimeInterval(180), week: Int64 = 604800
+        let direct = EngineResetEvent(id: "e", rowID: "codex", provider: "openai", status: "confirmed", publishedAt: confirmed.addingTimeInterval(-3600),
+            expiresAt: confirmed.addingTimeInterval(86400), planIDs: nil, confirms: "e", kind: "direct_reset", confirmedAt: confirmed, confirmedAtBasis: "published")
+        let credit = EngineResetEvent(id: "e", rowID: "codex", provider: "openai", status: "confirmed", publishedAt: confirmed.addingTimeInterval(-3600),
+            expiresAt: confirmed.addingTimeInterval(86400), planIDs: nil, confirms: "e", kind: "reset_credit", confirmedAt: confirmed, confirmedAtBasis: "published")
+        // 10:01 refresh of the weekly window that began a day earlier: unchanged quota, no claim.
+        let routine = try currentAccount(observed: confirmed.addingTimeInterval(60), resets: confirmed.addingTimeInterval(TimeInterval(week) - 86400), duration: week)
+        XCTAssertFalse(direct.restartedReading(in: routine, at: now), "a routine refresh is not a restart")
+        // A weekly window that began at 10:01, read at 10:02: a restart.
+        let restarted = try currentAccount(observed: confirmed.addingTimeInterval(120), resets: confirmed.addingTimeInterval(60 + TimeInterval(week)), duration: week)
+        XCTAssertTrue(direct.restartedReading(in: restarted, at: now))
+        XCTAssertFalse(credit.restartedReading(in: restarted, at: now), "banked resets wait for the user to redeem them")
+        // A 5-hour window that began at 10:01 is its own schedule, not evidence.
+        let fiveHour = try currentAccount(observed: confirmed.addingTimeInterval(120), resets: confirmed.addingTimeInterval(60 + 18000))
+        XCTAssertFalse(direct.restartedReading(in: fiveHour, at: now), "a 5-hour restart never proves a reset")
+        // The cycle start may precede the confirmation by clock skew only (60 s, the cockpit's NEWS_RESTART_SKEW_MS);
+        // a cycle that began minutes earlier is the previous one.
+        for (start, expected) in [(-30.0, true), (-EngineResetEvent.restartSkew, true), (-EngineResetEvent.restartSkew - 1, false), (-240, false)] {
+            let skewed = try currentAccount(observed: confirmed.addingTimeInterval(120), resets: confirmed.addingTimeInterval(start + TimeInterval(week)), duration: week)
+            XCTAssertEqual(direct.restartedReading(in: skewed, at: now), expected, "cycle start \(start) s from the confirmation")
+        }
+        let zh = EngineResetEventWording(english: false, calendar: shanghai)
+        XCTAssertEqual(zh.notification(direct, rose: direct.restartedReading(in: routine, at: now)).body, "余量以本机读数为准。")
+    }
+
+    /// macrev2-1289-4 acceptance: the widget reads the same fixture as the cockpit (`news-clock.test.mjs`), so the same
+    /// readings give the same decision on both surfaces: the predicate and the widget's news choice (dot and card block).
+    @MainActor func testSharedRestartFixtureGivesTheCockpitDecision() throws {
+        struct Fixture: Decodable {
+            struct Window: Decodable { let durationSeconds: Int64; let cycleStartOffsetSeconds: Double }
+            struct Case: Decodable { let name: String; let kind: String; let windows: [Window]; let retired: Bool }
+            let confirmedAt: String, now: String, cases: [Case]
+        }
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../tests/shared/direct-reset-restart.json").standardizedFileURL
+        let fixture = try JSONDecoder().decode(Fixture.self, from: Data(contentsOf: url))
+        let confirmed = at(fixture.confirmedAt), now = at(fixture.now), iso = ISO8601DateFormatter()
+        XCTAssertGreaterThanOrEqual(fixture.cases.count, 8)
+        for c in fixture.cases {
             let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
                 .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
             let root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
             let projection = try XCTUnwrap(root["projection"] as? [String: Any])
             var raw = try XCTUnwrap(((projection["rows"] as? [[String: Any]])?.first?["accounts"] as? [[String: Any]])?.first)
-            var window = try XCTUnwrap((raw["windows"] as? [[String: Any]])?.first)
-            let iso = ISO8601DateFormatter()
-            window.removeValue(forKey: "modelScope"); window["current"] = true; window["durationSeconds"] = duration
-            window["observedAt"] = iso.string(from: observed); window["resetsAt"] = iso.string(from: resets)
-            raw["valueState"] = "current"; raw["windows"] = [window]
-            return try WireDecoder.decode(RowsAccount.self, from: JSONSerialization.data(withJSONObject: raw))
+            let template = try XCTUnwrap((raw["windows"] as? [[String: Any]])?.first)
+            raw["valueState"] = "current"
+            raw["windows"] = c.windows.enumerated().map { index, w -> [String: Any] in
+                var window = template
+                window.removeValue(forKey: "modelScope"); window["id"] = "w\(index)"; window["current"] = true
+                window["role"] = w.durationSeconds <= 18000 ? "session" : "weekly"; window["durationSeconds"] = w.durationSeconds
+                window["observedAt"] = iso.string(from: now)
+                window["resetsAt"] = iso.string(from: confirmed.addingTimeInterval(w.cycleStartOffsetSeconds + TimeInterval(w.durationSeconds)))
+                return window
+            }
+            let account = try WireDecoder.decode(RowsAccount.self, from: JSONSerialization.data(withJSONObject: raw))
+            let e = event("shared", kind: c.kind, confirmed: confirmed)
+            if c.kind == "direct_reset" { XCTAssertEqual(e.restartedReading(in: account, at: now), c.retired, c.name) }
+            else { XCTAssertFalse(e.restartedReading(in: account, at: now), c.name) }
+            let shown = EngineDockContentProvider.newsEvent([e], account: account, clock: DockNewsClockStore(), at: now)
+            XCTAssertEqual(shown == nil, c.retired, "widget news: " + c.name)
         }
-        let direct = EngineResetEvent(id: "e", rowID: "codex", provider: "openai", status: "confirmed", publishedAt: confirmed.addingTimeInterval(-3600),
-            expiresAt: confirmed.addingTimeInterval(86400), planIDs: nil, confirms: "e", kind: "direct_reset", confirmedAt: confirmed, confirmedAtBasis: "published")
-        let credit = EngineResetEvent(id: "e", rowID: "codex", provider: "openai", status: "confirmed", publishedAt: confirmed.addingTimeInterval(-3600),
-            expiresAt: confirmed.addingTimeInterval(86400), planIDs: nil, confirms: "e", kind: "reset_credit", confirmedAt: confirmed, confirmedAtBasis: "published")
-        // 10:01 refresh of the window that ends at 14:00 (began 09:00): unchanged quota, no claim.
-        let routine = try account(observed: confirmed.addingTimeInterval(60), resets: confirmed.addingTimeInterval(4 * 3600))
-        XCTAssertFalse(direct.restartedReading(in: routine), "a routine refresh is not a restart")
-        // A window that began at 10:01, read at 10:02: a restart.
-        let restarted = try account(observed: confirmed.addingTimeInterval(120), resets: confirmed.addingTimeInterval(60 + 18000))
-        XCTAssertTrue(direct.restartedReading(in: restarted))
-        XCTAssertFalse(credit.restartedReading(in: restarted), "banked resets wait for the user to redeem them")
-        let zh = EngineResetEventWording(english: false, calendar: shanghai)
-        XCTAssertEqual(zh.notification(direct, rose: direct.restartedReading(in: routine)).body, "余量以本机读数为准。")
+    }
+
+    private func currentAccount(observed: Date, resets: Date, duration: Int64 = 18000) throws -> RowsAccount {
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
+        let projection = try XCTUnwrap(root["projection"] as? [String: Any])
+        var raw = try XCTUnwrap(((projection["rows"] as? [[String: Any]])?.first?["accounts"] as? [[String: Any]])?.first)
+        var window = try XCTUnwrap((raw["windows"] as? [[String: Any]])?.first)
+        let iso = ISO8601DateFormatter()
+        window.removeValue(forKey: "modelScope"); window["current"] = true; window["durationSeconds"] = duration
+        window["observedAt"] = iso.string(from: observed); window["resetsAt"] = iso.string(from: resets)
+        raw["valueState"] = "current"; raw["windows"] = [window]
+        return try WireDecoder.decode(RowsAccount.self, from: JSONSerialization.data(withJSONObject: raw))
+    }
+    private func event(_ id: String, kind: String, confirmed: Date) -> EngineResetEvent {
+        EngineResetEvent(id: id, rowID: "codex", provider: "openai", status: "confirmed", publishedAt: confirmed.addingTimeInterval(-60),
+            expiresAt: confirmed.addingTimeInterval(86400), planIDs: nil, confirms: id, kind: kind, confirmedAt: confirmed, confirmedAtBasis: "published")
+    }
+
+    /// macrev2-1289-4 (DOCK-3.7-03, C19): once the window reading restarts, a confirmed direct reset is no longer news on the
+    /// widget (dot and card block both come from this one choice), as in the cockpit; a banked reset stays news.
+    @MainActor func testARestartedReadingRetiresDirectResetNewsButNotBankedNews() throws {
+        let confirmed = at("2026-11-12T10:00:00Z"), now = confirmed.addingTimeInterval(180)
+        // macrev2-1289-4 (round 4): weekly windows; only a window longer than 5 h proves the reset.
+        let week: Int64 = 604800
+        let routine = try currentAccount(observed: confirmed.addingTimeInterval(60), resets: confirmed.addingTimeInterval(TimeInterval(week) - 86400), duration: week)
+        let restarted = try currentAccount(observed: confirmed.addingTimeInterval(120), resets: confirmed.addingTimeInterval(60 + TimeInterval(week)), duration: week)
+        let clock = DockNewsClockStore()
+        let direct = event("direct", kind: "direct_reset", confirmed: confirmed), banked = event("banked", kind: "reset_credit", confirmed: confirmed)
+        XCTAssertEqual(EngineDockContentProvider.newsEvent([direct], account: routine, clock: clock, at: now)?.id, "direct")
+        XCTAssertNil(EngineDockContentProvider.newsEvent([direct], account: restarted, clock: clock, at: now), "restarted: the direct reset is not news")
+        XCTAssertEqual(EngineDockContentProvider.newsEvent([banked], account: restarted, clock: clock, at: now)?.id, "banked",
+                       "a banked reset never waits for or clears with a window restart")
+    }
+
+    /// macrev2-1289-2: a retired newer event gives the slot to a still-live older one.
+    @MainActor func testAStillLiveOlderEventTakesTheSlotWhenTheNewerRetires() throws {
+        let confirmed = at("2026-11-12T10:00:00Z")
+        let account = try currentAccount(observed: confirmed.addingTimeInterval(60), resets: confirmed.addingTimeInterval(4 * 3600))
+        let older = event("older", kind: "reset_credit", confirmed: confirmed)
+        let newer = event("newer", kind: "reset_credit", confirmed: confirmed.addingTimeInterval(600))
+        let clock = DockNewsClockStore()
+        let now = confirmed.addingTimeInterval(900)
+        XCTAssertEqual(EngineDockContentProvider.newsEvent([older, newer], account: account, clock: clock, at: now)?.id, "newer")
+        clock.look([DockNewsClock.key(eventID: "newer", status: "confirmed")], at: now)
+        let later = now.addingTimeInterval(DockNewsClock.lookGrace)
+        XCTAssertEqual(EngineDockContentProvider.newsEvent([older, newer], account: account, clock: clock, at: later)?.id, "older",
+                       "the newer one retired 30 min after its look; the older, never looked at, is still news")
     }
 
     /// macrev2-862-2 / -5: a reset credit through the normal entry: forecast card and ring with no notification,
@@ -218,10 +303,11 @@ final class D166ResetCreditTests: XCTestCase {
         XCTAssertEqual(titles, ["Codex banked resets confirmed"])
         row = try XCTUnwrap(notice())
         XCTAssertTrue(row.value.hasPrefix("Confirmed · "), row.value)
-        XCTAssertEqual(row.detail, "Your balance is the local reading")
+        XCTAssertTrue(row.detail.hasPrefix("Issued ") && row.detail.hasSuffix(": +1 reset, now in Reserve"), "D466: a banked reset only adds to the Reserve: \(row.detail)")
         let signal = try XCTUnwrap(entry.composition.resetSignals.first { $0.id == member })
         XCTAssertEqual(DockNoticeProjection.selected(for: signal, at: clock)?.tone, DockNotice.resetConfirmedTone)
-        XCTAssertNil(DockNoticeProjection.selected(for: signal, at: confirmedAt.addingTimeInterval(3 * 3600)), "the dot ends three hours after confirmation")
+        XCTAssertNotNil(DockNoticeProjection.selected(for: signal, at: confirmedAt.addingTimeInterval(3 * 3600)), "D466: the news clock, not a 3 h wall clock, retires the dot")
+        XCTAssertNil(DockNoticeProjection.selected(for: signal, at: confirmedAt.addingTimeInterval(24 * 3600)), "the hard cap is 24 h after confirmation")
         try await client.replaceRows(confirmed); try await Task.sleep(for: .milliseconds(50))
         XCTAssertEqual(titles.count, 1, "one notification per confirmation")
         await entry.composition.stop()

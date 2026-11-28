@@ -124,7 +124,7 @@ public struct HelpCatalog: Sendable {
             basis = copy("这是当前点数及所选期间的点数用量。", "This is the credit balance or credit use in the selected period.")
         case .event:
             title = copy("事件点", "Event dot")
-            basis = copy("橙色表示风险，蓝色表示公开重置，白色表示正在用点数。", "Amber means risk, blue means a public reset and white means credits are in use.")
+            basis = copy("蓝色表示这个订阅有新的重置消息：空心为已公告，实心为已确认。", "Blue means new reset news for this subscription: hollow is announced, solid is confirmed.")
         case .ring:
             title = copy("额度圈", "Quota ring")
             basis = copy("每个圈表示对应周期的剩余额度，外圈周期较短。", "Each ring shows quota left for its window and the outer window is shorter.")

@@ -84,9 +84,11 @@ actor EntrySyntheticClient: EngineClient {
         root["sequence"] = sequence
         var projection = try XCTUnwrap(root["projection"] as? [String: Any])
         if let resetID {
+            // D466 / DOCK-3.7-05: an announcement is news for at most 24 h after its publication (it used to stay until
+            // expiresAt), so it is published 6 h before the 2027-06-01 clocks of the tests that use it.
             projection["resetEvents"] = [["version": 1, "id": resetID, "provider": "synthetic",
                 "rowId": "codex", "status": "announced",
-                "publishedAt": "2027-05-01T00:00:00Z", "expiresAt": "2027-07-01T00:00:00Z",
+                "publishedAt": "2027-05-31T18:00:00Z", "expiresAt": "2027-07-01T00:00:00Z",
                 "source": ["kind": "public", "publicationId": "synthetic"]]]
         } else { projection.removeValue(forKey: "resetEvents") }
         var rows = try XCTUnwrap(projection["rows"] as? [[String: Any]])
@@ -117,6 +119,10 @@ actor EntrySyntheticClient: EngineClient {
         week["resetsAt"] = weeklyDeadline
         if let wall = resetCardClock {
             let stamp = ISO8601DateFormatter()
+            // macrev2-1289-11 (R11 round 5): a weekly cycle already in progress before the confirmation (began 4 days
+            // earlier, resets in 3), so the confirmation stays until a qualifying restart; the far-future default would
+            // compute a cycle start after now.
+            week["resetsAt"] = stamp.string(from: wall.addingTimeInterval(3 * 86400)); week["validUntil"] = week["resetsAt"]
             let scheduled = stamp.string(from: wall.addingTimeInterval(3600))
             var event: [String: Any] = ["version": 1, "id": "synthetic-card-reset", "provider": "openai",
                 "rowId": "codex", "status": "announced", "publishedAt": stamp.string(from: wall.addingTimeInterval(-60)),
@@ -147,6 +153,8 @@ actor EntrySyntheticClient: EngineClient {
                 account["observedAt"] = fresh
                 session["observedAt"] = fresh
                 week["observedAt"] = fresh
+                // The qualifying restart: the weekly cycle began 30 s ago, 30 s after the confirmation (published 60 s ago).
+                week["resetsAt"] = stamp.string(from: wall.addingTimeInterval(604800 - 30)); week["validUntil"] = week["resetsAt"]
             }
         }
         if windowSources == .legacy {
@@ -300,11 +308,12 @@ actor EntrySyntheticClient: EngineClient {
         for option in options {
             let threshold = try XCTUnwrap(Int(option))
             _ = try await editor.commit(SettingsB20Edit.redBelow(threshold))
-            XCTAssertEqual(try reading(first).status, threshold >= 25 ? .critical : .warning, option)
-            XCTAssertEqual(try reading(second).status, threshold >= 20 ? .critical : .warning, option)
+            // D474 decision 2: above the red line with no estimate the ring is normal, never "under 50 %" amber.
+            XCTAssertEqual(try reading(first).status, threshold >= 25 ? .critical : .normal, option)
+            XCTAssertEqual(try reading(second).status, threshold >= 20 ? .critical : .normal, option)
         }
         _ = try await editor.commit(SettingsB20Edit.redBelow(20))
-        XCTAssertEqual(try reading(first).status, .warning)
+        XCTAssertEqual(try reading(first).status, .normal)
         XCTAssertEqual(try reading(second).readout, "20%")
         XCTAssertEqual(try reading(second).status, .critical)
         _ = try await editor.commit(SettingsB20Edit.percentagePin(first, .fiveHour))
@@ -327,7 +336,7 @@ actor EntrySyntheticClient: EngineClient {
         let restored = try XCTUnwrap(relaunched.settingsHost.application.editor.snapshot)
         XCTAssertEqual(restored.preferences.redBelow, 20)
         let restoredReadings = relaunched.composition.dock.dockView.presentedReadingsForChecks
-        XCTAssertEqual(restoredReadings[first]?.status, .warning)
+        XCTAssertEqual(restoredReadings[first]?.status, .normal)
         XCTAssertEqual(restoredReadings[second]?.status, .critical)
         XCTAssertEqual(restoredReadings[first]?.readout, "75%")
 
@@ -357,7 +366,8 @@ actor EntrySyntheticClient: EngineClient {
             let card = try XCTUnwrap(dock.cardContent(for: id, at: wall), line: line)
             XCTAssertEqual(card.rows.first { $0.id == "quota:weekly:604800:main:main" }?.tone, expected, line: line)
         }
-        try assertBand(first, .warning)
+        // D474 decision 2: 50 % with no estimate is normal (amber only for a run-out before the reset).
+        try assertBand(first, .normal)
         try assertBand(second, .normal)
 
         let delivery = try XCTUnwrap(app.composition.store.snapshot.delivery)
@@ -373,7 +383,7 @@ actor EntrySyntheticClient: EngineClient {
         try assertBand(first, .critical)
         try assertBand(second, .critical)
         _ = try await editor.commit(SettingsB20Edit.redBelow(10))
-        try assertBand(first, .warning)
+        try assertBand(first, .normal)
         try assertBand(second, .critical)
 
         let saved = try XCTUnwrap(editor.snapshot)
@@ -385,7 +395,7 @@ actor EntrySyntheticClient: EngineClient {
             _ = try await editor.commit(SettingsB20Edit.redBelow(threshold))
             try await deliver(weekly: Double(threshold), secondWeekly: Double(threshold) + 1)
             try assertBand(first, .critical)
-            try assertBand(second, .warning)
+            try assertBand(second, .normal)
         }
     }
 
@@ -1011,8 +1021,12 @@ actor EntrySyntheticClient: EngineClient {
         XCTAssertTrue(text(dock.card).contains("exp in 12m · Reported subset · Details truncated · Last known reading"))
         try await render(Self.rows(weekly: 75, sequence: 10, resetCardClock: wall, resetConfirmed: true,
             resetFacts: .init(count: 1, expiresIn: -60, restarted: true)))
-        XCTAssertTrue(text(dock.card).contains { $0.hasPrefix("Confirmed · ") })
-        XCTAssertTrue(text(dock.card).contains("Local reading rose · your balance is the local reading"), "a restarted local reading is shown as an observation")
+        // DOCK-3.7-03 / C19 (D474, macrev2-1289-4) replaced D166's "a restarted local reading is shown as an
+        // observation": once the reading restarted after the confirmation, the confirmed direct reset is no longer news,
+        // so its card block goes with the dot; the reserve line stays.
+        XCTAssertFalse(text(dock.card).contains { $0.hasPrefix("Confirmed · ") }, "a restarted reading retires the confirmed direct reset")
+        XCTAssertFalse(text(dock.card).contains("Local reading rose · your balance is the local reading"))
+        XCTAssertNil(app.composition.resetSignals.first { $0.id == id }?.reset, "no dot either")
         XCTAssertTrue(text(dock.card).contains { $0.hasPrefix("Resets 1") })
         XCTAssertTrue(text(dock.card).contains("expired"))
         let confirmedAction = try XCTUnwrap(dock.card.onOpenURL)
@@ -1216,7 +1230,7 @@ actor EntrySyntheticClient: EngineClient {
         let problem = try XCTUnwrap(try items().first { $0.title == enProblem })
         _ = try XCTUnwrap(problem.target as? NSObject).perform(try XCTUnwrap(problem.action), with: problem)
         await surface.waitForShow()
-        XCTAssertEqual(surface.pane, "diagnostics")
+        XCTAssertEqual(surface.pane, "subscriptions", "master spec S2: the health line opens Settings › 订阅")
     }
 
     func testS07NormalEntryDistinguishesPaintedHelpTargetsAndFocus() async throws {
@@ -1322,7 +1336,7 @@ actor EntrySyntheticClient: EngineClient {
         let problem = try XCTUnwrap(problems.first)
         _ = try XCTUnwrap(problem.target as? NSObject).perform(try XCTUnwrap(problem.action), with: problem)
         await surface.waitForShow()
-        XCTAssertEqual(surface.pane, "diagnostics")
+        XCTAssertEqual(surface.pane, "subscriptions", "master spec S2: the health line opens Settings › 订阅")
         let id = "aaaaaaaaaaaaaaaa"
         XCTAssertEqual(try app.composition.dock.cardContent(for: id, at: wall)?.name, "Synthetic account")
         // WP-15 (DOCK-3.8-50): no stale badge; the header carries the reading's age.

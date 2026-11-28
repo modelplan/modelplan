@@ -54,7 +54,7 @@ public struct HelpMapCatalog: Sendable {
         case .overflow: return copy("更多订阅：暂不支持拖动排序，可用 ⌥ 加方向键移动一位。", "Overflow: pointer dragging is unavailable; use Option arrows to reorder one place.")
         case .rings: return copy("额度圈：外圈较短、内圈较长，两个都表示剩余。", "Quota rings: outer is shorter and inner longer; both show quota left.")
         case .number: return copy("数字：显示这个喷口当前选中周期的剩余额度。", "Number: quota left in the window selected for this nozzle.")
-        case .eventDot: return copy("事件点：橙色风险、蓝色公开重置、白色正在用点数。", "Event dot: amber risk, blue public reset, white credits in use.")
+        case .eventDot: return copy("事件点：蓝色表示这个订阅有新的重置消息，空心为已公告，实心为已确认。", "Event dot: blue means new reset news for this subscription; hollow is announced, solid is confirmed.")
         case .ignition: return copy("点火钮：点按打开驾驶舱。", "Ignition: tap to open the Cockpit.")
         case .sliver: return copy("细条：额度挂件收起后贴在边缘，靠近稍停即可展开，右键打开菜单。", "Sliver: rest near it to reveal the Quota Widget or right-click for its menu.")
         }

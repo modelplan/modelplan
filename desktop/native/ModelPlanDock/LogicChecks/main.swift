@@ -181,21 +181,22 @@ do {
             try expect(shared.region(at:CGPoint(x:wake.midX,y:wake.midY)) == .outside,"shared edge cannot wake")
         }}
     }
-    try test("notice priority, distinct shapes, no low-quota-only event") {
+    try test("D466 one dot meaning: blue reset news only; no amber forecast, reserve-expiry or white credits dot") {
         var s=fresh("a",.critical)
         try expect(DockNoticeProjection.selected(for:s,at:now)==nil,"low quota alone is not an event")
         s.drawingCredits=true;s.creditsKnown=true;s.exhaustedQuotaObserved=true
-        s.cards=[DockResetCardSignal(id:"card",expiresAt:now.addingTimeInterval(3600))];s.reset=reset()
+        s.cards=[DockResetCardSignal(id:"card",expiresAt:now.addingTimeInterval(3600))]
         s.forecast=DockForecastSignal(windowID:"5h",validUntil:now.addingTimeInterval(600))
-        try expect(DockNoticeProjection.candidates(for:s,at:now).map(\.key.kind)==[.forecast,.resetAnnounced,.cardsExpiring,.credits],"priority order")
-        s.forecast=nil;try expect(DockNoticeProjection.selected(for:s,at:now)?.key.kind == .cardsExpiring,"card expiry precedes announced reset")
-        let cards=s.cards;s.cards=[];let announced=DockNoticeProjection.selected(for:s,at:now)
-        try expect(announced?.shape == .hollow && announced?.tone == DockNotice.resetAnnouncedTone,"announced hollow, palette tone")
+        try expect(DockNoticeProjection.candidates(for:s,at:now).isEmpty,"forecast, reserve expiry and drawing credits draw no dot")
+        s.reset=reset()
+        let announced=DockNoticeProjection.selected(for:s,at:now)
+        try expect(DockNoticeProjection.candidates(for:s,at:now).count==1 && announced?.key.kind == .resetAnnounced,"only the reset news is a candidate")
+        try expect(announced?.shape == .hollow && announced?.tone == DockNotice.resetAnnouncedTone && announced?.tone == .blue,"announced = hollow blue")
         s.reset=reset(confirmed:true);let confirmed=DockNoticeProjection.selected(for:s,at:now)
-        try expect(confirmed?.tone == DockNotice.resetConfirmedTone && confirmed?.shape == .solid && confirmed?.tone != .white,"confirmed solid, palette tone, never credits white")
-        s.cards=cards;s.reset?.restartedReading=true;try expect(DockNoticeProjection.selected(for:s,at:now)?.key.kind == .cardsExpiring,"reading clears confirmed reset only")
-        s.cards=[];try expect(DockNoticeProjection.selected(for:s,at:now)?.tone == .white,"credits are white")
-        s.creditsKnown=false;try expect(DockNoticeProjection.selected(for:s,at:now)==nil,"unknown credits not fabricated")
+        try expect(confirmed?.tone == .blue && confirmed?.shape == .solid,"confirmed = solid blue")
+        s.reset?.restartedReading=true;try expect(DockNoticeProjection.selected(for:s,at:now)==nil,"a restarted reading clears a direct confirmed reset")
+        s.reset?.kind = .resetCredit;try expect(DockNoticeProjection.selected(for:s,at:now) != nil,"D466: a banked reset only adds to the reserve; a reading never clears it")
+        s.reset?.newsLive=false;try expect(DockNoticeProjection.selected(for:s,at:now)==nil,"a retired news clock removes the dot")
     }
     try test("D428 only a reset credit is banked: direct and legacy no-kind announcements are not") {
         var s=fresh("a",.critical)
@@ -216,10 +217,8 @@ do {
         s.reset?.confirmedDotUntil=now.addingTimeInterval(30*3600);try expect(DockNoticeProjection.selected(for:s,at:now.addingTimeInterval(24*3600-1)) != nil && DockNoticeProjection.selected(for:s,at:now.addingTimeInterval(24*3600))==nil,"D166: a later dot bound is capped at 24h")
         s.reset?.confirmedDotUntil=nil
         s.reset?.confirmedAt=now.addingTimeInterval(1);try expect(DockNoticeProjection.selected(for:s,at:now)==nil,"future confirmation withheld")
-        s.reset=nil;s.cards=[DockResetCardSignal(id:"expired",expiresAt:now),DockResetCardSignal(id:"boundary",expiresAt:now.addingTimeInterval(48*3600)),DockResetCardSignal(id:"late",expiresAt:now.addingTimeInterval(48*3600+1))]
-        try expect(DockNoticeProjection.selected(for:s,at:now)?.key.sourceIDs == ["boundary"],"card 48h inclusive, zero excluded")
-        s.forecast=DockForecastSignal(windowID:"5h",validUntil:now.addingTimeInterval(100));s.dataState = .stale
-        try expect(DockNoticeProjection.selected(for:s,at:now)==nil,"stale personal notices withheld")
+        s.reset=nil;s.dataState = .stale
+        try expect(DockNoticeProjection.selected(for:s,at:now)==nil,"no personal notices without a reset event")
         s.reset=reset();try expect(DockNoticeProjection.selected(for:s,at:now)?.key.kind == .resetAnnounced,"dated public reset does not fabricate personal quota")
     }
     try test("sliver quota state persists independently of one-shot acknowledgements") {
@@ -266,13 +265,10 @@ do {
         try expect(!state.firstAppearance(of:key,on:.sliver) && state.firstAppearance(of:key,on:.menu),"once per surface")
         _=try state.project([],stationBySubscription:[:],at:now);try expect(state.retainedKeyCount==0 && !state.firstAppearance(of:key,on:.sliver),"removed IDs cannot leak pulse/ack memory")
         try rejects(.invalidCatalogue) { _=try state.project([s,s],stationBySubscription:[:],at:now) }
-        s.cards=[DockResetCardSignal(id:"b",expiresAt:now.addingTimeInterval(5)),DockResetCardSignal(id:"a",expiresAt:now.addingTimeInterval(6))];s.reset=nil
-        let one=DockNoticeProjection.selected(for:s,at:now);s.cards.reverse()
-        try expect(one==DockNoticeProjection.selected(for:s,at:now),"card order does not invent a new event")
     }
     try test("acknowledged personal notices do not replay after transient stale reads") {
         var state=DockAttentionState(), s=fresh("a")
-        s.forecast=DockForecastSignal(windowID:"weekly",validUntil:now.addingTimeInterval(600))
+        s.reset=DockResetSignal(id:"weekly",status:.announced,announcedAt:now.addingTimeInterval(-100),scheduledThrough:now.addingTimeInterval(600))
         let key=try state.project([s],stationBySubscription:["a":"one"],at:now).dots[0].notice.key
         try expect(state.firstAppearance(of:key,on:.sliver),"initial semantic appearance")
         try state.acknowledgeDockOpen([s],at:now)
@@ -287,9 +283,9 @@ do {
     }
     try test("acknowledgement is per selected event; lower-priority event is not pre-acknowledged") {
         var state=DockAttentionState(), s=fresh("a")
-        s.reset=reset();s.forecast=DockForecastSignal(windowID:"5h",validUntil:now.addingTimeInterval(60))
+        s.reset=reset("seen")
         try state.acknowledgeDockOpen([s],at:now)
-        s.forecast=nil
+        s.reset=reset()
         let projection=try state.project([s],stationBySubscription:["a":"one"],at:now)
         try expect(projection.dots.first?.notice.key.kind == .resetAnnounced,"unseen reset remains discoverable")
         for i in 0..<1000 {
@@ -354,11 +350,27 @@ do {
         }
     }
     try test("B06 boundary status and unknown/stale/passed resets are not invented fuel") {
-        for (r,expected) in [(0.0,DockQuotaStatus.critical),(25.0,.critical),(25.01,.warning),(26.0,.warning),(50.0,.warning),(50.01,.normal),(51.0,.normal),(100.0,.normal)] {
+        // Master spec decision 2 (D474, C9): amber is no longer "under 50 %"; without an estimate a window above the red
+        // line is normal.
+        for (r,expected) in [(0.0,DockQuotaStatus.critical),(25.0,.critical),(25.01,.normal),(26.0,.normal),(50.0,.normal),(50.01,.normal),(51.0,.normal),(100.0,.normal)] {
             let w=DockQuotaWindowInput(id:"five",period:.fiveHour,label:"5h",remainingPercent:r,resetsAt:nil,durationSeconds:nil)
             var i=DockInstrumentInput(id:"sub",name:"Synthetic",windows:[w]);i.dataState = .fresh
             let p=try DockInstrumentProjection.evaluate(i,now:now)
             try expect(p.status==expected && p.timeLeftFraction==nil,"quota threshold with unknown reset time")
+        }
+        // Amber only when the estimate runs out before the reset; at or after the reset, or already past, it stays normal.
+        for (runOut,reset,expected) in [(3600.0,7200.0,DockQuotaStatus.warning),(7200.0,7200.0,.normal),(9000.0,7200.0,.normal),(-60.0,7200.0,.normal)] {
+            var w=DockQuotaWindowInput(id:"five",period:.fiveHour,label:"5h",remainingPercent:80,resetsAt:now.addingTimeInterval(reset),durationSeconds:18000)
+            w.runOutAt=now.addingTimeInterval(runOut)
+            var i=DockInstrumentInput(id:"sub",name:"Synthetic",windows:[w]);i.dataState = .fresh
+            let p=try DockInstrumentProjection.evaluate(i,now:now)
+            try expect(p.status==expected && p.outer?.status==expected,"decision 2: amber = run-out before reset (\(runOut) vs \(reset))")
+        }
+        do {
+            var w=DockQuotaWindowInput(id:"five",period:.fiveHour,label:"5h",remainingPercent:20,resetsAt:now.addingTimeInterval(7200),durationSeconds:18000)
+            w.runOutAt=now.addingTimeInterval(600)
+            var i=DockInstrumentInput(id:"sub",name:"Synthetic",windows:[w]);i.dataState = .fresh
+            try expect(try DockInstrumentProjection.evaluate(i,now:now).status == .critical,"red wins over amber at or under the red line")
         }
         var w=DockQuotaWindowInput(id:"month",period:.month,label:"Monthly",remainingPercent:30,resetsAt:now.addingTimeInterval(5000),durationSeconds:nil)
         var i=DockInstrumentInput(id:"sub",name:"Synthetic",windows:[w]);i.dataState = .fresh
@@ -418,7 +430,7 @@ do {
                 for used in [false,true] {
                     input.showUsedPercent = used
                     let reading = try DockInstrumentProjection.evaluate(input,now:now,redBelow:threshold)
-                    let expected:DockQuotaStatus = remaining <= threshold ? .critical:.warning
+                    let expected:DockQuotaStatus = remaining <= threshold ? .critical:.normal
                     try expect(reading.status == expected && reading.outer?.status == expected,"readout mode never changes inclusive remaining threshold on a single-window ring")
                 }
             }
@@ -690,7 +702,7 @@ do {
         try expect(DockWidgetFigures.tokens(980)=="980" && DockWidgetFigures.tokens(1_200)=="1.2k" && DockWidgetFigures.tokens(33_900_000)=="33.9M" && DockWidgetFigures.tokens(212_000_000)=="212M" && DockWidgetFigures.tokens(1_500_000_000)=="1.5B" && DockWidgetFigures.tokens(999_960)=="1M" && DockWidgetFigures.tokens(2_000)=="2k","V1-FINAL §0 token figures, never truncated")
         try expect(DockWidgetFigures.duration(minutes:40)=="40m" && DockWidgetFigures.duration(minutes:198)=="3h18" && DockWidgetFigures.duration(minutes:119.7)=="2h00" && DockWidgetFigures.duration(minutes:5*1440+18*60)=="5d18h","V1-FINAL §0 durations")
         let both=DockTodayRow.make(label:"今日",cost:"≈$10.2",tokens:33_900_000,running:"1 个在跑",tokensPerSecond:65.6)
-        try expect(both?.value=="≈$10.2 33.9M" && both?.detail=="● 1 个在跑 · 66 t/s" && both?.kind == .statistic,"left amount, right now")
+        try expect(both?.value=="33.9M ≈$10.2" && both?.detail=="● 1 个在跑 · 66 t/s" && both?.kind == .statistic,"left amount, right now")
         let noCost=DockTodayRow.make(label:"今日",cost:nil,tokens:33_900_000,running:nil,tokensPerSecond:nil)
         try expect(noCost?.value=="33.9M" && noCost?.detail=="","until WP-06 there is no ≈$ and an absent half is left out")
         let rightOnly=DockTodayRow.make(label:"Today",cost:nil,tokens:0,running:nil,tokensPerSecond:61)

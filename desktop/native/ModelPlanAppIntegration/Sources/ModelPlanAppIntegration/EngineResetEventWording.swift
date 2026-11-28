@@ -16,11 +16,9 @@ public struct EngineResetEventWording: Sendable {
 
     public func title(_ event: EngineResetEvent, now: Date) -> String {
         if event.status == "confirmed" {
+            // D466: an absolute time, "今天 00:29" / "Today 00:29", also for a first-seen time (no "09:11 前").
             let at = event.confirmedAt ?? event.publishedAt
-            if event.confirmedAtBasis == "firstSeen" {
-                return english ? "Confirmed by " + time(at, now: now) : "已确认 · " + time(at, now: now) + " 前"
-            }
-            return (english ? "Confirmed · " : "已确认 · ") + time(at, now: now)
+            return (english ? "Confirmed · " : "已确认 · ") + pastTime(at, now: now)
         }
         guard let from = event.scheduledFrom, let through = event.scheduledThrough else {
             return event.isResetCredit ? (english ? "Banked resets announced" : "已公告额外重置")
@@ -41,6 +39,13 @@ public struct EngineResetEventWording: Sendable {
             return english ? "Expected between " + time(from, now: now) + " and " + time(through, now: now)
                            : "预计 " + time(from, now: now) + "–" + time(through, now: now) + " 之间"
         }
+    }
+
+    /// D466: the card's second line for a confirmed banked reset: when it was issued and where it went. The reset only
+    /// adds to the Reserve; no window was reset.
+    public func bankedConfirmedDetail(_ event: EngineResetEvent, now: Date) -> String {
+        let at = pastTime(event.confirmedAt ?? event.publishedAt, now: now)
+        return english ? "Issued " + at.replacingOccurrences(of: "Today ", with: "today ") + ": +1 reset, now in Reserve" : at + " 发放，你多了 1 次重置，已在储备里"
     }
 
     /// The local reading is the only personal fact; a rise after the confirmation is an observation.
@@ -70,8 +75,12 @@ public struct EngineResetEventWording: Sendable {
         }
         return "\(month)月\(day)日"
     }
-    /// Today: the clock only; another day: the day and the clock.
+    /// Today: "今天 00:29" / "Today 00:29"; another day: the day and the clock. Forecast times in the future on the
+    /// same day keep the plain clock ("预计 13:04–15:00 之间").
     private func time(_ date: Date, now: Date) -> String {
         calendar.isDate(date, inSameDayAs: now) ? clock(date) : day(date) + " " + clock(date)
+    }
+    private func pastTime(_ date: Date, now: Date) -> String {
+        calendar.isDate(date, inSameDayAs: now) ? (english ? "Today " : "今天 ") + clock(date) : day(date) + " " + clock(date)
     }
 }

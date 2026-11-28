@@ -802,7 +802,8 @@ extension P1ExactPlacementTests {
             }
             return count
         }
-        // The default threshold (25) makes 20% red; 15 makes the same reading amber; back to red.
+        // The default threshold (25) makes 20% red; 15 makes the same reading normal (D474 decision 2: no estimate, no
+        // amber); back to red.
         XCTAssertEqual(try reading().status, .critical)
         XCTAssertEqual(try reading().outer?.status, .critical)
         let red = try ringRedPixels()
@@ -811,8 +812,8 @@ extension P1ExactPlacementTests {
         }
         XCTAssertGreaterThan(red, 0, "the ring paints its red band at 20% with the default threshold")
         try await settings.commit(.redBelow(15))
-        try await settled("the ring leaves red") { (try? reading().outer?.status) == .warning }
-        XCTAssertEqual(try reading().status, .warning)
+        try await settled("the ring leaves red") { (try? reading().outer?.status) == .normal }
+        XCTAssertEqual(try reading().status, .normal)
         XCTAssertEqual(try ringRedPixels(), 0, "no red band above the committed threshold")
         try await settings.commit(.redBelow(25))
         try await settled("the ring returns to red") { (try? reading().outer?.status) == .critical }

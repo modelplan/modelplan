@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: MIT
 import Foundation
 import OSLog
+import CoreGraphics
 import ModelPlanEngineStore
 import ModelPlanEngineClient
 import ModelPlanWire
 import ModelPlanCommunityHost
 import ModelPlanSettings
 import ModelPlanDock
+import ModelPlanCockpitWeb
 import ModelPlanResources
 
 @MainActor private final class EngineDockClock {
@@ -24,6 +26,8 @@ public struct EngineMenuRefreshResult {
     public let provider: EngineDockMenuProvider
     public let dock: StaticDockPreviewHost
     private let adapter: EngineDockContentProvider
+    /// D466: the content provider that owns the shared news clock (the cockpit's news bridge asks it).
+    var contentProvider: EngineDockContentProvider { adapter }
     private let admittedCache = HostPairedContentCache()
     private var deadlineLifecycleSuspended = false
     private var pendingProjectionReplacement = false
@@ -128,6 +132,10 @@ public struct EngineMenuRefreshResult {
     private var resetNotifier:EngineResetNotifier?
     private var forecastNotifier:EngineForecastNotifier?
     private var resetScratch:URL?
+    private var newsPresence: NewsPresenceMonitor?
+    private var seenBinding: SeenSubscriptionsBinding?
+    /// Decision 3 (D474): the seen-subscriptions memory, for the cockpit's `seen` message. Nil unless the live app installed it.
+    public private(set) var seenSubscriptions: DockSeenSubscriptionsStore?
     public var menuDidChange: (() -> Void)?
     public private(set) var latestSettings: SettingsApplication?
     public var settingsDidChange: ((SettingsApplication) -> Void)?
@@ -163,6 +171,12 @@ public struct EngineMenuRefreshResult {
         adapter = EngineDockContentProvider(source: provider)
         dock = ProductionDockFactory.community(createsNativePanels: createsNativePanels, nativeEnvironment: dockEnvironment, currentDate: { clock.now() }, edition: edition)
         adapter.bindDockMenuTracking(dock)
+        // Master spec §2.1 (D474): the card's 今天 row reads the same `cost.daily` sums as the cockpit.
+        adapter.todayFigures = { [weak store] ref in
+            guard let sum = CockpitCostTotals.subscription(store?.snapshot.cockpit, ref: ref, range: .today, now: clock.now()) else { return nil }
+            return (sum.tokens, sum.estimatedUSD.flatMap(CockpitCostTotals.text))
+        }
+        dock.newsClock = adapter.newsClock
         _ = pairedProjection
         // G3-136: the empty ring's one line comes from the same admitted rows as the menu.
         dock.emptyStationReason = { [weak self] in
@@ -312,6 +326,28 @@ public struct EngineMenuRefreshResult {
         } else if live {
             base=ProfileRoot.current.modelPlanSupport
         } else { base=FileManager.default.temporaryDirectory.appendingPathComponent("modelplan-s4-"+UUID().uuidString,isDirectory:true);resetScratch=base }
+        // D466: the news clock survives a restart (one small JSON beside the notification ledger); the content provider
+        // ticks it and the Dock host records looks on the same instance.
+        if live, isolatedLedger == nil {
+            let clock = DockNewsClockStore(url: base.appendingPathComponent("news-clock.json"))
+            adapter.newsClock = clock; dock.newsClock = clock
+            // Master spec §5.3: present = awake, unlocked, in the console session and not idle (read at the refresh
+            // tick); sleep, screen sleep and lock close the span through their notifications.
+            adapter.isPresent = { NewsPresenceMonitor.isPresentNow() }
+            newsPresence?.stop(); newsPresence = NewsPresenceMonitor(clock: clock)
+            // Decision 3 / C45 (D474): rings and cockpit columns only after a first good reading on this Mac. Member
+            // keys only, 0600, cleared with Forget and a privacy clear.
+            let seen = DockSeenSubscriptionsStore(url: base.appendingPathComponent("seen-subscriptions.json"))
+            adapter.seenSubscriptions = seen; seenSubscriptions = seen
+            // macrev2-1289-5: once the first delivery names the consent scope, the widget projects again with (or without)
+            // the saved memory.
+            seen.onScopeChange = { [weak self] in
+                guard let self else { return }
+                self.pairedProjection.invalidate()
+                if !self.deadlineLifecycleSuspended { self.deadlineDriver.replace() }
+            }
+            seenBinding?.stop(); seenBinding = SeenSubscriptionsBinding(store: store, seen: seen)
+        }
         do {
             let notifier=try EngineResetNotifier.recovering(composition:self,settings:settings,cacheURL:isolatedLedger ?? base.appendingPathComponent("reset-notifications.json"),deliverToSystem:live && isolatedLedger == nil)
             resetNotifier=notifier;notifier.start()
@@ -419,5 +455,5 @@ public struct EngineMenuRefreshResult {
     }
     func suspendDeadlines() { deadlineLifecycleSuspended = true; activityExpiryTask?.cancel(); activityExpiryTask = nil; pairedProjection.invalidate(); deadlineDriver.suspend() }
     func resumeDeadlines() { deadlineLifecycleSuspended = false; pairedProjection.invalidate(); deadlineDriver.replace() }
-    public func stop() async { activityExpiryTask?.cancel(); activityExpiryTask = nil; resetNotifier?.stop(); deadlineDriver.close(); dock.close(); await client.stop(); if let resetScratch { try? FileManager.default.removeItem(at:resetScratch) } }
+    public func stop() async { activityExpiryTask?.cancel(); activityExpiryTask = nil; resetNotifier?.stop(); newsPresence?.stop(); newsPresence = nil; seenBinding?.stop(); seenBinding = nil; deadlineDriver.close(); dock.close(); await client.stop(); if let resetScratch { try? FileManager.default.removeItem(at:resetScratch) } }
 }

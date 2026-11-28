@@ -47,9 +47,13 @@ import ModelPlanSettings
         func writeReadings(_ remaining: [Int]) throws {
             let now = Date()
             let windows = zip(ids, remaining).map { id, percent -> [String: Any] in
-                ["planId": id, "kind": "five_hour", "remainingPercent": percent, "resetMode": "rolling",
+                // D474 decision 2: amber is an estimate that runs out before the reset, so the fixture must make the
+                // CLI forecast one. A fixed 5 h window 50 min in with 250 min left: at 50 % used the cycle-average pace
+                // (quota.go: projected > 100 and used >= 50) is tight and runs out ~50 min after the reading, before the
+                // reset; 49 % / 48 % used are not tight (no estimate, normal); 75 % used is red at the red line anyway.
+                ["planId": id, "kind": "five_hour", "remainingPercent": percent, "resetMode": "fixed",
                  "observedAt": iso.string(from: now.addingTimeInterval(-15)),
-                 "resetAt": iso.string(from: now.addingTimeInterval(7_200))]
+                 "resetAt": iso.string(from: now.addingTimeInterval(15_000))]
             }
             let fixture: [String: Any] = ["schemaVersion": 1, "plans": ids.map { ["planId": $0] }, "windows": windows]
             try JSONSerialization.data(withJSONObject: fixture).write(to: config.appendingPathComponent("local.json"), options: .atomic)

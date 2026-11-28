@@ -166,6 +166,7 @@ struct StatusNoticePresentation {
     /// D324: the resource plugin's sampler host and the plugin choices it follows (kept for the app's lifetime).
     var resourcePlugin: ResourcePluginHost?
     var cockpitPluginModel: CockpitPluginSettingsModel?
+    var cockpitNews: CockpitNewsBridge?
     private var prewarmReleased = false
     private var setupScanObserver: UUID?
     /// Done with nothing read yet: the widget appears when the first tool is read, then Find Quota Widget runs once.
@@ -1349,7 +1350,14 @@ struct StatusNoticePresentation {
         // Always present, hidden when the range has no figure, so an open menu can show or clear it (MENU-52).
         let total = rangeTotalLine(range, language: language)
         menuItems.append(.init(title: total ?? "", accessibilityID: "status.rangeTotal", hidden: total == nil))
-        let admitted = composition.presentedContent.snapshot.presentationRows
+        // Master spec S2 (D474, C30): the worst quota alert in the SHORT sentence form, under the total line.
+        let presented = composition.presentedContent
+        if !lifecyclePaused, content.status == .ready,
+           let alert = MenuAlertLine.text(presented, redBelow: Double(composition.latestSettings?.effective.redBelow ?? SettingsPreferences().redBelow),
+                                          now: composition.currentDate(), language: language) {
+            menuItems.append(.init(title: alert, accessibilityID: "status.alert"))
+        }
+        let admitted = presented.snapshot.presentationRows
         unavailableMemberRefreshes.formIntersection(Set(admitted.keys))
         // Some reader failures publish an admitted provider row without any
         // account. Such failures still need the same Diagnostics action.
@@ -1376,7 +1384,8 @@ struct StatusNoticePresentation {
             diagnosticFacts.append(.init(providerID: member.rowID, name: provider, condition: condition))
         }
         let diagnostics = ProviderDiagnosticSummary.lines(diagnosticFacts, english: english)
-        let openDiagnostics: (() -> Void)? = available ? { [weak self] in Task { await self?.settingsHost.present(paneID: "diagnostics", origin: .userInitiated) } } : nil
+        // Master spec S2 / S17 (D474): the grey health line opens Settings › 订阅, where each subscription shows its fix.
+        let openDiagnostics: (() -> Void)? = available ? { [weak self] in Task { await self?.settingsHost.present(paneID: "subscriptions", origin: .userInitiated) } } : nil
         // MENU-50: one problem line. Feedback and the paused state come first (paused with a retry is the retry); then
         // one subscription's own line, or a count when more than one has a problem; then a newly detected tool (D238).
         if let feedback = helpError ?? showFeedbackText(language) { menuItems.append(.init(title: feedback)) }
@@ -1443,8 +1452,14 @@ struct StatusNoticePresentation {
     /// The ≈cost segment arrives with WP-06.
     func rangeTotalLine(_ range: CockpitRange, language: SettingsLanguage) -> String? {
         guard composition.provider.dockContent.status != .cleared else { return nil }
-        return MenuRangeSummary.line(tokens: CockpitRangeTotals.outputTokens(composition.store.snapshot.cockpit, range: range),
-                                     cost: nil, language: language)
+        let data = composition.store.snapshot.cockpit
+        // Master spec §2.1 / S2 (D474): total tokens and ≈$ from `cost.daily`, the same sums as the cockpit's 总览; a reply
+        // without a cost section keeps the older output-token figure.
+        if let sum = CockpitCostTotals.total(data, range: range, now: composition.currentDate()), sum.tokens > 0 || sum.estimatedUSD != nil {
+            return MenuRangeSummary.line(tokens: sum.tokens > 0 ? sum.tokens : nil,
+                                         cost: sum.estimatedUSD.flatMap(CockpitCostTotals.text), language: language)
+        }
+        return MenuRangeSummary.line(tokens: CockpitRangeTotals.outputTokens(data, range: range), cost: nil, language: language)
     }
     /// The open menu keeps its rows (G3-122); only the total line's text follows a range chosen in it.
     private func updateOpenRangeTotals(_ range: CockpitRange) {
@@ -1490,7 +1505,7 @@ struct StatusNoticePresentation {
         var autoReading: StatusAutoReading?
         if setUp { title = "\u{00B7}\u{00B7}\u{00B7}" }
         else if composition.latestSettings?.snapshot.preferences.menuDisplay == .automatic {
-            // D377 option C: the icon alone, a compact number below the alert line, a red dot when used up.
+            // D377 option C + D476: the icon alone, a compact number when red or amber (none when crowded), a red dot when used up.
             let now = composition.currentDate()
             let mode = statusAuto.resolve(composition.menuAutoInput, squeezed: statusItemHidden, displayEpoch: displayEpoch, now: now)
             armStatusAutoRecheck(now: now)
@@ -1562,6 +1577,9 @@ struct StatusNoticePresentation {
     private var statusAccessibilityHelp: String?
     private var statusTooltipHidden: Bool { console?.isShowing == true }
     func refreshStatusTooltip() {
+        // Master spec §7.4 (D473): the ignition's tooltip says what its press does now.
+        composition.dock.ignitionCockpitState = console?.isShowing == true
+            ? (console?.isDetached == true ? .detachedOpen : .dockedOpen) : .closed
         // G3-62: a tip shown for the ignition key goes when the cockpit opens, and stays away while it is open.
         dockHelp?.setCockpitShowing(statusTooltipHidden)
         guard let button = status?.button else { return }

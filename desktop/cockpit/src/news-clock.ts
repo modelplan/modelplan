@@ -139,7 +139,9 @@ export function newsRetired(e:WireResetEvent,data:WireCockpitData,now:number):bo
   for(const w of m.account.windows){
    const reset=ms(w.resetsAt),span=w.durationSeconds;
    if(!w.current||reset===null||span===null||span<=18000||reset<=now)continue;
-   if(reset-span*1000>=confirmed-NEWS_RESTART_SKEW_MS)return true;
+   // #1289 R11 round 5: a cycle cannot begin in the future; a computed start after now never counts.
+   const start=reset-span*1000;
+   if(start<=now&&start>=confirmed-NEWS_RESTART_SKEW_MS)return true;
   }
  }
  return false;

@@ -95,12 +95,13 @@ import ModelPlanWire
             let texts = view.subviews.flatMap { [$0] + $0.subviews }.compactMap { ($0 as? NSTextField)?.stringValue }
             switch member {
             case .tight:
-                XCTAssertTrue(texts.contains("2 分钟前更新")); XCTAssertTrue(texts.contains("约40m用完"))
+                XCTAssertTrue(texts.contains("2 分钟前更新")); XCTAssertTrue(texts.contains("预估 40m 用完"))
                 XCTAssertTrue(texts.contains("Tight 5小时 9% · 预估 40m 用完 · 2h00 后重置"), "the footer sentence is painted")
             case .keptOld:
                 XCTAssertTrue(texts.contains("3 小时前更新")); XCTAssertTrue(texts.contains("63%"))
             default:
-                XCTAssertTrue(texts.contains("未登录")); XCTAssertTrue(texts.contains("打开 Unread 并登录"))
+                // Master spec §3.4 (D474): one reading ladder, the rung then the one step (as WP15WidgetCardStateTests).
+                XCTAssertTrue(texts.contains("读不到 · 需要登录"), "\(texts)"); XCTAssertTrue(texts.contains("打开 Unread"), "\(texts)")
                 let buttons = view.subviews.compactMap { $0 as? NSButton }.map(\.title)
                 XCTAssertEqual(buttons, ["重新读取"])
             }

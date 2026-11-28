@@ -14,6 +14,9 @@ public struct DockContentSnapshot: Sendable {
     /// The producer's run-out forecasts from the same delivery (WP-03), for the widget card's "out ~40m" (WP-15).
     /// The provider admits one only for a current window of the same verified subscription.
     public var forecasts: [WireCockpitForecast] = []
+    /// The publication's peak windows (cockpit details), for the card's "接下来" block (D466). Empty when the producer
+    /// sends none; the provider keeps only the rows of this user's members.
+    public var peaks: [WireCockpitPeak] = []
 }
 /// Presentation fanout over the native store's already-admitted rows, never a protocol reducer.
 @MainActor public final class EngineDockMenuProvider: EngineStoreSink {
@@ -53,7 +56,8 @@ public struct DockContentSnapshot: Sendable {
                             menuRows: rows?.rows.filter { $0.surfaces.contains(.menu) } ?? [],
                             settingsRows: rows?.rows.filter { $0.surfaces.contains(.settings) } ?? [],
                             summary: rows?.rowsSummary,
-                            forecasts: rows?.forecasts ?? [])
+                            forecasts: rows?.forecasts ?? [],
+                            peaks: snapshot.cockpit?.details?.peaks ?? [])
         dockContentDidChange?()
     }
 }

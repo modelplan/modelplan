@@ -1709,7 +1709,7 @@ const evalGui = ({ files = [file(RING)], runs = greenCi, statuses = [compileOk],
 test("D481: a ready PR whose paths map to GUI classes waits for an exact-head PR GUI run of them", () => {
   const waiting = evalGui();
   assert.equal(waiting.state, R.PENDING);
-  assert.match(waiting.why, /^waiting for PR GUI run \(classes: CommunityDockSnapshotTests, D65ZeroQuotaTests, DockAccessibilityFrameTests \+\d+\)/);
+  assert.match(waiting.why, /^waiting for PR GUI run \(classes: (?:\w+, ){2}\w+ \+\d+\)/);
   assert.ok(waiting.guiClasses.includes("app-integration:D65ZeroQuotaTests"), "the full list is in the logged result");
   assert.ok(R.description(waiting.why).length <= 140);
   assert.equal(evalGui({ runs: [...greenCi, guiRun("success", 50, "completed", { jobs: guiJobs, guiRecord: ringRecord, guiAbsent: "none" })] }).state, R.SUCCESS);

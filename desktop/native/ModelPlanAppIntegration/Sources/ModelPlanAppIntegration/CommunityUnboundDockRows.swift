@@ -30,6 +30,10 @@ public struct DockContentRow: Sendable {
     public let cardReadingState: DockCardReadingState
     /// WP-15: a window's admitted run-out forecast (WP-03), before its reset; the card row says "约40m用完" instead.
     public let runOutTimes: [String: Date]
+    /// D466: this subscription's published peak windows (empty when the producer sends none); `hasPeakRules` is whether it
+    /// has peak rules at all, so "now off-peak" can be said.
+    public var peaks: [DockPeakWindow] = []
+    public var hasPeakRules = false
     public init(input: DockInstrumentInput, reason: String, nextStep: String, originalObservedAt: Date? = nil,
                 plan:String="",sourceName:String="",resetTimes:[String:Date]=[:],windowDescriptions:[String:String]=[:],additionalRows:[DockCardRow]=[],resetCountExpiry: Date? = nil,links:[DockCardLink]=[],windowObservations:[String:DockWindowObservation]?=nil,cardReadingState:DockCardReadingState?=nil,runOutTimes:[String:Date]=[:]) {
         self.input = input; self.reason = reason; self.nextStep = nextStep; self.runOutTimes = runOutTimes
@@ -64,26 +68,28 @@ public struct DockContentRow: Sendable {
     /// DOCK-3.8-50 (V1-FINAL §2, board-3 item 5): the card header's right side is only the age of the reading the ring
     /// shows, "3 分钟前更新" / "Updated 3 min ago". The source moved to Settings' diagnostics. A kept reading names its own age.
     public func cardUpdatedText(at now: Date, language: SettingsLanguage, selectedWindowID: String? = nil) -> String {
+        WidgetCardText.updated(WidgetCardText.age(observedAt: cardObservedAt(selectedWindowID: selectedWindowID), now: now)).value(language)
+    }
+    /// Master spec header (D474): over an hour old, the age is drawn in ink-3.
+    public func cardAgeOverAnHour(at now: Date, selectedWindowID: String? = nil) -> Bool {
+        guard let observed = cardObservedAt(selectedWindowID: selectedWindowID) else { return false }
+        let seconds = now.timeIntervalSince(observed)
+        return seconds.isFinite && seconds >= 3600
+    }
+    private func cardObservedAt(selectedWindowID: String?) -> Date? {
         var observed = originalObservedAt
         if let window = selectedWindowID.flatMap({ id in input.windows.first { $0.id == id } }) {
             if case .retained(let at, _) = window.validity { observed = at }
             else if let fact = windowObservations?[window.id]?.observedAt { observed = fact }
         }
-        return WidgetCardText.updated(WidgetCardText.age(observedAt: observed, now: now)).value(language)
+        return observed
     }
-    /// V1-FINAL §0, §2: a quota row's right side. "约40m用完" when the forecast runs out before the reset, else
-    /// "5d18h 后重置"; blank when neither is known (board-3: no "--" there). No per-row source or age.
+    /// Master spec S4 / decision 1 (D474): a quota row's line 1 is always the real reset, "5d18h 后重置"; blank when it is
+    /// not known (board-3: no "--" there). The estimate moved to line 2 (`cardRowSecondLines`). No per-row source or age.
     public func cardRowDetails(at now: Date, language: SettingsLanguage) -> [String: String] {
-        func minutes(until date: Date) -> Double? {
-            let seconds = date.timeIntervalSince(now)
-            guard seconds.isFinite, seconds > 0, seconds < Double(Int.max / 60) else { return nil }
-            return ceil(seconds / 60)
-        }
         return input.windows.reduce(into: [:]) { result, window in
             var detail = ""
-            if let runOut = runOutTimes[window.id], let m = minutes(until: runOut) {
-                detail = WidgetCardText.runsOutIn(DockWidgetFigures.duration(minutes: m)).value(language)
-            } else if let reset = resetTimes[window.id] ?? window.resetsAt, let m = minutes(until: reset) {
+            if let reset = resetTimes[window.id] ?? window.resetsAt, let m = Self.minutes(until: reset, now: now) {
                 detail = WidgetCardText.resetsIn(DockWidgetFigures.duration(minutes: m)).value(language)
             }
             if let description = windowDescriptions[window.id], !description.isEmpty, description != window.label {
@@ -91,6 +97,43 @@ public struct DockContentRow: Sendable {
             }
             result[window.id] = detail
         }
+    }
+    private static func minutes(until date: Date, now: Date) -> Double? {
+        let seconds = date.timeIntervalSince(now)
+        guard seconds.isFinite, seconds > 0, seconds < Double(Int.max / 60) else { return nil }
+        return ceil(seconds / 60)
+    }
+    /// Master spec S4 / decision 1 (D474): a quota row's line 2, for a current reading only. Used up: "已用完". An estimate
+    /// before the reset: "预估 40m 用完" (the projection colours it amber, or red at the red line). Otherwise, with a reset
+    /// ahead: "够用到重置" in ink-3. A kept or failing reading says nothing here.
+    public func cardRowSecondLines(at now: Date, language: SettingsLanguage) -> [String: DockCardSecondLine] {
+        guard cardReadingState == .ok else { return [:] }
+        return input.windows.reduce(into: [:]) { result, window in
+            guard let remaining = DockInstrumentProjection.admittedRemaining(window, in: input, now: now) else { return }
+            if remaining <= 0 {
+                result[window.id] = .init(kind: .usedUp, text: WidgetCardText.usedUp.value(language))
+            } else if let runOut = runOutTimes[window.id], let m = Self.minutes(until: runOut, now: now) {
+                result[window.id] = .init(kind: .estimate, text: WidgetCardText.estimateOut(DockWidgetFigures.duration(minutes: m)).value(language))
+            } else if let reset = resetTimes[window.id] ?? window.resetsAt, Self.minutes(until: reset, now: now) != nil {
+                result[window.id] = .init(kind: .lasts, text: WidgetCardText.lastsToReset.value(language))
+            }
+        }
+    }
+    /// D466 section 5: the card's "接下来" block, the same lines as the cockpit strip hover. It replaces the footer alert
+    /// sentence, which repeated the quota row above it.
+    func cardNextRows(at now: Date, english: Bool, inAlert: Bool = false, calendar: Calendar = .current) -> [DockCardRow] {
+        var facts = [DockNextFact]()
+        for window in input.windows where window.isGeneral {
+            guard let reset = resetTimes[window.id] ?? window.resetsAt, reset > now else { continue }
+            switch window.period {
+            case .fiveHour: facts.append(DockNextFact(kind: .fiveHourReset, at: reset))
+            case .week: facts.append(DockNextFact(kind: .weeklyReset, at: reset))
+            case .month: facts.append(DockNextFact(kind: .monthlyReset, at: reset))
+            case .day, .other: break
+            }
+        }
+        for (_, runOut) in runOutTimes where runOut > now { facts.append(DockNextFact(kind: .runOut, at: runOut)) }
+        return DockNextBlock.rows(facts: facts, peaks: peaks, hasPeakRules: hasPeakRules, now: now, english: english, inAlert: inAlert, calendar: calendar)
     }
     /// The reserve brightens under an alert only when a reset is there to use (V1-FINAL §2 item 5).
     /// macrevb-1051-2: judged at presentation time; a positive count whose earliest expiry has passed is not spendable.
@@ -131,9 +174,12 @@ public struct DockContentRow: Sendable {
         let notes = ([expiryText] + [count?.detail ?? "", credits?.detail ?? ""].flatMap { $0.components(separatedBy: " · ") })
             .filter { !$0.isEmpty && seen.insert($0).inserted }
         // The line is plain labelled text ("Resets 1 · Credits 19,614"), never an icon plus bare figures and never swapped on hover.
+        // Master spec §5.1 / C7 (D474): within 48 h the expiry clause is amber (the row tone colours only the clause, which
+        // leads the detail); never a dot, never the ring.
+        let soon = count != nil && ReserveExpiry.soon(resetCountExpiry, now: now)
         let reserve = DockCardRow(id: "reserve", kind: .reserve, label: english ? "Reserve" : "储备",
             value: Self.reserveText(resets: count?.value, credits: credits?.value, creditsClass: credits?.hint ?? "", creditsLabel: credits?.label ?? "", english: english),
-            detail: notes.joined(separator: " · "))
+            detail: notes.joined(separator: " · "), tone: soon ? .warning : .unknown)
         var placed = false
         return additionalRows.flatMap { row -> [DockCardRow] in
             guard row.id == "reset-count" || row.id == "credits" else { return [row] }

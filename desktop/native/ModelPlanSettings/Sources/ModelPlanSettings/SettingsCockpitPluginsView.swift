@@ -42,7 +42,7 @@ import AppKit
     /// The pane that shows the section (WP-16 moved it from Cockpit to Subscriptions; D376 gave it its own pane).
     public static let paneID = "plugins"
     /// Words a search names the section by (D376).
-    static let searchWords = ["plugin", "插件", "resource", "资源", "calendar", "日历", "cockpit", "驾驶舱"]
+    static let searchWords = ["plugin", "插件", "resource", "资源", "cockpit", "驾驶舱"]
     /// D376 / D324: the resource plugin's cadence note under its options line.
     static func samplingNote(_ pluginID: String) -> SettingsText? {
         pluginID == "resources"

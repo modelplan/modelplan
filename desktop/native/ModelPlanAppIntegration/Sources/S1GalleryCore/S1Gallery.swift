@@ -279,9 +279,9 @@ private struct S1FlameManifest: Decodable {
                     let expectedIDs = Array(["codex", "claude", "zhipu", "cursor", "ocgo", "copilot", "kimi"].prefix(capture.count))
                     let countOK = ids == expectedIDs
                     record["registeredStationCount"] = ids.count; record["membershipAssertion"] = countOK ? "pass" : "fail"
-                    let expectedNoticeIDs = Set(expectedIDs.filter { $0 == "codex" || $0 == "claude" })
+                    // D466: the fixture's reserve-expiry and forecast signals no longer draw a dot; only reset news does.
                     let actualNotices = host.dockView.presentedNoticesForChecks
-                    let noticeOK = Set(actualNotices.keys) == expectedNoticeIDs && actualNotices.values.allSatisfy { $0.tone == .amber && $0.shape == .solid }
+                    let noticeOK = actualNotices.isEmpty
                     record["syntheticNoticeAssertion"] = noticeOK ? "pass" : "fail"
                     record["syntheticNoticeKinds"] = actualNotices.mapValues { String(describing: $0.key.kind) }
                     let zStation = skin.stations.first { $0.subscriptionID == "zhipu" }
@@ -291,7 +291,7 @@ private struct S1FlameManifest: Decodable {
                     let expectedLayers = ["a1-01-bell-wall", "a1-03-deep-centre", "a1-02-throat-lip", "a1-04-exit-lip"].map { "\($0)-\(sourceSize)px@3x.webp" }
                     let p1OK = skin.stations.filter { $0.subscriptionID != nil }.allSatisfy { $0.layers == expectedLayers && $0.radialOverlay?.alphas.count == 65 }
                     record["p1LayersAssertion"] = p1OK ? "pass" : "fail"
-                    record["contentAssertion"] = "partial: fixture cards/forecast provided; actual public reset-event provider pending"
+                    record["contentAssertion"] = "partial: fixture cards/forecast provided (no dot since D466); actual public reset-event provider pending"
                     record["skinBounds"] = [skin.bounds.minX, skin.bounds.minY, skin.bounds.width, skin.bounds.height]
                     let oracle = oracleCases.first { ($0["edge"] as? String) == capture.edge && ($0["D"] as? Int) == capture.size && ($0["count"] as? Int) == capture.count && !($0["aliases"] as? Bool ?? false) }
                     var geometryError = Double.infinity
@@ -346,7 +346,8 @@ private struct S1FlameManifest: Decodable {
                         record["singleWindowCases"] = singleRows
                         let requiredInk = Set(expectedIDs.filter { $0 == "claude" || $0 == "cursor" })
                         let inkOK = Set(result.ink.keys) == requiredInk && result.ink.values.allSatisfy { $0 } && (requiredInk.isEmpty || result.maskedPixels > 0)
-                        let noticeInkOK = Set(result.noticeInk.keys) == expectedNoticeIDs && result.noticeInk.values.allSatisfy { $0 }
+                        // D466: no station draws a notice in this fixture, so no notice ink is expected either.
+                        let noticeInkOK = result.noticeInk.isEmpty
                         status = countOK && geometryOK && inkOK && noticeOK && noticeInkOK && zOK && p1OK && result.similarity >= 0.97 ? "partial: metric and fixture assertions pass; real reset-event provider and owner review pending" : "fail: metric, geometry, ink, notice, art or membership assertion"
                     } catch {
                         try png.write(to: output.appendingPathComponent(nativeName), options: .withoutOverwriting)

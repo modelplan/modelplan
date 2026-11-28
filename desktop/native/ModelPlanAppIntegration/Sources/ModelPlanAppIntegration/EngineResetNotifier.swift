@@ -118,9 +118,10 @@ import ModelPlanSettings
     /// A current reading of the event's row whose window restarted after the confirmation (direct resets only;
     /// banked resets wait for the user to redeem them). An observation for the wording, never a confirmation.
     static func localReadingRose(after event: EngineResetEvent, in composition: EngineDockMenuComposition) -> Bool {
-        composition.accountMembers.members.contains { member in
+        let now = composition.currentDate()
+        return composition.accountMembers.members.contains { member in
             member.rowID == event.rowID && (event.planIDs.map { $0.contains(member.account.plan.id) } ?? true) &&
-            event.restartedReading(in: member.account)
+            event.restartedReading(in: member.account, at: now)
         }
     }
     /// "Quota reset" (Settings kind `.reset`): a current reading of a member window reports a

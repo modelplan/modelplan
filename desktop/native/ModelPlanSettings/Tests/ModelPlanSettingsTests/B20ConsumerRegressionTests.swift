@@ -47,7 +47,7 @@ final class B20ConsumerRegressionTests: XCTestCase {
         for (remaining, expectedText, expectedStatus) in [
             (19.0, "81%", DockQuotaStatus.critical),
             (20.0, "80%", .critical),
-            (21.0, "79%", .warning),
+            (21.0, "79%", .normal), // D474 decision 2: above the red line with no estimate, no amber
         ] {
             let reading = try DockInstrumentProjection.evaluate(
                 restored.applying(to: input(remaining: remaining)), now: now,
