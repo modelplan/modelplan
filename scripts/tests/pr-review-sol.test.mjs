@@ -488,6 +488,27 @@ test("D492: a hanging GLM request is bounded, retried once, then the other provi
   assert.ok(6 * 60000 * 2 + 8000 < 20 * 60000);
 });
 
+test("D492 round 1: a body cut off after 200 headers retries once, then times out (GLM); OpenAI keeps its old 5-retry policy", async () => {
+  let hits = 0;
+  const srv = createServer((req, res) => { hits++; res.writeHead(200, { "content-type": "application/json", "content-length": "500" }); res.write('{"choices":['); setTimeout(() => res.destroy(), 20); });
+  await new Promise((ok) => srv.listen(0, "127.0.0.1", ok));
+  try {
+    const base = `http://127.0.0.1:${srv.address().port}`;
+    await assert.rejects(P.glmProvider({ key: "k", baseUrl: base, waitMs: 0, timeoutMs: 5000 }).review("x"), (e) => e.kind === "timeout" && /timed out twice/.test(e.message));
+    assert.equal(hits, 2, "one attempt plus one retry, no empty answer");
+    const w = await P.reviewInOrder({ input: "x", order: ["glm"], build: () => P.glmProvider({ key: "k", baseUrl: base, waitMs: 0, timeoutMs: 5000 }) });
+    assert.equal(w.provider, "waiting");
+  } finally { srv.close(); }
+  // OpenAI: two disconnects, then success, still succeeds (old policy, not the GLM bound)
+  let n = 0;
+  const f = async () => { if (++n <= 2) throw new TypeError("fetch failed"); return { ok: true, status: 200, json: async () => ({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: "gpt" }] }], usage: {} }) }; };
+  const r = await P.openaiProvider({ key: "k", model: "m", effort: "medium", fetchImpl: f, pollMs: 1, waitMs: 0 }).review("x");
+  assert.equal(r.text, "gpt");
+  assert.equal(n, 3);
+  // OpenAI exhausting its retries is still kind "other" (does not move on)
+  await assert.rejects(P.openaiProvider({ key: "k", model: "m", effort: "medium", fetchImpl: async () => { throw new TypeError("fetch failed"); }, pollMs: 1, waitMs: 0 }).review("x"), (e) => e.kind === "other");
+});
+
 test("providers: quota detection (codes, billing limit, sustained 429) and the GLM chat endpoint", async () => {
   const reply = (status, body) => ({ ok: status < 300, status, json: async () => body });
   const seq = (...rs) => { const calls = []; return { calls, f: async (url, init) => { calls.push({ url, init }); return rs.length > 1 ? rs.shift() : rs[0]; } }; };

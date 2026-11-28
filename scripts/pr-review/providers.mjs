@@ -24,18 +24,24 @@ const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
 // head gets the review-waiting note). Before, 6 attempts x 180 s plus the back-off held a run for 20 minutes.
 export const REQUEST_TIMEOUT_MS = 360000;
 export const NETWORK_RETRIES = 1;
-// One JSON request with retries for 5xx and 429 (and, once, a network error or timeout). A quota code ends it at
-// once; a 429 that survives every retry (about two minutes with the default waits) is a sustained 429 and counts as quota.
-async function requestJson(fetchImpl, url, init, { retries = 5, waitMs = 8000, label, timeoutMs = REQUEST_TIMEOUT_MS }) {
+// The bounded policy is the GLM provider's (bounded: true). Others keep the old one: 180 s per attempt, up to 5 network
+// retries with growing back-off, a final failure of kind "other".
+// One JSON request with retries for 5xx and 429 and for network errors. A quota code ends it at once; a 429 that survives
+// every retry (about two minutes with the default waits) is a sustained 429 and counts as quota. A body that is cut
+// off or aborted after the headers is a network error like a failed connect; only unparsable JSON becomes null.
+async function requestJson(fetchImpl, url, init, { retries = 5, waitMs = 8000, label, timeoutMs, bounded = false }) {
+  const tmo = timeoutMs ?? (bounded ? REQUEST_TIMEOUT_MS : 180000);
+  const netMax = bounded ? Math.min(retries, NETWORK_RETRIES) : retries;
   let netFails = 0;
   for (let attempt = 0; ; attempt++) {
     let r, j;
     try {
-      r = await fetchImpl(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
-      j = await r.json().catch((e) => { if (e?.name === "TimeoutError" || e?.name === "AbortError") throw e; return null; });
+      r = await fetchImpl(url, { ...init, signal: AbortSignal.timeout(tmo) });
+      j = await r.json().catch((e) => { if (e instanceof SyntaxError) return null; throw e; });
     } catch (e) {
-      if (netFails < Math.min(retries, NETWORK_RETRIES)) { netFails++; await sleep(waitMs); continue; }
-      throw new ProviderError("timeout", `${label}: network error (${e.name}); ${label === "glm" ? "GLM" : label} timed out twice`);
+      if (netFails < netMax) { netFails++; await sleep(bounded ? waitMs : waitMs * netFails); continue; }
+      if (bounded) throw new ProviderError("timeout", `${label}: network error (${e.name}); ${label === "glm" ? "GLM" : label} timed out twice`);
+      throw new ProviderError("other", `${label}: network error (${e.name})`);
     }
     const code = j?.error?.code ?? j?.error?.type ?? "";
     if (r.ok) return j;
@@ -105,7 +111,7 @@ export function glmProvider({ key, baseUrl, model = GLM_MODEL, fallbackModel = G
   const call = (m, input) => requestJson(fetchImpl, url, {
     method: "POST", headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
     body: JSON.stringify({ model: m, messages: [{ role: "user", content: input }], stream: false, max_tokens: 32000 }),
-  }, { label: "glm", ...(waitMs !== undefined ? { waitMs } : {}), ...(timeoutMs !== undefined ? { timeoutMs } : {}) });
+  }, { label: "glm", bounded: true, ...(waitMs !== undefined ? { waitMs } : {}), ...(timeoutMs !== undefined ? { timeoutMs } : {}) });
   return {
     name: "glm",
     model,
