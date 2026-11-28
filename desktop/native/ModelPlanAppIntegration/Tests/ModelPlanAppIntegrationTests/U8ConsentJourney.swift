@@ -85,7 +85,18 @@ private actor U8JourneyEngine:EngineClient {
             try require(!retained.contains{[SettingKey.detectedReaders,.optionalReaders].contains($0.key)},"only replaced legacy consent rows may be suppressed")
         }
         let diagnosticsRows=try SettingsCatalogue.rows(preferences:preferences,context:settingsContext,paneID:"diagnostics")
-        try require(entry.retainingNonConsentRows(diagnosticsRows).contains{$0.key == .source},"per-subscription source belongs in Diagnostics")
+        let retainedDiagnostics=entry.retainingNonConsentRows(diagnosticsRows)
+        guard let sourceRow=retainedDiagnostics.first(where:{$0.key == .source}), case .subscriptions(let sources)=sourceRow.value else {
+            throw Failure(description:"SET-9-16 source status must remain visible in Diagnostics")
+        }
+        try require(sources.count == 1 && sources[0].id == "synthetic-sub" && sources[0].value == "fresh","SET-9-16 source status must follow the matching admitted subscription")
+        settingsContext.subscriptions=[.init(id:"synthetic-sub",name:.init("Synthetic subscription","合成订阅"),source:.unavailable)]
+        app.settingsHost.application.update(context:settingsContext)
+        let unavailableRows=try SettingsCatalogue.rows(preferences:preferences,context:settingsContext,paneID:"diagnostics")
+        guard let unavailableRow=entry.retainingNonConsentRows(unavailableRows).first(where:{$0.key == .source}), case .subscriptions(let unavailable)=unavailableRow.value else {
+            throw Failure(description:"SET-9-16 unavailable source must remain visible")
+        }
+        try require(unavailable.count == 1 && unavailable[0].id == "synthetic-sub" && unavailable[0].value == "unavailable","SET-9-16 missing source must not remain fresh")
         try require(entry.controller.selectedIDs.isEmpty,"first-run facts must not pre-check standard or browser scopes")
         entry.controller.selectAll()
         try require(entry.controller.selectedIDs == ["codex.local_history","cursor.saved_login"],"select all must include only known standard paths, never browser or unknown routes")
