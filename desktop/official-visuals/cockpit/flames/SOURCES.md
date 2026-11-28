@@ -12,4 +12,4 @@ Copyright (c) 2026 ModelPlan. The owner supplied the final blue flame set on 202
 | assets/flame-short-1x.png | 2865 B | 80x91 | `2536f53d1e12a5b747fc0af4b564d95f0bf391fdd5cb500ee71aaad9c2ab6259` |
 | assets/flame-short-2x.png | 6262 B | 160x182 | `1334e28ee66bc8fe4df0d31f12ffde14cde22c70328cf0aa197653d5e78674ef` |
 
-Used by `../bells/bells.css` (`.bz-flame`): the strip is the working thrust flipbook, short is working at lower output, ember is an idle subscription.
+Used by `../bells/bells.css` (`.bz-flame`): the strip is the working thrust flipbook, short is no longer used by the cockpit (D468: parked detached = out), ember is an idle subscription.

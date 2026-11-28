@@ -309,17 +309,16 @@ test('macrevb-1229-4 a cancelled trial ghost glides back along the slot line',as
 const rgbs=s=>[...s.matchAll(/rgba?\(([^)]+)\)/g)].map(m=>m[1].split(',').map(Number));
 const lum=([r,g,b])=>.2126*r+.7152*g+.0722*b;
 for(const [tier,height] of [['tall',890]])
- test(`D419 the lever tier is a separate lighter panel and the bank keys sit below it (${tier})`,async({page})=>{
+ test(`D419 the lever tier is a separate lighter panel and the bank keys sit on it (${tier})`,async({page})=>{
   await openThrottles(page,{tier,height,paged:true});
   const g=await page.locator('.dk-fad').evaluate(fad=>{const fr=fad.getBoundingClientRect(),a=getComputedStyle(fad,'::after'),top=fr.top+parseFloat(a.top),bottom=fr.top+parseFloat(a.top)+parseFloat(a.height);
    const bank=fad.querySelector('.fd-bank').getBoundingClientRect(),travels=[...fad.querySelectorAll('.fd-ch:not(.empty) .fd-travel')].map(t=>t.getBoundingClientRect());
    const slots=[...fad.querySelectorAll('.fd-slotsvg')].map(s=>s.getBoundingClientRect()),cores=[...fad.querySelectorAll('.fd-slotsvg .sl-core')].map(c=>c.getBoundingClientRect());
    const shell=getComputedStyle(fad.closest('.ck-deck')).backgroundColor;
    return {top,bottom,bank:{top:bank.top,bottom:bank.bottom},travel:{top:Math.min(...travels.map(t=>t.top)),bottom:Math.max(...travels.map(t=>t.bottom))},cores:cores.map(c=>[c.top,c.bottom]),image:a.backgroundImage,shadow:a.boxShadow,clip:a.clipPath};});
-  // the panel holds the travels and stops above the bank keys, which sit outside it
+  // D455: the panel holds the travels and runs on to the big screen's bottom, so the bank keys sit ON it, above its front edge
   expect(g.top).toBeLessThanOrEqual(g.travel.top);expect(g.bottom).toBeGreaterThanOrEqual(g.travel.bottom);
-  // 1 px, less WebKit's 1/64 px layout-unit rounding of the pseudo-element's top and height
-  expect(g.bank.top-g.bottom,'bank keys below the panel').toBeGreaterThanOrEqual(.95);
+  expect(g.bank.top,'bank keys on the panel').toBeGreaterThanOrEqual(g.travel.bottom);expect(g.bank.bottom,'bank keys above the front edge').toBeLessThanOrEqual(g.bottom+.5);
   for(const [t,b] of g.cores){expect(t).toBeGreaterThanOrEqual(g.top);expect(b).toBeLessThanOrEqual(g.bottom);}
   // an opaque graphite face (not a faint overlay), brighter towards the pilot, with a lit top lip; still a trapezoid
   // the first gradient is the lip's cast shadow (D419 round 4); the face follows it
@@ -338,7 +337,10 @@ for(const [tier,height] of [['tall',890]])
 // its margins are smaller but the slot still never leaves the tier.
 const columnGeometry=page=>page.locator('.dk-fad').evaluate(fad=>{const fr=fad.getBoundingClientRect(),b=getComputedStyle(fad,'::before'),a=getComputedStyle(fad,'::after'),r=e=>e.getBoundingClientRect();
  const strips=[...fad.querySelectorAll('.fd-ch:not(.empty) .fd-strip')].map(r),cores=[...fad.querySelectorAll('.fd-slotsvg .sl-core')].map(r);
- return {top:fr.top,H:fr.height,upper:fr.top+parseFloat(b.top)+parseFloat(b.height),tierTop:fr.top+parseFloat(a.top),tierBottom:fr.top+parseFloat(a.top)+parseFloat(a.height),
+ // D455: with several banks the face runs on to the big screen's frame bottom; the lever tier (slots, travels) still ends at --fd-tier-bot.
+ const probe=document.createElement('div');probe.style.cssText='position:absolute;visibility:hidden;height:var(--fd-tier-bot)';fad.append(probe);const tierH=probe.getBoundingClientRect().height;probe.remove();
+ const tierBottom=fad.classList.contains('paged')?fr.top+tierH:fr.top+parseFloat(a.top)+parseFloat(a.height);
+ return {top:fr.top,H:fr.height,upper:fr.top+parseFloat(b.top)+parseFloat(b.height),tierTop:fr.top+parseFloat(a.top),tierBottom,
   card:{top:Math.min(...strips.map(s=>s.top)),bottom:Math.max(...strips.map(s=>s.bottom))},slot:{top:Math.min(...cores.map(c=>c.top)),bottom:Math.max(...cores.map(c=>c.bottom))}};});
 test('D419 the full lever column follows the measured prototype ratios (cards about half, slots inside the tier; two banks)',async({page})=>{
  await openThrottles(page,{paged:true});
@@ -414,12 +416,22 @@ for(const [tier,height] of [['tall',890]])
   expect(Math.abs(g.tierBottom-screen.b-6),'screen bottom vs tier front edge').toBeLessThanOrEqual(tier==='tall'?3.5:6);
  });
 
-// D453 (owner 11-26): the lever console's front edge is flush with the bottom of the right big-screen panel (the frame behind the chart
-// and its toggle row), at every cockpit height.
-for(const height of [890,951])
- test(`D453 the lever console bottom is flush with the big screen panel bottom (${height})`,async({page})=>{
-  await openThrottles(page,{tier:'tall',height});
-  const g=await columnGeometry(page);
-  const frame=await page.locator('.ck-deck').evaluate(d=>{const a=getComputedStyle(d,'::after'),r=d.getBoundingClientRect();return r.bottom-parseFloat(a.bottom);});
-  expect(Math.abs(g.tierBottom-frame),`console bottom ${g.tierBottom} vs panel bottom ${frame}`).toBeLessThanOrEqual(1);
- });
+// D453/D455 (owner 11-26/27): the lever console's front edge is flush with the bottom of the right big-screen panel (the frame behind the
+// chart and its toggle row), at every cockpit height, with one bank and with several (the bank keys then sit ON the face), at the
+// native zoom 1 and at the Auto 85 % page zoom. Measured on the built page: the face is the .dk-fad ::after, the panel is .ck-deck::after.
+const flushGeometry=page=>page.evaluate(()=>{
+ const fad=document.querySelector('.dk-fad'),deck=document.querySelector('.ck-deck'),k=1;
+ const a=getComputedStyle(fad,'::after'),f=getComputedStyle(deck,'::after'),fr=fad.getBoundingClientRect(),dr=deck.getBoundingClientRect();
+ const face=fr.top+(parseFloat(a.top)+parseFloat(a.height))*k,panel=dr.bottom-parseFloat(f.bottom)*k;
+ const r=s=>{const e=document.querySelector(s);return e?e.getBoundingClientRect():null;},bank=r('.fd-bank'),mfd=r('.dk-mfd');
+ return {face,panel,k,mfdBottom:mfd.bottom,bank:bank&&{t:bank.top,b:bank.bottom,h:bank.height},faceTop:fr.top+parseFloat(a.top)*k};
+});
+for(const zoom of [1,.85])
+ for(const paged of [false,true])
+  test(`D453 the lever console bottom is flush with the big screen panel bottom (${paged?'several banks':'one bank'}, zoom ${zoom})`,async({page})=>{
+   await openThrottles(page,{tier:'tall',height:890,paged});
+   if(zoom!==1){await page.evaluate(z=>{document.documentElement.style.zoom=String(z);},zoom);await page.waitForTimeout(200);}
+   const g=await flushGeometry(page);
+   expect(Math.abs(g.face-g.panel),`console face bottom ${g.face} vs panel bottom ${g.panel}`).toBeLessThanOrEqual(1);
+   if(paged){expect(g.bank.h,'bank keys shown').toBeGreaterThan(10);expect(g.bank.t,'bank keys inside the face').toBeGreaterThanOrEqual(g.faceTop);expect(g.bank.b,'bank keys above the face front edge').toBeLessThanOrEqual(g.face+.5);}
+  });

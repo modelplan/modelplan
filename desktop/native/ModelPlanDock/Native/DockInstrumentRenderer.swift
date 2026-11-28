@@ -232,7 +232,7 @@ public struct DockNozzlePose: Equatable, Sendable {
             c.textPosition = .zero;CTLineDraw(line,c);c.restoreGState()
         }
         func usedUp(_ arc:DockQuotaArc?) -> Bool { arc?.remainingFraction == 0 }
-        func ring(_ recipe:DockRingRecipe,_ arc:DockQuotaArc?,_ centre:CGPoint,plugin:DockPluginRing?=nil,faint:Double=0) throws {
+        func ring(_ recipe:DockRingRecipe,_ arc:DockQuotaArc?,_ centre:CGPoint,plugin:DockPluginRing?=nil,faint:Double=0,isInner:Bool=false) throws {
             guard recipe.radius>0,recipe.width>0,recipe.radius.isFinite,recipe.width.isFinite,
                 recipe.opacity.isFinite,(0...1).contains(recipe.opacity),(0...1).contains(recipe.minimumVisibleFraction) else{throw DockArtworkError.invalidManifest}
             c.saveGState();c.setAlpha(recipe.opacity);c.setLineWidth(recipe.width);c.setLineCap(.butt)
@@ -262,6 +262,8 @@ public struct DockNozzlePose: Equatable, Sendable {
                 }
             }
             if let arc,let fraction=arc.fraction,fraction.isFinite,(0...1).contains(fraction),fraction>0 {
+                // D399: an urgent inner (5 h) ring is drawn brighter, in its status colour.
+                if plugin == nil {c.setAlpha(DockRingBrightness.arcOpacity(base:recipe.opacity,status:arc.status,isInner:isInner))}
                 c.setStrokeColor(try pluginInk ?? ink(arc.status.rawValue))
                 let visibleFraction = CGFloat(max(recipe.minimumVisibleFraction, fraction))
                 if visibleFraction >= 1 {
@@ -405,7 +407,7 @@ public struct DockNozzlePose: Equatable, Sendable {
                 let rr=(radius+station.diameter/2)/2
                 c.strokeEllipse(in:CGRect(x:station.centre.x-rr,y:station.centre.y-rr,width:2*rr,height:2*rr))
                 try ring(station.outer,reading.outer,station.centre,plugin:reading.pluginRing,faint:reading.pluginRing?.outerFaint ?? 0)
-                if reading.inner != nil {try ring(station.inner,reading.inner,station.centre,plugin:reading.pluginRing)}
+                if reading.inner != nil {try ring(station.inner,reading.inner,station.centre,plugin:reading.pluginRing,isInner:true)}
                 if station.notchWidth>0 {
                     c.setLineWidth(station.notchWidth);c.setStrokeColor(try ink("notch"))
                     c.move(to:CGPoint(x:station.centre.x,y:station.centre.y-station.diameter/2))

@@ -155,8 +155,9 @@ test('D407 R1 column: every arc (CPU, memory, disk) has a leader line, a label a
   const label=all(row[0],n=>n.attrs['data-label']!==undefined);assert.equal(label.length,1,`${id} label`);
   assert.ok(label[0].textContent.length>0);
   assert.equal(Number(leader[0].attrs.x1),Number(leader[0].attrs.x2),'the leader drops straight down');
-  assert.equal(Number(label[0].attrs.x),Number(leader[0].attrs.x1),'the label sits under its leader foot');
-  assert.ok(Number(leader[0].attrs.y2)<Number(label[0].attrs.y),'the leader ends above its label');
+  assert.equal(Number(label[0].attrs.x),Number(leader[0].attrs.x1)-3,'D465 the label sits left of its leader');
+  assert.equal(label[0].attrs['text-anchor'],'end');
+  assert.ok(Number(leader[0].attrs.y2)>=Number(label[0].attrs.y),'the leader drops to its label row');
  }
  assert.deepEqual(all(area,n=>n.attrs['data-label']!==undefined).map(n=>n.textContent),['CPU','内存','磁盘']);
  // Network: one text row, never an arc or a bar.
@@ -189,17 +190,36 @@ test('D407 R1 arcs take the status colour by level (normal / amber / red), track
  assert.equal(stroke('cpu'),TOKENS.low);assert.equal(stroke('memory'),TOKENS.mid);assert.equal(stroke('disk'),TOKENS.ok);
 });
 
-test('D407 R1 the radar fills the whole area: the network row sits at the bottom whatever the height',()=>{
+test('D465 the radar radius follows the column width, rows share the height, five rows incl. pressure, nothing dropped but side values',()=>{
  const state=history(10);
- for(const [w,h] of [[150,160],[190,240],[190,420],[420,300]]){
-  const L=radarLayout(w,h,true);
-  assert.ok(L.cy<h&&L.cy-L.scale-5>=0,`radar inside ${w}×${h}`);
-  assert.ok(L.cx+L.scale<=w&&L.cx-L.scale>=0,`radar inside width ${w}`);
-  assert.ok(h-L.netY<=12,`network row at the bottom of ${h}`);
-  assert.ok(L.rows.every((r,i)=>i===0||r>L.rows[i-1]));
+ for(const [w,h] of [[146,200],[146,260],[198,260],[198,330]]){
+  const L=radarLayout(w,h);
+  assert.ok(L.cx+L.scale+5.5<=w&&L.cx-L.scale-5.5>=0,`ink inside width ${w}`);
+  assert.ok((2*(L.scale+5.5))/w>=0.85,`radar ink width >= 85% of ${w}: ${2*(L.scale+5.5)}`);
+  assert.equal(L.rows.length,5);assert.ok(L.rows.every((r,i)=>i===0||r>L.rows[i-1]));
   assert.ok(L.rows[0]>L.cy,'rows below the radar');
+  assert.ok(L.rows[4]+L.rowH<=h,'rows inside the height');
   const area=drawInto(resourcePlugin.column(state,context('en')).draw,'en',w,h);
-  assert.ok(all(area,n=>n.attrs['data-row']).length===4);
+  assert.deepEqual(all(area,n=>n.attrs['data-row']).map(n=>n.attrs['data-row']),['cpu','memory','disk','network','pressure']);
+ }
+ // A short column shrinks the radar, never the rows below their minimum.
+ const short=radarLayout(146,150);assert.ok(short.rowH>=14);assert.ok(short.scale<radarLayout(146,260).scale);
+});
+
+test('D465 a11y: the pressure name, severity and swap are in the svg name and in their own labelled row',()=>{
+ const state=resourcePlugin.accept({samples:[sample(T0,{pressure:'critical',swapUsed:2.1*GB})]},undefined);
+ const area=drawInto(resourcePlugin.column(state,context('en')).draw,'en',146,220);
+ const svg=all(area,n=>n.tag==='svg')[0];assert.equal(svg.attrs.role,'group');assert.match(svg.attrs['aria-label'],/Mem pressure Critical · swap 2\.1 GB/);
+ const p=all(area,n=>n.attrs['data-row']==='pressure')[0];assert.equal(p.attrs.role,'img');assert.match(p.attrs['aria-label'],/Mem pressure Critical · swap 2\.1 GB/);
+ for(const id of ['cpu','memory','disk','network'])assert.equal(all(area,n=>n.attrs['data-row']===id)[0].attrs.role,'img');
+});
+
+test('D465 the column draws its own bottom line (drawFoot) and the pressure row keeps its whole name',()=>{
+ const state=resourcePlugin.accept({samples:[sample(T0,{pressure:'warn',swapUsed:0.8*GB})]},undefined);
+ const col=resourcePlugin.column(state,context('zh-CN'));assert.equal(col.drawFoot,true);
+ for(const [w,h] of [[146,220],[198,260]]){
+  const area=drawInto(col.draw,'zh-CN',w,h),p=all(area,n=>n.attrs['data-row']==='pressure')[0];
+  assert.ok(text(p).startsWith('内存压力'),'whole name');assert.match(text(p),/偏高/);
  }
 });
 
