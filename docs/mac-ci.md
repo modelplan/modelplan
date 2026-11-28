@@ -301,6 +301,37 @@ queue. The queue's full GUI leg and the nightly stay as they are.
   in the CI check, and a `desktop` dispatch run with that title re-evaluates the PR it names (`merge-gates.yml`). PRs
   with no mapped class are unaffected.
 
+## Mac compile: owner pool first, hosted overflow (D486)
+
+`mac-compile.yml` compiles a native PR head (swift build plus the touched packages' test classes) and posts the
+commit status `mac-compile` that the merge gate and `pr-review-sol.yml` read. Its header explains the trust
+boundary; in short, only main's definition runs, the plan job re-reads the PR, only the Mac job runs PR code (read-only
+token, no secrets, no persisted credentials), and a separate hosted job posts the status.
+
+- **Owner pool (default).** The `compile` job runs on the owner's compile Macs (label `modelplan-compile`, runner group
+  admitting only `mac-compile.yml@refs/heads/main`), with the per-runner read-only build seed. Every `workflow_run`
+  (from `mac-compile trigger`) and every dispatch without `pool` uses it. Job cap 25 minutes (#1220: a hung compile
+  held the single queue for an hour; seeded runs finish well inside 25).
+- **Hosted pool (`pool=hosted`).** The `compile-hosted` job runs the same steps on GitHub-hosted `macos-15`: a cold
+  build, no seed read or written, cap 75 minutes (a cold `ModelPlanAppIntegration` build alone took 12.7 minutes on the
+  owner Macs; a 3-core hosted VM is about twice as slow, and a hung hosted job blocks no owner runner). Public repository,
+  so free; the account runs about 5 hosted macOS jobs at a time. A seed run is refused on the hosted pool. Hosted runs
+  have their own concurrency group (`mac-compile-<pr>-hosted`), so they never cancel the owner run.
+- **Overflow trigger.** `mac-compile-overflow.yml` follows every requested `mac-compile` run
+  (`scripts/mac-compile/overflow.mjs`). It polls the run's `compile` job every 30 seconds; when the job is still queued on
+  the owner pool more than 5 minutes after it was created, it dispatches `mac-compile.yml` for the same PR and head with
+  `pool=hosted`, using the owner's comment token like the sweep. Once per head: no dispatch when a `compile-hosted`
+  job was ever created for that head (queued, running or finished), when `mac-compile` already passed there, or when
+  the PR moved on. It cancels nothing and gives up after 15 minutes. GUI tests stay on the owner runners.
+- **Which result counts: success wins per head.** Both pools post the same `mac-compile` context, and the run title is
+  the same (`mac-compile PR #N @ <sha>` for a dispatch, `mac-compile <sha>` for a workflow_run), so the gate binds either
+  run to the head. The report job reads the head's current `mac-compile` status first: a success already there stays and
+  this run posts nothing (the same tree compiled once is enough, and the first success is the one the gate and review
+  already bound to its run; a later failure from the other pool is environment, not code). A success replaces an earlier
+  failure; a failure replaces only a failure or nothing. A cancelled run (a newer head, a manual cancel) posts nothing;
+  a job past its time cap is a failure. If the status read itself fails the run posts as before (latest wins), so a real
+  failure is never dropped.
+
 ## Migration
 
 Keep the legacy `MAC_CI_RUNNER` unset or `hosted`. The versioned switch prevents

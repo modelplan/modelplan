@@ -13,7 +13,14 @@
 #   Mac job runs PR code; it holds a read-only token, no secrets, and checkouts keep no credentials.
 # - The result is posted as the commit status "mac-compile" on the PR head by a separate hosted job, the only one with
 #   statuses: write, which runs no repository code.
-# Build seed: written only by the `seed` job (workflow_dispatch of main by the owner), read-only for PR jobs.
+# Build seed: written only by a seed run (workflow_dispatch of main by the owner, owner pool), read-only for PR jobs.
+#
+# Two pools (owner D486, 11-28). `compile` runs on the owner's compile Macs (pool=owner, the default and every
+# workflow_run). `compile-hosted` runs the same steps on a GitHub-hosted macos-15 VM (pool=hosted: a cold build, no
+# seed, no cache), dispatched by mac-compile-overflow.yml when an owner-pool compile job of a PR run has waited over
+# 5 minutes for a runner, once per head. Both pools post the same "mac-compile" status from `report`, and the run title
+# is the same, so the gate and pr-review-sol.yml bind either run to the head alike. A failure never replaces a success
+# already posted at the head (success wins: either pool compiled the same tree), and a cancelled run posts nothing.
 name: mac-compile
 # The title names what was compiled; pr-review-sol.yml binds a mac-compile success to a head through it.
 run-name: "${{ inputs.pr && (inputs.sha && format('mac-compile PR #{0} @ {1}', inputs.pr, inputs.sha) || format('mac-compile PR #{0}', inputs.pr)) || github.event.workflow_run.head_sha && format('mac-compile {0}', github.event.workflow_run.head_sha) || '' }}"
@@ -35,11 +42,17 @@ on:
         description: "Build main and publish this runner's read-only build seed (trusted; no PR code)"
         type: boolean
         default: false
+      pool:
+        description: "Where the compile runs: owner (the owner's compile Macs, default) or hosted (GitHub-hosted macos-15, cold build; D486 overflow)"
+        type: choice
+        options: [owner, hosted]
+        default: owner
 permissions:
   contents: read
-# One run per PR (a dispatch joins the PR's group); a newer head cancels the older run.
+# One run per PR and pool (an owner dispatch joins the PR's group); a newer head cancels the older run. A hosted
+# overflow run has its own group, so it never cancels the owner run it overflows (D486).
 concurrency:
-  group: mac-compile-${{ github.event_name == 'workflow_dispatch' && (inputs.seed && 'seed' || inputs.pr) || github.event.workflow_run.pull_requests[0].number || github.run_id }}
+  group: mac-compile-${{ github.event_name == 'workflow_dispatch' && (inputs.seed && 'seed' || (inputs.pool == 'hosted' && format('{0}-hosted', inputs.pr) || inputs.pr)) || github.event.workflow_run.pull_requests[0].number || github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -54,6 +67,7 @@ jobs:
       pr: ${{ steps.pr.outputs.pr }}
       sha: ${{ steps.pr.outputs.sha }}
       seed: ${{ steps.pr.outputs.seed }}
+      pool: ${{ steps.pr.outputs.pool }}
       run: ${{ steps.plan.outputs.run }}
       plan: ${{ steps.plan.outputs.plan }}
     steps:
@@ -66,8 +80,13 @@ jobs:
           RUN_HEAD: ${{ github.event.workflow_run.head_sha }}
           SEED: ${{ github.event_name == 'workflow_dispatch' && inputs.seed }}
           SHA_INPUT: ${{ github.event_name == 'workflow_dispatch' && inputs.sha || '' }}
+          POOL: ${{ github.event_name == 'workflow_dispatch' && inputs.pool || 'owner' }}
         run: |
           set -eu
+          # D486: owner (default) or hosted; a seed is the owner runner's own build state, so it is never built hosted.
+          case ${POOL:-owner} in owner|hosted) ;; *) echo "::error::pool must be owner or hosted, got '$POOL'"; exit 1;; esac
+          [ "$SEED" != true ] || [ "${POOL:-owner}" = owner ] || { echo "::error::a seed run builds on the owner pool only"; exit 1; }
+          echo "pool=${POOL:-owner}" >> "$GITHUB_OUTPUT"
           # Seed run (owner dispatch of main): no PR; main's own head is built and published to the runner's read-only seed.
           if [ "$SEED" = true ]; then
             [ -z "$PR" ] || { echo "::error::seed runs take no PR"; exit 1; }
@@ -117,8 +136,9 @@ jobs:
 
   compile:
     needs: plan
-    if: ${{ needs.plan.outputs.run == 'true' && github.repository == 'modelplan/modelplan' && github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.pull_requests[0].number) || (github.event_name == 'workflow_dispatch' && github.actor_id == '11829005')) }}
+    if: ${{ needs.plan.outputs.run == 'true' && needs.plan.outputs.pool == 'owner' && github.repository == 'modelplan/modelplan' && github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.pull_requests[0].number) || (github.event_name == 'workflow_dispatch' && github.actor_id == '11829005')) }}
     runs-on: [self-hosted, macOS, ARM64, modelplan-compile]
+    # #1220: a hung compile step held the single owner queue for 60 minutes; seeded runs finish well inside 25.
     timeout-minutes: 25
     permissions:
       contents: read
@@ -159,9 +179,56 @@ jobs:
           swift --version
           bash "$GITHUB_WORKSPACE/.mac-compile-main/scripts/mac-compile/run.sh" "$RUNNER_TEMP/mac-compile-plan.tsv" "$root" "$SHA"
 
+  # D486: the same steps on a GitHub-hosted macos-15 VM, for an owner-pool run that waited over 5 minutes for a runner
+  # (mac-compile-overflow.yml). Cold build: no seed and nothing written back. Keep the steps in step with `compile`
+  # (workflow-policy.test.mjs compares them).
+  compile-hosted:
+    needs: plan
+    if: ${{ needs.plan.outputs.run == 'true' && needs.plan.outputs.pool == 'hosted' && github.repository == 'modelplan/modelplan' && github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.pull_requests[0].number) || (github.event_name == 'workflow_dispatch' && github.actor_id == '11829005')) }}
+    runs-on: macos-15
+    # A cold build on a 3-core hosted VM: ModelPlanAppIntegration alone built cold in 12.7 min on the owner Macs (11-15),
+    # roughly twice that here, plus its tests and any other touched package. A hung hosted job blocks no owner runner
+    # and costs nothing (public repository), so the cap is generous; the 25-minute owner cap stays for the shared queue.
+    timeout-minutes: 75
+    permissions:
+      contents: read
+    steps:
+      - name: Check out main's runner script
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: main
+          path: .mac-compile-main
+          sparse-checkout: scripts/mac-compile
+          persist-credentials: false
+      - name: Check out the PR head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          path: pr
+          persist-credentials: false
+      - name: Compile and test the touched packages
+        working-directory: pr
+        env:
+          PR: ${{ needs.plan.outputs.pr }}
+          SHA: ${{ needs.plan.outputs.sha }}
+          PLAN: ${{ needs.plan.outputs.plan }}
+          SEED_WRITE: "0"
+          # The owner pool's per-package budget (see `compile`); the job cap above bounds the whole hosted run.
+          PACKAGE_MINUTES: "45"
+        run: |
+          set -eu
+          [ "$(git rev-parse HEAD)" = "$SHA" ] || { echo "::error::checked out $(git rev-parse HEAD), expected $SHA"; exit 1; }
+          case $PR in ''|*[!0-9]*) echo "::error::bad PR number '$PR'"; exit 1;; esac
+          # Hosted pool: no seed (SEED_ROOT empty), so a cold scratch build under runner temp, thrown away with the VM.
+          root=$RUNNER_TEMP/mac-compile
+          export SEED_ROOT=
+          printf '%s\n' "$PLAN" > "$RUNNER_TEMP/mac-compile-plan.tsv"
+          swift --version
+          bash "$GITHUB_WORKSPACE/.mac-compile-main/scripts/mac-compile/run.sh" "$RUNNER_TEMP/mac-compile-plan.tsv" "$root" "$SHA"
+
   # The result as the commit status "mac-compile" on the PR head. Runs no repository code; the only job with a write scope.
   report:
-    needs: [plan, compile]
+    needs: [plan, compile, compile-hosted]
     if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.seed != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
@@ -172,14 +239,20 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           SHA: ${{ needs.plan.outputs.sha }}
-          RESULT: ${{ needs.compile.result }}
+          POOL: ${{ needs.plan.outputs.pool }}
+          RESULT: ${{ needs.plan.outputs.pool == 'hosted' && needs.compile-hosted.result || needs.compile.result }}
           URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -eu
           case $RESULT in
-            success) state=success; desc="COMPILE ok @ ${SHA:0:8}";;
+            success) state=success; desc="COMPILE ok @ ${SHA:0:8} ($POOL)";;
             skipped) state=success; desc="no Swift change under desktop/native";;
-            *) state=failure; desc="COMPILE fail @ ${SHA:0:8} ($RESULT)";;
+            *) state=failure; desc="COMPILE fail @ ${SHA:0:8} ($RESULT, $POOL)";;
           esac
+          # D486 success wins: the other pool may already have compiled this head. A success stays (the same tree compiled
+          # once is enough, and the gate and pr-review-sol.yml already bound it); this run then posts nothing. A failed
+          # read posts as before (latest wins), so a real failure is never silently dropped.
+          cur=$(gh api "repos/$REPO/commits/$SHA/status" -q '[.statuses[] | select(.context == "mac-compile")][0].state // ""' 2>/dev/null) || cur=unread
+          if [ "$cur" = success ]; then echo "mac-compile: already success at ${SHA:0:8}; this $POOL run ($state) posts nothing"; exit 0; fi
           gh api "repos/$REPO/statuses/$SHA" -f state="$state" -f context=mac-compile -f description="$desc" -f target_url="$URL" >/dev/null
           echo "mac-compile: $state ($desc)"

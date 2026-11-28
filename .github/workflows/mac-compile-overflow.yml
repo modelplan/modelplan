@@ -1,0 +1,42 @@
+# SPDX-License-Identifier: MIT
+# Hosted overflow for mac-compile (owner D486, 11-28). The owner's compile Macs stay first; when a PR head's mac-compile
+# run has had its owner-pool `compile` job queued over 5 minutes with no runner, this dispatches mac-compile.yml for the
+# same head with pool=hosted (a cold build on GitHub-hosted macos-15), once per head, cancelling nothing
+# (scripts/mac-compile/overflow.mjs). Whichever pool finishes first posts the mac-compile status; a later failure never
+# replaces a success (mac-compile.yml's report).
+#
+# Trust boundary: workflow_run runs main's definition; main's scripts only (checkout of main, no PR code); the PR is read
+# through the API. mac-compile.yml accepts a dispatch only from the owner account, so the dispatch uses the owner's
+# comment token (secret PR_REVIEW_COMMENT_TOKEN of the pr-review environment, as mac-compile-sweep.yml does), only in
+# the watch step. mac-compile.yml's plan job re-validates the PR (open, owner's, same repository, head = sha) itself.
+name: mac-compile overflow
+on:
+  workflow_run:
+    workflows: [mac-compile]
+    types: [requested]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: mac-compile-overflow-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+jobs:
+  watch:
+    if: github.repository == 'modelplan/modelplan' && github.ref == 'refs/heads/main' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.path == '.github/workflows/mac-compile.yml'
+    runs-on: ubuntu-24.04
+    environment: pr-review
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: main
+          sparse-checkout: scripts
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/mac-compile/overflow.mjs
+        env:
+          GH_TOKEN: ${{ secrets.PR_REVIEW_COMMENT_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
