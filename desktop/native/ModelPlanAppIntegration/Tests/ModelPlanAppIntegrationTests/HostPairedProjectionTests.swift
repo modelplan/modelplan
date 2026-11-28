@@ -119,6 +119,10 @@ actor EntrySyntheticClient: EngineClient {
         week["resetsAt"] = weeklyDeadline
         if let wall = resetCardClock {
             let stamp = ISO8601DateFormatter()
+            // macrev2-1289-11 (R11 round 5): a weekly cycle already in progress before the confirmation (began 4 days
+            // earlier, resets in 3), so the confirmation stays until a qualifying restart; the far-future default would
+            // compute a cycle start after now.
+            week["resetsAt"] = stamp.string(from: wall.addingTimeInterval(3 * 86400)); week["validUntil"] = week["resetsAt"]
             let scheduled = stamp.string(from: wall.addingTimeInterval(3600))
             var event: [String: Any] = ["version": 1, "id": "synthetic-card-reset", "provider": "openai",
                 "rowId": "codex", "status": "announced", "publishedAt": stamp.string(from: wall.addingTimeInterval(-60)),
@@ -149,6 +153,8 @@ actor EntrySyntheticClient: EngineClient {
                 account["observedAt"] = fresh
                 session["observedAt"] = fresh
                 week["observedAt"] = fresh
+                // The qualifying restart: the weekly cycle began 30 s ago, 30 s after the confirmation (published 60 s ago).
+                week["resetsAt"] = stamp.string(from: wall.addingTimeInterval(604800 - 30)); week["validUntil"] = week["resetsAt"]
             }
         }
         if windowSources == .legacy {

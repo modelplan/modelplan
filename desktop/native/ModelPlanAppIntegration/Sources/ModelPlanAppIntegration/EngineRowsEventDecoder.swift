@@ -92,7 +92,8 @@ extension EngineResetEvent {
     /// duration) began at or after the confirmation, within `restartSkew`. A five-hour window restarts on its own schedule
     /// many times a week, so it is never evidence; nor is a routine refresh of a cycle that began earlier. Reset credits
     /// never restart a window by themselves (the user redeems them), so they never claim one.
-    /// The tolerance is clock skew only, the same as the cockpit's `NEWS_RESTART_SKEW_MS`.
+    /// The tolerance is clock skew only, the same as the cockpit's `NEWS_RESTART_SKEW_MS`. A window whose computed cycle
+    /// start lies after `now` never counts (a cycle cannot begin in the future).
     public static let restartSkew: TimeInterval = 60
     /// Windows of this length or shorter never prove a reset (the cockpit's `span<=18000`).
     public static let restartMinimumWindow: Int64 = 18000
@@ -102,7 +103,9 @@ extension EngineResetEvent {
         return account.windows.contains { window in
             guard window.current, let duration = window.durationSeconds, duration > Self.restartMinimumWindow,
                   let resets = EngineResetTimestampContract.date(window.resetsAt), resets > now else { return false }
-            return resets.addingTimeInterval(-TimeInterval(duration)) >= confirmed.addingTimeInterval(-Self.restartSkew)
+            // R11 round 5: a cycle cannot begin in the future; a computed start after now is an inconsistent reading.
+            let start = resets.addingTimeInterval(-TimeInterval(duration))
+            return start <= now && start >= confirmed.addingTimeInterval(-Self.restartSkew)
         }
     }
 }
