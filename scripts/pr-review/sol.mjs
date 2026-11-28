@@ -62,6 +62,14 @@ export const glmAdvisory = (cls, tier, glmTiers = DEFAULT_GLM_TIERS) => Number(t
 // non-GLM lane) means the head is done.
 const gptOwn = (lane) => [`(${lane})`];
 
+// D484-5: true when the lanes in `own` have verdicts at the head and each one's latest (comment order) is a block, so an
+// explicit re-review (force) may post a replacement; the gate takes the latest verdict per lane (rules.mjs verdicts).
+export const ownBlockedOnly = (atHead, own) => {
+  const latest = new Map();
+  for (const v of atHead) if (own.includes(v.lane)) latest.set(v.lane, v.verdict);
+  return latest.size > 0 && [...latest.values()].every((x) => x === "block");
+};
+
 // pr: REST pull request; files: REST PR files; items: rules.mjs feed(); lane: SOL_LANE or SOL_SHADOW_LANE;
 // triggerSha: the head the triggering ci run or mac-compile run was for ("" for a dispatch);
 // checks: { ci: ci.yml passed at the head, compile: a trusted mac-compile success status is on the head };
@@ -105,8 +113,9 @@ export function decideSol({ pr, files, items, lane, triggerSha = "", checks = { 
   const fb = gpt && gptFallbackVerdict(items, head) !== null;
   const own = gpt && tier !== 0 ? [...gptOwn(lane), ...(fb ? [`(${postLane(lane, "glm")})`] : [])] : ownLanes(lane, tier, glmTiers, cls);   // tier 0: the advisory GLM review settles it
   const settles = (v) => (eligible.includes(v.lane) && !(gpt && !fb && v.lane === `(${GLM_LANE})`)) || v.lane === "(unnamed)";
-  // Once per lane per head, forced or not: force only lifts the "another counting lane already reviewed" skip below.
-  if (atHead.some((v) => own.includes(v.lane))) return skip("this lane already reviewed this head");
+  // Once per lane per head. Force lifts the "another counting lane already reviewed" skip below, and (D484-5) lets a lane
+  // replace its own latest `block` at the head with a new verdict; a `merge` at the head is never posted over.
+  if (atHead.some((v) => own.includes(v.lane)) && !(force && ownBlockedOnly(atHead, own))) return skip("this lane already reviewed this head");
   const ownCounting = [`(${SOL_LANE})`, `(${GLM_LANE})`];
   if (lane === SOL_LANE && tier !== 0 && !outside) {
     // Counting mode spends no tokens when another lane owns or already settled this head.
@@ -416,7 +425,7 @@ export function postProblem({ pr, items, head, lane, posted = lane, force = fals
   const atHead = verdictLines(items).filter((v) => v.sha === head);
   const fb = gpt && gptFallbackVerdict(items, head) !== null;
   const own = [...(gpt && tier !== 0 ? [...gptOwn(lane), ...(fb ? [`(${postLane(lane, "glm")})`] : [])] : ownLanes(lane, tier, glmTiers, cls)), ...(posted ? [`(${posted})`] : [])];
-  if (atHead.some((v) => own.includes(v.lane))) return `(${posted ?? lane}) already has a verdict at ${head}`;
+  if (atHead.some((v) => own.includes(v.lane)) && !(force && ownBlockedOnly(atHead, own))) return `(${posted ?? lane}) already has a verdict at ${head}`;
   if (lane === SOL_LANE && !advisory) {
     const eligible = eligibleLanes(Number(tier), glmTiers, cls);
     // NORMAL: no assignment holds the workflow back; otherwise a workflow assignment accepts either provider (D396-1).

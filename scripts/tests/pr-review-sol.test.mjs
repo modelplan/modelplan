@@ -218,6 +218,24 @@ test("post: re-check right before posting (head change, closed PR, duplicate del
   assert.equal(S.postProblem({ pr: pr(), items: items([comment(v("merge", H, "ghsolshadow"))]), head: H, lane: "ghsol" }), null, "lanes are separate");
 });
 
+test("D484-5: a lane may replace its own latest block at the same head on a forced re-review; a merge is never posted over", () => {
+  const items = (cs) => R.feed(cs);
+  const blk = [comment(v("block", H, "ghglm"))];
+  assert.equal(decide({ comments: blk, glmTiers: [1] }).why, "this lane already reviewed this head", "no force: no automatic second verdict");
+  assert.equal(decide({ comments: blk, force: true, glmTiers: [1] }).review, true, "force re-reviews a lane's own block");
+  assert.equal(decide({ comments: [...blk, comment(v("merge", H, "ghglm"))], force: true, glmTiers: [1] }).why, "this lane already reviewed this head", "latest is a merge");
+  assert.equal(decide({ comments: [comment(v("merge", H, "ghglm")), comment(v("block", H, "ghglm"))], force: true, glmTiers: [1] }).review, true, "latest is a block");
+  assert.equal(S.postProblem({ pr: pr(), items: items(blk), head: H, lane: "ghsol", posted: "ghglm", force: true, files: t1, glmTiers: [1] }), null, "the replacement may post");
+  assert.match(S.postProblem({ pr: pr(), items: items(blk), head: H, lane: "ghsol", posted: "ghglm", files: t1, glmTiers: [1] }), /already has a verdict/, "not without force");
+  assert.match(S.postProblem({ pr: pr(), items: items([...blk, comment(v("merge", H, "ghglm"))]), head: H, lane: "ghsol", posted: "ghglm", force: true, files: t1, glmTiers: [1] }), /already has a verdict/, "a second delivery after the replacement never posts twice");
+});
+
+test("D484-5: the gate takes the latest verdict per lane at a head, in both directions", () => {
+  const lanes = (...cs) => R.verdicts(R.feed(cs), H, []).get("(ghglm)");
+  assert.equal(lanes(comment(v("block", H, "ghglm")), comment(v("merge", H, "ghglm"))), "merge", "a later merge supersedes the earlier block");
+  assert.equal(lanes(comment(v("merge", H, "ghglm")), comment(v("block", H, "ghglm"))), "block", "a later block supersedes the earlier merge");
+});
+
 test("agreement: shadow verdict against the verdict that counts", () => {
   const ag = (cs) => S.agreement(R.feed(cs), H);
   assert.equal(ag([comment(v("merge", H, "ghsolshadow"))]).agree, null);
