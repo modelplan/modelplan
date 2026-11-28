@@ -84,9 +84,11 @@ actor EntrySyntheticClient: EngineClient {
         root["sequence"] = sequence
         var projection = try XCTUnwrap(root["projection"] as? [String: Any])
         if let resetID {
+            // D466 / DOCK-3.7-05: an announcement is news for at most 24 h after its publication (it used to stay until
+            // expiresAt), so it is published 6 h before the 2027-06-01 clocks of the tests that use it.
             projection["resetEvents"] = [["version": 1, "id": resetID, "provider": "synthetic",
                 "rowId": "codex", "status": "announced",
-                "publishedAt": "2027-05-01T00:00:00Z", "expiresAt": "2027-07-01T00:00:00Z",
+                "publishedAt": "2027-05-31T18:00:00Z", "expiresAt": "2027-07-01T00:00:00Z",
                 "source": ["kind": "public", "publicationId": "synthetic"]]]
         } else { projection.removeValue(forKey: "resetEvents") }
         var rows = try XCTUnwrap(projection["rows"] as? [[String: Any]])
@@ -1013,8 +1015,12 @@ actor EntrySyntheticClient: EngineClient {
         XCTAssertTrue(text(dock.card).contains("exp in 12m · Reported subset · Details truncated · Last known reading"))
         try await render(Self.rows(weekly: 75, sequence: 10, resetCardClock: wall, resetConfirmed: true,
             resetFacts: .init(count: 1, expiresIn: -60, restarted: true)))
-        XCTAssertTrue(text(dock.card).contains { $0.hasPrefix("Confirmed · ") })
-        XCTAssertTrue(text(dock.card).contains("Local reading rose · your balance is the local reading"), "a restarted local reading is shown as an observation")
+        // DOCK-3.7-03 / C19 (D474, macrev2-1289-4) replaced D166's "a restarted local reading is shown as an
+        // observation": once the reading restarted after the confirmation, the confirmed direct reset is no longer news,
+        // so its card block goes with the dot; the reserve line stays.
+        XCTAssertFalse(text(dock.card).contains { $0.hasPrefix("Confirmed · ") }, "a restarted reading retires the confirmed direct reset")
+        XCTAssertFalse(text(dock.card).contains("Local reading rose · your balance is the local reading"))
+        XCTAssertNil(app.composition.resetSignals.first { $0.id == id }?.reset, "no dot either")
         XCTAssertTrue(text(dock.card).contains { $0.hasPrefix("Resets 1") })
         XCTAssertTrue(text(dock.card).contains("expired"))
         let confirmedAction = try XCTUnwrap(dock.card.onOpenURL)

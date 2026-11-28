@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+import AppKit
 import Foundation
 import XCTest
 import ModelPlanDock
@@ -123,8 +124,17 @@ private actor G1BEngine: EngineClient {
         let menu = try XCTUnwrap(app.liveStatusMenu)
         // This healthy synthetic fixture has no provider diagnostics or update action.
         // MENU-50 (WP-09): range selector, then the fixed items (the cockpit entry is off in this build).
-        let expected = ["时间段", "即将推出", "显示额度挂件", "找到额度挂件", "重置位置", "设置…", "说明…", "退出 ModelPlan"]
-        let statusTitles = menu.items.filter { !$0.isSeparatorItem && $0.accessibilityIdentifier() != "status.rangeTotal" }.map(\.title)
+        // Master spec S2 / C30 (D474, ALR-50) adds one short alert line under the total: this fixture's weekly window
+        // sits at the red line (25 %), so the line is there, in the menu language, and keeps its reset time.
+        let expected = ["时间段", "合成 每周 25% · <reset>后重置", "即将推出", "显示额度挂件", "找到额度挂件", "重置位置", "设置…", "说明…", "退出 ModelPlan"]
+        func titles(_ menu: NSMenu) -> [String] {
+            menu.items.filter { !$0.isSeparatorItem && $0.accessibilityIdentifier() != "status.rangeTotal" }.map { item in
+                // The reset countdown runs against a far-future fixture deadline, so only its shape is fixed.
+                item.accessibilityIdentifier() == "status.alert"
+                    ? item.title.replacingOccurrences(of: #"\d+d\d+h"#, with: "<reset>", options: .regularExpression) : item.title
+            }
+        }
+        let statusTitles = titles(menu)
         let dockTitles = app.composition.dock.menu().items.filter { !$0.isSeparatorItem }.map(\.title)
         XCTAssertGreaterThan(statusTitles.count, 1)
         XCTAssertGreaterThanOrEqual(dockTitles.count, 3)
@@ -132,9 +142,9 @@ private actor G1BEngine: EngineClient {
         // Owner HIG decision 11-06: the widget menu is [✓自动收起, 设置…, 重置位置] — [退出 ModelPlan]; no Hide.
         XCTAssertEqual(dockTitles, ["自动收起", "设置…", "重置位置", "退出 ModelPlan"])
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.english))
-        let english = try XCTUnwrap(app.liveStatusMenu).items.filter { !$0.isSeparatorItem && $0.accessibilityIdentifier() != "status.rangeTotal" }.map(\.title)
+        let english = titles(try XCTUnwrap(app.liveStatusMenu))
         XCTAssertGreaterThan(english.count, 1)
-        XCTAssertEqual(english, ["Time range", "Coming soon", "Show Quota Widget", "Find Quota Widget", "Reset Position", "Settings…", "Help…", "Quit ModelPlan"])
+        XCTAssertEqual(english, ["Time range", "Synthetic Weekly 25% · resets <reset>", "Coming soon", "Show Quota Widget", "Find Quota Widget", "Reset Position", "Settings…", "Help…", "Quit ModelPlan"])
         XCTAssertNotEqual(english, expected, "The check must reject English app-owned actions")
     }
 
