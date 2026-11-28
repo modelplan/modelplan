@@ -81,7 +81,7 @@ func say(c common, en, zh string) string {
 // tool without it gets no root and is reported as skipped.
 func importOptions(st *store.Store, days int, auto bool, now time.Time, allow func(tool string) bool) speed.ImportOptions {
 	opts := speed.ImportOptions{Days: days, Now: now, Auto: auto,
-		Guard: guardLocalWrite}
+		Guard: guardLocalWrite, NoProjectNames: !projectLabels()}
 	if allow("claude") {
 		home, _ := os.UserHomeDir()
 		dir := os.Getenv("CLAUDE_CONFIG_DIR")

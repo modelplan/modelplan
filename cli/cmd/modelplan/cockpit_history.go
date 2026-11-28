@@ -59,6 +59,7 @@ func (s sharedCockpit) cockpitHistory(ctx context.Context, view appserver.View, 
 	now := cockpitHistoryNow()
 	var perf, live *speed.PerfView
 	var imported []speed.PerfRow
+	var importedProjects []speed.ImportProject
 	if s.cache != "" && len(allowed) != 0 {
 		ledger, ok := speed.LoadPerf(s.cache)
 		// Imported history (observed/imported.json) counts only for admitted sources, only before a
@@ -72,6 +73,13 @@ func (s sharedCockpit) cockpitHistory(ctx context.Context, view appserver.View, 
 				}
 			}
 			impLedger.Rows = impRows
+			var impProjects []speed.ImportProject
+			for _, p := range impLedger.Projects {
+				if allowed[p.Source] {
+					impProjects = append(impProjects, p)
+				}
+			}
+			impLedger.Projects = impProjects
 		}
 		if ok && ledger.Since.IsZero() && len(impLedger.Rows) != 0 {
 			// Live recording has not written yet: the imported days alone start the record.
@@ -88,6 +96,7 @@ func (s sharedCockpit) cockpitHistory(ctx context.Context, view appserver.View, 
 			v := speed.PerfView{Ledger: ledger, Long: long, LongOK: longOK, OK: ok, Recording: !speed.Off(), Now: now}.Admitted(current)
 			live = &v
 			imported = v.ImportedRows(impLedger, current)
+			importedProjects = v.ImportedProjects(impLedger, current)
 			merged := v.WithImported(imported)
 			perf = &merged
 		}
@@ -99,7 +108,7 @@ func (s sharedCockpit) cockpitHistory(ctx context.Context, view appserver.View, 
 		out.Sources = append(out.Sources, "local-history")
 		if perf != nil {
 			out.DailyFrom, out.Daily, out.Hourly = cockpitBuckets(*live, imported, allowed, now)
-			out.Projects = cockpitProjects(perf.Projects(), projectLabels(), view.PublicModels)
+			out.Projects = cockpitProjects(perf.Projects().WithImportedProjects(s.cache, now, importedProjects), projectLabels(), view.PublicModels)
 			out.Cost = cockpitCost(*perf, allowed, view.PublicModels, view.PublicSpeedTiers, now)
 			if ledger, ok := history.LoadPace(s.cache); ok {
 				pace := history.PaceView{Ledger: ledger, OK: true, Recording: !history.Off(), Now: now}

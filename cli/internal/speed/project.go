@@ -76,7 +76,26 @@ func SetProjectLabels(file, cache string, on bool) error {
 	if on {
 		return nil
 	}
-	return ClearProjectLabels(cache)
+	if err := ClearProjectLabels(cache); err != nil {
+		return err
+	}
+	return ClearImportedProjects(cache)
+}
+
+// ClearImportedProjects removes the project folder names kept with the imported history; the
+// imported rows stay. It is what turning project labels off does to them (HIST-IMP-10).
+func ClearImportedProjects(cache string) error {
+	unlock, ok := lockWait(cache, "perf.lock")
+	if !ok {
+		return errors.New("readings busy; try again")
+	}
+	defer unlock()
+	l, ok := LoadImported(cache)
+	if !ok || len(l.Projects) == 0 {
+		return nil
+	}
+	l.Projects = nil
+	return writeImported(cache, l)
 }
 
 // ClearProjectLabels removes every stored project label from perf.json; the references stay.

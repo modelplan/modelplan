@@ -126,8 +126,8 @@ import ModelPlanWire
 /// All copy of the feature in one place (English, Chinese).
 public enum HistoryImportText {
     public static let title = SettingsText("Import usage history", "导入使用历史")
-    public static let subtitle = SettingsText("Reads older Claude Code and Codex sessions on this Mac: times, models, effort and token counts only, never prompts or replies. It stays on this Mac.",
-                                              "读取本机较早的 Claude Code 和 Codex 会话：只取时间、模型、档位和令牌数，不读提示词或回复，数据只留在本机。")
+    public static let subtitle = SettingsText("Reads older Claude Code and Codex sessions on this Mac: times, models, effort and token counts, plus each project's folder name (never the full path), kept per day. Never prompts or replies. It stays on this Mac.",
+                                              "读取本机较早的 Claude Code 和 Codex 会话：只取时间、模型、档位和令牌数，以及项目的文件夹名称（不含完整路径），按天保存；不读提示词或回复，数据只留在本机。")
     public static let importButton = SettingsText("Import now", "立即导入")
     public static let cancelButton = SettingsText("Cancel", "取消")
     public static let removeButton = SettingsText("Remove imported history", "删除已导入的历史")

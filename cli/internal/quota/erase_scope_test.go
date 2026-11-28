@@ -267,3 +267,29 @@ func TestHistoryClearRemovesRequestHashesAndCumulativeTotals(t *testing.T) {
 		})
 	}
 }
+
+// HIST-IMP-10: revoking or forgetting one tool's history also deletes that tool's imported project
+// folder names; the other tool's stay.
+func TestHistoryScopeCleanupErasesItsImportedProjectNames(t *testing.T) {
+	for _, forget := range []bool{false, true} {
+		t.Run(map[bool]string{false: "revoke", true: "forget"}[forget], func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			cache := t.TempDir()
+			dir := filepath.Join(cache, "observed")
+			if err := os.MkdirAll(dir, 0700); err != nil {
+				t.Fatal(err)
+			}
+			b := []byte(`{"schemaVersion":1,"rows":[],"projects":[{"day":"2026-10-02","source":"codex","name":"codexproj","observedOutputTokens":5,"turns":1},{"day":"2026-10-02","source":"claude-code","name":"claudeproj","observedOutputTokens":5,"turns":1}]}`)
+			if err := os.WriteFile(filepath.Join(dir, "imported.json"), b, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := EraseScope(Paths{Cache: cache}, consent.ScopeCodexLocalHistory, forget); err != nil {
+				t.Fatal(err)
+			}
+			after, _ := os.ReadFile(filepath.Join(dir, "imported.json"))
+			if strings.Contains(string(after), "codexproj") || !strings.Contains(string(after), "claudeproj") {
+				t.Fatalf("wrong project cleanup: %s", after)
+			}
+		})
+	}
+}
