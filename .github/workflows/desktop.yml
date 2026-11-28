@@ -484,8 +484,11 @@ jobs:
             classes=$(jq -r .gui <<<"$sel")
             all=$(jq -r '.all | join(",")' <<<"$sel")
             [ -n "$all" ] || { run=false; classes=none; }
-            echo "D481 PR #$PR @ $PR_SHA: mapped classes: ${all:-none}" | tee -a "$GITHUB_STEP_SUMMARY"
             [[ $classes =~ ^(none|[A-Za-z_][A-Za-z0-9_]*(,[A-Za-z_][A-Za-z0-9_]*)*)$ ]] || fail "malformed class selection: $classes"
+            echo "D481 PR #$PR @ $PR_SHA: mapped classes: ${all:-none}" | tee -a "$GITHUB_STEP_SUMMARY"
+            # The record modelplan-gates reads back (gui-map.mjs RECORD_TITLE): it must cover the classes required at
+            # evaluation time, so a run made before the map grew does not count. Keep the title.
+            echo "::notice title=D481 PR GUI classes::${all:-none}"
           elif [ "$EVENT" = schedule ]; then
             # Another nightly at the same commit is still queued or running, or one already passed its GUI leg there:
             # do not take the GUI Mac for the same commit twice. A green run counts only when its GUI leg ran and

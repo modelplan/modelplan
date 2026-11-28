@@ -12,7 +12,7 @@ import { readFileSync, appendFileSync } from "node:fs";
 import { client } from "./github.mjs";
 import * as G from "./git.mjs";
 import { HOSTED_WORKFLOWS } from "./hosted.mjs";
-import { MAP_PATH, parseMap } from "./gui-map.mjs";
+import { MAP_PATH, RECORD_TITLE, parseMap } from "./gui-map.mjs";
 import { CONTEXT, PR_GUI_TITLE, prGuiRunScope, DESKTOP_WORKFLOW, FAILURE, dataSyncRunId, parseFallbackUntil, parseGlmTiers, cancelledRunSuperseded, description, evaluateGroup, evaluatePr, queueRunScope, feed, isTrain, parseDesignConf, supersededPrs, TIER_TABLE, tiersFrom, trainMembers } from "./rules.mjs";
 
 const env = process.env;
@@ -122,12 +122,20 @@ async function guiMaps(pr, files) {
   return [mainGuiMap, parseMap(Buffer.from(blob.content ?? "", "base64").toString("utf8"), `${pr.head.sha.slice(0, 8)}:${MAP_PATH}`)];
 }
 
-// D481: the jobs of the newest PR GUI run bound to this head (rules.mjs prGuiState needs them to see that its GUI leg ran).
+// D481: the jobs of the newest PR GUI run bound to this head (rules.mjs prGuiState needs them to see that its GUI leg ran)
+// and the class set its gui-scope job recorded (a notice annotation titled RECORD_TITLE; check-run id = job id). An
+// unreadable list or record leaves it unset, which never passes.
 async function readPrGuiJobs(pr, runs) {
   const r = runs.filter(prGuiRunScope(pr)).sort((a, b) => b.id - a.id)[0];
   if (!r || r.status !== "completed" || r.conclusion !== "success") return;
-  try { r.jobs = await gh.all(`/actions/runs/${r.id}/jobs?filter=latest`, "jobs", 500); }
-  catch (e) { log({ run: r.id, jobs: `unreadable: ${String(e).slice(0, 120)}` }); }
+  try {
+    r.jobs = await gh.all(`/actions/runs/${r.id}/jobs?filter=latest`, "jobs", 500);
+    const scope = r.jobs.find((j) => j.name === "gui-scope" && j.conclusion === "success");
+    if (!scope) return;
+    const notes = (await gh.all(`/check-runs/${scope.id}/annotations`, null, 100)).filter((a) => a.title === RECORD_TITLE && a.annotation_level === "notice");
+    if (notes.length === 1) r.guiRecord = notes[0].message;
+    log({ run: r.id, guiRecord: notes.length === 1 ? notes[0].message.slice(0, 200) : `${notes.length} records` });
+  } catch (e) { log({ run: r.id, jobs: `unreadable: ${String(e).slice(0, 120)}` }); }
 }
 
 async function prResult(number) {

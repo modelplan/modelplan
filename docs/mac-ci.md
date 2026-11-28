@@ -251,7 +251,10 @@ queue. The queue's full GUI leg and the nightly stay as they are.
   classes that exercise them, per package (`app-integration`, `settings`). It was seeded from the code (for each source
   file, the GUI classes whose tests name its declarations, unioned per area; the settings area is curated) and covers
   the ring and Dock presentation, the third-party Dock resources, cards, placement and drag, the widget window, the menu-bar
-  status item and Settings. `scripts/tests/gui-test-map.test.mjs` (repo checks) keeps it valid: every class is declared
+  status item and Settings. Each entry-point file (the status-item application `EngineDockMenuApplication.swift`, the
+  normal entry, the rows console, the menu bar, the application factories, the static Dock preview host and the Settings
+  hosts) has its own `entry-*` area with every class whose tests name its declarations. Every source file a non-curated
+  area names must cover at least what `gui_test_selection.py` finds for it; the Settings area is marked `"curated": true`. `scripts/tests/gui-test-map.test.mjs` (repo checks) keeps it valid: every class is declared
   in its package, `app-integration` classes are on the GUI share (not headless), and every glob, and every brace
   alternative, matches a tracked file. Add an area, or classes, when a GUI test starts covering new code. A map change
   is reviewed like the gate itself (`scripts/merge-gates/gui-map.mjs` is the shared selector).
@@ -267,7 +270,8 @@ queue. The queue's full GUI leg and the nightly stay as they are.
   (renames count with their old path; a list of 3000 files or more selects every mapped class), selects the classes
   with the head's map and `main`'s map unioned, and passes the `app-integration` ones to the pinned `trusted-mac.yml`
   as `gui_classes` (`none` when only `settings` classes are mapped: that package runs whole in every GUI leg). No mapped
-  class: `run=false` and nothing runs. Only `gui-scope` and the GUI legs (`native`, or `native-hosted` +
+  class: `run=false` and nothing runs. `gui-scope` records the selected set as the notice annotation
+  `D481 PR GUI classes` (`<package>:<Class>,...` or `none`). Only `gui-scope` and the GUI legs (`native`, or `native-hosted` +
   `native-owner-gui` under `MAC_CI_GUI_POOL=hosted`) run; `pr-ref` resolves no merge, so the Linux jobs, `app-smoke` and
   `native-headless` skip. `trusted-mac.yml` is unchanged: a branch dispatch by the owner account is already admitted to
   the GUI Macs and is the only run that narrows the share. A PR branch whose `desktop.yml` predates this has no `sha`
@@ -275,7 +279,11 @@ queue. The queue's full GUI leg and the nightly stay as they are.
 - **Gate.** `scripts/merge-gates/rules.mjs` `prGuiState`: for a ready PR whose changed paths map to at least one class
   under `main`'s map (plus the head's map when the PR changes it), the newest `desktop` dispatch run titled
   `desktop PR GUI #<n> @ <head>`, at that head on the PR's branch in this repository and dispatched by the owner account,
-  must have succeeded with `gui-scope` green and a GUI leg that ran green. Until one exists the status is
+  must have succeeded with `gui-scope` green, a GUI leg that ran green, and a recorded class set that covers every class
+  required now. A smaller or missing record (for example the map grew on `main` after the run) is PENDING
+  `re-run needed: …`: dispatch again at the same head. The newest bound run decides whatever its state, and
+  `merge-gates.yml` re-evaluates when a PR GUI run is requested as well as when it completes, so a newer queued run turns
+  an earlier green status pending at once. Until one exists the status is
   `waiting for PR GUI run (classes: …)` (after `mac-compile`); a failed or cancelled newest run, or a green one that ran
   no GUI leg (its selection disagreed with the gate's), fails it. A PR GUI run never counts as the PR's own `desktop` run
   in the CI check, and a `desktop` dispatch run with that title re-evaluates the PR it names (`merge-gates.yml`). PRs

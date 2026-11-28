@@ -123,3 +123,61 @@ test("CLI: reads PR file rows (renames too), unions maps, fails on an invalid ma
     assert.equal(cli([{ filename: "a" }]).status, 1, "no map");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+// macrev2-1310-2: a PR that changes only the status-item entry (EngineDockMenuApplication.swift) must be held for the
+// classes that open through it, StatusItemLaunchTests among them.
+test("the status-item entry path alone maps to StatusItemLaunchTests; the CLI agrees", () => {
+  const entry = "desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/EngineDockMenuApplication.swift";
+  assert.ok(M.mappedClasses([entry], [map]).includes("app-integration:StatusItemLaunchTests"));
+  const dir = mkdtempSync(join(tmpdir(), "d481-entry-"));
+  try {
+    writeFileSync(join(dir, "f.jsonl"), JSON.stringify({ filename: entry }) + "\n");
+    const r = spawnSync(process.execPath, [join(root, "scripts/merge-gates/gui-map.mjs"), "select", "--files", join(dir, "f.jsonl"), "--map", join(root, M.MAP_PATH)], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(JSON.parse(r.stdout).gui, /(^|,)StatusItemLaunchTests(,|$)/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+// Every source file a non-curated area names (one file, or one brace alternative) covers at least the GUI classes the
+// D169 selector rule finds for it (classes whose test files name its top-level declarations). Entry points such as the
+// status item, the normal entry, the menu bar and the application factories each have their own entry-* area, so a
+// change to one is held for everything that opens through it. Needs python3 (repo checks and CI images have it).
+test("named source files cover what gui_test_selection.py finds for them (entry points included)", () => {
+  const named = [];
+  for (const a of map.areas) {
+    if (a.curated) continue;
+    for (const g of a.paths) {
+      if (/[*?]/.test(g)) continue;
+      const brace = /^(.*)\{([^}]+)\}(.*)$/.exec(g);
+      for (const f of brace ? brace[2].split(",").map((x) => brace[1] + x + brace[3]) : [g]) if (f.endsWith(".swift")) named.push([a.area, f]);
+    }
+  }
+  assert.ok(named.length > 40);
+  for (const f of ["EngineDockMenuApplication", "EngineRowsEntry", "CommunityMenuBar", "CommunityApplicationFactory", "CommunityCockpitApplicationFactory", "SettingsApplication", "SettingsWindowHost"])
+    assert.ok(named.some(([, p]) => p.endsWith(`/${f}.swift`)), `entry point ${f} is mapped`);
+  const py = `import json, sys
+sys.path.insert(0, "desktop/native/tools/ci")
+import gui_test_selection as g, native_test_partition as p
+suite = g.Suite(g.ROOT, p.load_manifest()); gui = set(suite.gui)
+out = {}
+for f in json.load(sys.stdin):
+    names, ext = g.declarations((g.ROOT / f).read_text())
+    out[f] = sorted(suite.referencing(names | ext) & gui)
+print(json.dumps(out))`;
+  const r = spawnSync("python3", ["-c", py], { cwd: root, input: JSON.stringify([...new Set(named.map(([, f]) => f))]), encoding: "utf8", maxBuffer: 16 << 20 });
+  assert.equal(r.status, 0, r.stderr);
+  const found = JSON.parse(r.stdout);
+  for (const [area, f] of named) {
+    const mapped = new Set(M.mappedClasses([f], [map]).filter((q) => q.startsWith("app-integration:")).map((q) => q.slice(16)));
+    const missing = found[f].filter((c) => !mapped.has(c));
+    assert.deepEqual(missing, [], `${area}: ${f} misses classes that name its declarations`);
+  }
+});
+
+test("desktop.yml records the selection under the title the gate reads", () => {
+  const desktop = readFileSync(join(root, ".github/workflows/desktop.yml"), "utf8");
+  assert.ok(desktop.includes(`echo "::notice title=${M.RECORD_TITLE}::\${all:-none}"`));
+  assert.deepEqual(M.parseRecord("none"), []);
+  assert.deepEqual(M.parseRecord("app-integration:A,settings:B"), ["app-integration:A", "settings:B"]);
+  for (const bad of ["", "A", "app-integration:A,", "x:A B", null]) assert.equal(M.parseRecord(bad), null, String(bad));
+});

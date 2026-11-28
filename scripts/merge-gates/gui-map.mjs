@@ -72,6 +72,7 @@ export function mapProblems(map) {
       if (typeof g !== "string" || !g || g.startsWith("/") || g.split("/").includes("..")) { p.push(`${at}: bad path glob ${JSON.stringify(g)}`); continue; }
       try { globRegExp(g); } catch (e) { p.push(`${at}: ${e.message}`); }
     }
+    if (a?.curated !== undefined && a.curated !== true) p.push(`${at}: curated is true or absent`);
     const cls = a?.classes ?? {};
     if (!Object.keys(cls).length) p.push(`${at}: classes must name at least one package`);
     for (const [k, list] of Object.entries(cls)) {
@@ -109,6 +110,18 @@ export function mappedClasses(paths, maps, { truncated = false } = {}) {
 export function guiClassesInput(qualified) {
   const names = qualified.filter((q) => q.startsWith(`${NARROWED_PACKAGE}:`)).map((q) => q.slice(NARROWED_PACKAGE.length + 1));
   return names.length ? names.join(",") : "none";
+}
+
+// D481 (macrev2-1310-1): the PR GUI leg records the class set it selected as a notice annotation on its gui-scope job
+// (`::notice title=<RECORD_TITLE>::<classes or none>`); the gate reads it back and requires it to cover the classes
+// required now, so a map that grew after the run does not count an older, smaller run.
+export const RECORD_TITLE = "D481 PR GUI classes";
+const QUALIFIED = /^[a-z-]+:[A-Za-z_][A-Za-z0-9_]*$/;
+export function parseRecord(message) {
+  const text = String(message ?? "").trim();
+  if (text === "none") return [];
+  const list = text.split(",");
+  return list.length && list.every((q) => QUALIFIED.test(q)) ? list : null;
 }
 
 export const bareNames = (qualified) => [...new Set(qualified.map((q) => q.slice(q.indexOf(":") + 1)))].sort();

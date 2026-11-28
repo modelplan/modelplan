@@ -12,7 +12,7 @@
 
 import referenceMap from "./reference-map.json" with { type: "json" };
 import reviewRouting from "./review-routing.json" with { type: "json" };
-import { bareNames, mappedClasses } from "./gui-map.mjs";
+import { bareNames, mappedClasses, parseRecord } from "./gui-map.mjs";
 export const CONTEXT = "modelplan-gates";
 // The repository whose runs count; evaluate.mjs passes GITHUB_REPOSITORY, this is the default.
 export const REPO = "modelplan/modelplan";
@@ -912,9 +912,12 @@ export function prGuiRunScope(pr) {
 
 export const requiredGuiClasses = (paths, maps, { truncated = false } = {}) => (maps?.length ? mappedClasses(paths, maps, { truncated }) : []);
 
-// classes: the required "<package>:<Class>" list. The newest bound run decides; its jobs (run.jobs, read by evaluate.mjs)
-// must show gui-scope green and a GUI leg that actually ran green. A run whose GUI jobs were skipped found no class to
-// run, which disagrees with this gate's map: it fails closed rather than counting as a pass.
+// classes: the required "<package>:<Class>" list. The newest bound run decides, whatever its state (a newer queued or
+// running one holds the PR even after an older green one; merge-gates.yml re-evaluates when it is requested). Its jobs
+// (run.jobs, read by evaluate.mjs) must show gui-scope green and a GUI leg that actually ran green: a run whose GUI jobs
+// were skipped found no class to run, which disagrees with this gate's map, and fails closed. The class set the run
+// recorded (run.guiRecord: the gui-scope notice, gui-map.mjs RECORD_TITLE, read by evaluate.mjs) must cover every class
+// required now; a smaller record (the map grew since) or none waits for a re-run at the same head.
 export function prGuiState(runs, pr, classes) {
   const names = bareNames(classes);
   const list = names.length > 3 ? `${names.slice(0, 3).join(", ")} +${names.length - 3}` : names.join(", ");
@@ -926,6 +929,13 @@ export function prGuiState(runs, pr, classes) {
   if (!r.jobs.some((j) => j.name === "gui-scope" && j.conclusion === "success")) return { state: FAILURE, why: "PR GUI run has no successful gui-scope job" };
   const leg = guiPoolState(r.jobs);
   if (leg.state !== SUCCESS) return { state: FAILURE, why: leg.missing ? `PR GUI run ran no GUI leg, but the map needs classes: ${list}` : `PR GUI run: ${leg.why} (classes: ${list})` };
+  const recorded = r.guiRecord == null ? null : parseRecord(r.guiRecord);
+  if (recorded === null) return { state: PENDING, why: `re-run needed: PR GUI run recorded no class set (classes: ${list})` };
+  const missing = bareNames(classes.filter((c) => !recorded.includes(c)));
+  if (missing.length) {
+    const short = missing.length > 3 ? `${missing.slice(0, 3).join(", ")} +${missing.length - 3}` : missing.join(", ");
+    return { state: PENDING, why: `re-run needed: PR GUI run did not cover ${short}` };
+  }
   return { state: SUCCESS, why: `PR GUI run green (classes: ${list})` };
 }
 

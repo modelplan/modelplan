@@ -1644,6 +1644,8 @@ const guiRun = (conclusion = "success", id = 50, status = "completed", over = {}
   event: "workflow_dispatch", pull_requests: [], display_title: `desktop PR GUI #7 @ ${H}`, actor: ME, triggering_actor: ME, ...over });
 const gjob = (name, conclusion = "success") => ({ name, conclusion });
 const guiJobs = [gjob("gui-scope"), gjob("native (macos-latest) / native (macos-latest)")];
+// What a green run's gui-scope recorded (the notice evaluate.mjs reads back): by default exactly the ring PR's classes.
+const ringRecord = R.requiredGuiClasses([RING], [guiMap]).join(",");
 const evalGui = ({ files = [file(RING)], runs = greenCi, statuses = [compileOk], maps = [guiMap], p = pr(), comments = [comment(v("merge", H, "macrev2"))] } = {}) =>
   R.evaluatePr({ pr: p, items: R.feed(comments, []), files, runs, statuses, verifiedEdge: () => false, conf, guiMaps: maps });
 
@@ -1653,7 +1655,7 @@ test("D481: a ready PR whose paths map to GUI classes waits for an exact-head PR
   assert.match(waiting.why, /^waiting for PR GUI run \(classes: CommunityDockSnapshotTests, D65ZeroQuotaTests, DockAccessibilityFrameTests \+\d+\)/);
   assert.ok(waiting.guiClasses.includes("app-integration:D65ZeroQuotaTests"), "the full list is in the logged result");
   assert.ok(R.description(waiting.why).length <= 140);
-  assert.equal(evalGui({ runs: [...greenCi, guiRun("success", 50, "completed", { jobs: guiJobs })] }).state, R.SUCCESS);
+  assert.equal(evalGui({ runs: [...greenCi, guiRun("success", 50, "completed", { jobs: guiJobs, guiRecord: ringRecord })] }).state, R.SUCCESS);
   assert.equal(evalGui({ runs: [...greenCi, guiRun(null, 50, "in_progress")] }).state, R.PENDING, "running");
   assert.match(evalGui({ runs: [...greenCi, guiRun(null, 50, "queued")] }).why, /^PR GUI run in progress/);
   const failed = evalGui({ runs: [...greenCi, guiRun("failure")] });
@@ -1669,15 +1671,58 @@ test("D481: a ready PR whose paths map to GUI classes waits for an exact-head PR
   assert.equal(evalGui({ runs: [...greenCi, guiRun("success", 50, "completed", { jobs: [gjob("gui-scope"), gjob("native (macos-latest) / native (macos-latest)", "skipped")] })] }).state, R.FAILURE, "an expanded GUI job skipped");
   assert.equal(evalGui({ runs: [...greenCi, guiRun("success", 50, "completed", { jobs: [gjob("native (macos-latest) / native (macos-latest)")] })] }).state, R.FAILURE, "no gui-scope");
   const hosted = [gjob("gui-scope"), gjob("native-hosted (macos-15) / native-hosted-gui (macos-15)"), gjob("native-owner-gui (macos-latest) / native-owner-gui (macos-latest)")];
-  assert.equal(evalGui({ runs: [...greenCi, guiRun("success", 50, "completed", { jobs: hosted })] }).state, R.SUCCESS, "hosted pool pair");
+  assert.equal(evalGui({ runs: [...greenCi, guiRun("success", 50, "completed", { jobs: hosted, guiRecord: ringRecord })] }).state, R.SUCCESS, "hosted pool pair");
   assert.equal(evalGui({ runs: [...greenCi, guiRun("success", 50, "completed", { jobs: hosted.slice(0, 2) })] }).state, R.FAILURE, "half the pair");
   // The newest bound run decides.
-  assert.equal(evalGui({ runs: [...greenCi, guiRun("success", 50, "completed", { jobs: guiJobs }), guiRun("failure", 51)] }).state, R.FAILURE);
-  assert.equal(evalGui({ runs: [...greenCi, guiRun("failure", 50), guiRun("success", 51, "completed", { jobs: guiJobs })] }).state, R.SUCCESS);
+  assert.equal(evalGui({ runs: [...greenCi, guiRun("success", 50, "completed", { jobs: guiJobs, guiRecord: ringRecord }), guiRun("failure", 51)] }).state, R.FAILURE);
+  assert.equal(evalGui({ runs: [...greenCi, guiRun("failure", 50), guiRun("success", 51, "completed", { jobs: guiJobs, guiRecord: ringRecord })] }).state, R.SUCCESS);
+});
+
+test("D481 (macrev2-1310-1): a green run counts only when its recorded class set covers the classes required now", () => {
+  const green = (guiRecord) => [...greenCi, guiRun("success", 50, "completed", { jobs: guiJobs, ...(guiRecord === undefined ? {} : { guiRecord }) })];
+  assert.equal(evalGui({ runs: green(ringRecord) }).state, R.SUCCESS);
+  assert.equal(evalGui({ runs: green(ringRecord + ",settings:SettingsB5GridTests") }).state, R.SUCCESS, "a larger record is fine");
+  // Same PR, same sha: main's map grows by one class after the run. The old run no longer satisfies the gate.
+  const grown = { ...guiMap, areas: guiMap.areas.map((a) => a.area !== "dock-ring-presentation" ? a
+    : { ...a, classes: { ...a.classes, "app-integration": [...a.classes["app-integration"], "StatusItemAnchorTests"].sort() } }) };
+  assert.equal(R.requiredGuiClasses([RING], [grown]).length, R.requiredGuiClasses([RING], [guiMap]).length + 1, "the requirement grew by one");
+  const stale = evalGui({ runs: green(ringRecord), maps: [grown] });
+  assert.equal(stale.state, R.PENDING);
+  assert.match(stale.why, /^re-run needed: PR GUI run did not cover StatusItemAnchorTests/);
+  // A re-run at the same head that records the grown set passes again.
+  assert.equal(evalGui({ runs: [...green(ringRecord), guiRun("success", 51, "completed", { jobs: guiJobs, guiRecord: R.requiredGuiClasses([RING], [grown]).join(",") })], maps: [grown] }).state, R.SUCCESS);
+  // No record, an unreadable one, or "none" while classes are required: never a pass.
+  for (const [why, rec] of [["no record", undefined], ["none", "none"], ["unqualified", "D65ZeroQuotaTests"], ["empty", ""], ["junk", "a:b;c"]]) {
+    const r = evalGui({ runs: green(rec) });
+    assert.equal(r.state, R.PENDING, why);
+    assert.match(r.why, /^re-run needed: /, why);
+  }
+});
+
+test("D481 (macrev2-1310-3): the newest same-head run decides whatever its state; its start re-evaluates the PR", () => {
+  const older = guiRun("success", 50, "completed", { jobs: guiJobs, guiRecord: ringRecord });
+  assert.equal(evalGui({ runs: [...greenCi, older] }).state, R.SUCCESS, "first run green");
+  for (const status of ["requested", "queued", "waiting", "pending", "in_progress"]) {
+    const r = evalGui({ runs: [...greenCi, older, guiRun(null, 51, status)] });
+    assert.equal(r.state, R.PENDING, status);
+    assert.match(r.why, /^PR GUI run in progress/, status);
+  }
+  assert.equal(evalGui({ runs: [...greenCi, older, guiRun("failure", 51)] }).state, R.FAILURE, "the second run's completed result");
+  assert.equal(evalGui({ runs: [...greenCi, older, guiRun("success", 51, "completed", { jobs: guiJobs, guiRecord: ringRecord })] }).state, R.SUCCESS);
+  const gates = readFileSync(join(root, ".github/workflows/merge-gates.yml"), "utf8");
+  assert.match(gates, /^    types: \[completed, requested\]$/m, "a run's start is an event");
+  const jobIf = /^    if: >-\n((?:      .*\n)+)/m.exec(gates)[1];
+  // Only a PR GUI run re-evaluates on its start; every other workflow_run still waits for completion.
+  assert.match(jobIf, /\(github\.event_name == 'workflow_run' && github\.event\.action == 'completed' && contains\(fromJSON\('\["pull_request","pull_request_review","merge_group"\]'\)/);
+  const guiClause = /\|\| \(github\.event_name == 'workflow_run' && github\.event\.workflow_run\.event == 'workflow_dispatch'.*\n.*\n/.exec(jobIf)?.[0] ?? "";
+  assert.match(guiClause, /startsWith\(github\.event\.workflow_run\.display_title, 'desktop PR GUI #'\)\)/);
+  assert.doesNotMatch(guiClause, /event\.action/, "the PR GUI clause takes requested and completed");
+  const evaluate = readFileSync(join(root, "scripts/merge-gates/evaluate.mjs"), "utf8");
+  assert.match(evaluate, /\/check-runs\/\$\{scope\.id\}\/annotations/, "the record is read from gui-scope's annotations");
 });
 
 test("D481: only a run bound to this PR's exact head, branch and repository, dispatched by the trusted account, counts", () => {
-  const ok = { jobs: guiJobs };
+  const ok = { jobs: guiJobs, guiRecord: ringRecord };
   for (const [why, over] of [
     ["another PR in the title", { display_title: `desktop PR GUI #8 @ ${H}` }],
     ["another head in the title", { display_title: `desktop PR GUI #7 @ ${OLD}` }],
@@ -1703,7 +1748,7 @@ test("D481: PRs with no mapped class, drafts and maps-off are unaffected; a PR G
   assert.match(evalGui({ statuses: [] }).why, /^waiting for mac-compile at this head/);
   // The PR's pull_request desktop run failed: a newer green PR GUI run (same workflow) must not displace it in ciState.
   const prDesktopRed = run(".github/workflows/desktop.yml", "failure", 40);
-  const r = evalGui({ runs: [...greenCi, prDesktopRed, guiRun("success", 50, "completed", { jobs: guiJobs })] });
+  const r = evalGui({ runs: [...greenCi, prDesktopRed, guiRun("success", 50, "completed", { jobs: guiJobs, guiRecord: ringRecord })] });
   assert.equal(r.state, R.FAILURE);
   assert.match(r.why, /desktop\.yml failure/);
   // ... and a failed PR GUI run is reported as such, not as a desktop CI failure; an unrequired one is ignored.

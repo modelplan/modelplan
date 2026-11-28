@@ -514,6 +514,11 @@ test("D481: a pr+sha dispatch is the PR GUI leg: exact head on its own branch, m
     assert.equal(ring.status, 0, `exit ${ring.status}: ${ring.err}`);
     assert.match(ring.out, /^run=true classes=[A-Za-z0-9_,]*\bD65ZeroQuotaTests\b/, "#1208's ring renderer runs D65ZeroQuotaTests");
     assert.doesNotMatch(ring.out, /full/, "never the full share");
+    // macrev2-1310-1: the selected set is recorded for the gate as a notice annotation, exactly as gui-map.mjs reads it.
+    const rec = /^::notice title=D481 PR GUI classes::(.+)$/m.exec(ring.err)?.[1] ?? "";
+    assert.match(rec, /^app-integration:[A-Za-z0-9_]+(,[a-z-]+:[A-Za-z0-9_]+)*$/);
+    assert.ok(rec.split(",").includes("app-integration:D65ZeroQuotaTests"));
+    assert.match(go({ FILES: rows("docs/mac-ci.md") }).err, /^::notice title=D481 PR GUI classes::none$/m, "no class: recorded as none");
     assert.equal(go({ FILES: rows("docs/mac-ci.md", "cli/main.go") }).out, "run=false classes=none", "no mapped class: nothing runs");
     // main's map is unioned in; classes of a whole-run package only (settings) still run the leg, narrowed to none.
     fs.writeFileSync(`${dir}/main-map.json`, JSON.stringify({ schemaVersion: 1, packages: { "app-integration": "x", settings: "y" },
