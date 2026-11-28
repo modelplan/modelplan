@@ -102,7 +102,7 @@ import ModelPlanOfficialDock
         _ = NSApplication.shared
         let root = URL(fileURLWithPath: baselinePath, isDirectory: true)
         let fixtureBytes = try Data(contentsOf: root.appendingPathComponent("fixtures.json"))
-        guard hash(fixtureBytes) == "dfec458e8aa01562253104deba80347450086eb7d19d3fc364bb0a410e7d7cde" else { throw Failure.fixture("manifest hash") }
+        guard hash(fixtureBytes) == "54f3e674e7507b1536aa59eb1d4e7aaa6765f01e52549c26897a2c24f422ead1" else { throw Failure.fixture("manifest hash") }
         let fixture = try JSONDecoder().decode(Fixture.self, from: fixtureBytes)
         guard fixture.schemaVersion == 1, fixture.sourceCommit == "fc87088f2c3e67d9ab0aefc2f9f90d6c315b6657",
               fixture.prototypeSourceCommit == "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
@@ -117,6 +117,18 @@ import ModelPlanOfficialDock
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmp) }
         var worstMean = 0.0, worstTile = 0.0
+        // Diagnostics: with MODELPLAN_S1_REGRESSION_ACTUALS_DIR set, write every rendered actual there and
+        // keep going after a pixel mismatch so one run lists all failing shots. Still fails at the end.
+        let actualsDir = ProcessInfo.processInfo.environment["MODELPLAN_S1_REGRESSION_ACTUALS_DIR"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0, isDirectory: true) }
+        if let actualsDir { try FileManager.default.createDirectory(at: actualsDir, withIntermediateDirectories: true) }
+        var pixelFailures: [String] = []
+        func check(_ reference: Data, _ actual: Data, name: String) throws -> (Double, Double) {
+            if let actualsDir { try actual.write(to: actualsDir.appendingPathComponent(name)) }
+            guard actualsDir != nil else { return try compare(reference, actual, name: name) }
+            do { return try compare(reference, actual, name: name) } catch Failure.pixels(let message) {
+                pixelFailures.append(message); print("FAIL \(message)"); return (0, 0)
+            }
+        }
         for (index, item) in fixture.captures.enumerated() {
             let reference = try verified(item.file, hash: item.sha256, root: root)
             let store = try SettingsStore(url: tmp.appendingPathComponent("static-\(index).json"))
@@ -134,7 +146,7 @@ import ModelPlanOfficialDock
             guard zip(actualBounds, item.skinBounds).allSatisfy({ abs($0 - $1) <= 0.01 }),
                   host.registeredConsoleButtonForChecks != nil else { throw Failure.geometry(item.file + " bounds/control") }
             let report = try S1PixelReport.make(reference: reference, image: image, skin: skin, capture: item.galleryCapture, singleWindowIDs: [])
-            let (mean, tile) = try compare(reference, report.native, name: item.file)
+            let (mean, tile) = try check(reference, report.native, name: item.file)
             worstMean = max(worstMean, mean); worstTile = max(worstTile, tile)
             print("PASS \(item.file) mean=\(mean) worstTile=\(tile)")
         }
@@ -142,7 +154,7 @@ import ModelPlanOfficialDock
         let emptyReference = try verified(empty.file, hash: empty.sha256, root: root)
         let (emptyImage, emptyBounds) = try await renderEmpty()
         guard empty.skinBounds.count == 4, zip(emptyBounds, empty.skinBounds).allSatisfy({ abs($0 - $1) <= 0.01 }) else { throw Failure.geometry("empty station bounds") }
-        let (emptyMean, emptyTile) = try compare(emptyReference, emptyImage, name: empty.file)
+        let (emptyMean, emptyTile) = try check(emptyReference, emptyImage, name: empty.file)
         worstMean = max(worstMean, emptyMean); worstTile = max(worstTile, emptyTile)
         print("PASS \(empty.file) mean=\(emptyMean) worstTile=\(emptyTile)")
         let poses = Dictionary(uniqueKeysWithValues: fixture.flamePoses.map { ($0.file, $0.sha256) })
@@ -172,11 +184,12 @@ import ModelPlanOfficialDock
                 let rect = CGRect(x: (nozzleFrame.minX * 2).rounded(), y: (nozzleFrame.minY * 2).rounded(), width: 104, height: 104)
                 guard let image = c.makeImage()?.cropping(to: rect), image.width == 104, image.height == 104,
                       let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else { throw Failure.pixels(name + " render") }
-                let (mean, tile) = try compare(reference, png, name: name)
+                let (mean, tile) = try check(reference, png, name: name)
                 worstMean = max(worstMean, mean); worstTile = max(worstTile, tile)
                 print("PASS \(name) mean=\(mean) worstTile=\(tile)")
             }
         }
+        guard pixelFailures.isEmpty else { throw Failure.pixels(pixelFailures.joined(separator: "; ")) }
         print("PASS 36 accepted Dock captures, 1 empty station and 27 flame poses; worst mean=\(worstMean)/255, worst tile=\(worstTile)/255")
     }
 }

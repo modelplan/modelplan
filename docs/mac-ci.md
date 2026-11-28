@@ -188,6 +188,45 @@ group, and `native-headless` hosted like every other event (D198; D246 reverted)
 queue whenever the group changes a desktop path, even when its tree equals the PR head (D169,
 below); the five Linux workflows have their own `queue-scope` job and no Mac job.
 
+### GUI leg for the group tail only (D488)
+
+The queue builds up to four groups at once (HEADGREEN), and each group commit contains every
+group before it. Every group used to start its own GUI leg on the one GUI Mac, so the tail,
+whose result is the one that merges the batch, waited about 20 minutes behind each earlier
+entry. On 2026-11-28 one batch at 09:32Z took five GUI runs when one was needed.
+
+In a `merge_group` run that needs the GUI share, `desktop.yml`'s `gui-defer` job
+(`scripts/merge-gates/gui-defer.mjs`, hosted ubuntu) runs before the GUI jobs and reads the
+merge queue (GraphQL `mergeQueue` entries: position, state, head commit, PR):
+
+- `merge-gates.yml` judges every group with `main`'s evaluator. Before `main`'s
+  `scripts/merge-gates/rules.mjs` carries the line `export const GUI_COVER_MARKER = "D488-v1";`
+  (for example during this change's own rollout, or after a revert), or when that file cannot
+  be read, the job outputs `own=true` at once and the GUI leg runs as before. It checks the
+  marker again before it uses a cover.
+- If this entry is the tail of the building window (no later entry is awaiting checks,
+  mergeable or locked), it outputs `own=true` after a 90-second settle, and the GUI leg runs
+  in this run as before. Any doubt has the same result: a branch that is not a queue branch,
+  or the queue unreadable three polls in a row.
+- Otherwise it polls every 60 seconds. If a later `merge_group` desktop run whose commit
+  contains this group commit (compare API: ahead, nothing behind) has a green GUI leg, it
+  outputs `own=false`, records `run=<id> sha=<head>` as a `D488 GUI covered by` notice and runs
+  its `GUI covered by a later group` step. If the later entries leave the queue and this
+  entry becomes the tail, it outputs `own=true` and runs its own GUI leg.
+- If there is no cover after 70 minutes and the entry is still not the tail, or the entry
+  leaves the queue without a cover, the job fails. The GUI jobs are then skipped, and the
+  group fails.
+
+`modelplan-gates` (`rules.mjs` `guiLegState` / `guiCoverState`) does not trust the claim. It
+accepts skipped GUI jobs only after it re-reads the recorded run and checks four things: it is
+a `desktop.yml` `merge_group` run of this repository on a queue branch, it is not this group's
+run, its commit contains this group commit (`git merge-base --is-ancestor` in `evaluate.mjs`),
+and its `gui-scope` and GUI leg both succeeded. A "GUI share not needed" declaration never
+covers another group. Invariant: no merge_group entry passes the GUI leg unless a passing GUI
+run exists whose tree contains its head, either its own run or a verified later group head.
+`trusted-mac.yml` and its pin are unchanged. The PR-stage GUI leg (D481) and the nightly and
+dispatch rules (D169) are not affected.
+
 ## Affected GUI tests on PRs, full suite in the queue and nightly (D169)
 
 Owner decision D169 (2026-11-11). `pull_request` events never start a GUI leg; a ready PR head gets
@@ -300,6 +339,40 @@ queue. The queue's full GUI leg and the nightly stay as they are.
   no GUI leg (its selection disagreed with the gate's), fails it. A PR GUI run never counts as the PR's own `desktop` run
   in the CI check, and a `desktop` dispatch run with that title re-evaluates the PR it names (`merge-gates.yml`). PRs
   with no mapped class are unaffected.
+
+## Mac compile: owner pool first, hosted overflow (D486)
+
+`mac-compile.yml` compiles a native PR head (swift build plus the touched packages' test classes) and posts the
+commit status `mac-compile` that the merge gate and `pr-review-sol.yml` read. Its header explains the trust
+boundary; in short, only main's definition runs, the plan job re-reads the PR, only the Mac job runs PR code (read-only
+token, no secrets, no persisted credentials), and a separate hosted job posts the status.
+
+- **Owner pool (default).** The `compile` job runs on the owner's compile Macs (label `modelplan-compile`, runner group
+  admitting only `mac-compile.yml@refs/heads/main`), with the per-runner read-only build seed. Every `workflow_run`
+  (from `mac-compile trigger`) and every dispatch without `pool` uses it. Job cap 70 minutes: above the longest real
+  successful owner compile (#1289, 49 min 31 s on 11-28), so a valid build is never cut off, while a hang (#1220 held
+  the single queue for an hour) still ends.
+- **Hosted pool (`pool=hosted`).** The `compile-hosted` job runs the same steps on GitHub-hosted `macos-15`: a cold
+  build, no seed read or written, cap 75 minutes (a cold `ModelPlanAppIntegration` build alone took 12.7 minutes on the
+  owner Macs; a 3-core hosted VM is about twice as slow, and a hung hosted job blocks no owner runner). Public repository,
+  so free; the account runs about 5 hosted macOS jobs at a time. A seed run is refused on the hosted pool. Hosted runs
+  have their own concurrency group (`mac-compile-<pr>-hosted`), so they never cancel the owner run.
+- **Overflow trigger.** `mac-compile-overflow.yml` follows every requested `mac-compile` run
+  (`scripts/mac-compile/overflow.mjs`). It polls the run's `compile` job every 30 seconds; when the job is still queued on
+  the owner pool more than 5 minutes after it was created, it dispatches `mac-compile.yml` for the same PR and head with
+  `pool=hosted`, using the owner's comment token like the sweep. Once per head: no dispatch when a `compile-hosted`
+  job was ever created for that head (queued, running or finished), when `mac-compile` already passed there, or when
+  the PR moved on. It cancels nothing and gives up after 15 minutes. GUI tests stay on the owner runners.
+- **Which result counts: success wins per head.** Both pools post the same `mac-compile` context, and the run title is
+  the same (`mac-compile PR #N @ <sha>` for a dispatch, `mac-compile <sha>` for a workflow_run), so the gate binds either
+  run to the head. Both pools may compile one head at the same time, so the report job decides at post time:
+  - a success always posts;
+  - a failure posts only when the head has no `mac-compile` success and no other mac-compile run for that head is
+    unfinished (it decides; its report makes the same check) or succeeded (it already posted). A failure therefore never
+    lands after, or races, the other pool's success. If both pools fail at the same moment and each sees the other
+    unfinished, neither posts; the sweep then finds no status and no running run and dispatches a fresh compile;
+  - a cancelled run (a newer head, a manual cancel) posts nothing; a job past its time cap is a failure;
+  - if a read fails, the failure posts (logged), so a real failure is never dropped.
 
 ## Migration
 

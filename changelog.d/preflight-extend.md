@@ -1,0 +1,1 @@
+Extend `scripts/preflight.mjs` to also check stale Skill copies, run the related cockpit WebKit specs (at most 8, the rest listed as CI will run) and run the GUI-map script tests when the diff touches them.
