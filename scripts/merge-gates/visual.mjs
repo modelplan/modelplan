@@ -115,13 +115,13 @@ export function visualRun(runs, scope = () => true) {
     && !(r.status === "completed" && r.conclusion === "action_required")).sort((a, b) => b.id - a.id)[0] ?? null;
 }
 
-// The gate's visual state. visual: { run, job, annotations, ...proof } as evaluate.mjs read it (job = the run's `visual`
-// job). bind(meta, run) ties the report to the comparison the gate resolved itself (bindPr / bindGroup) and returns
-// { problem } or the declaration to judge against: { declared, present, accepted }.
+// The gate's visual state. visual: { run, job, annotations, expectedBase } as evaluate.mjs read it (job = the run's `visual`
+// job). bind(meta, run) ties the report to the comparison the gate computes now (bindPr / bindGroup) and returns
+// { state, problem } on a mismatch or the declaration to judge against: { declared, present, accepted }.
 // null when nothing is required: no U11 cockpit run at all (the change touches no cockpit path), a run still going or
 // not green (ciState already holds or fails it), a visual job skipped by queue-scope (a merge group whose tree is a PR
 // head's tree), or a run without a visual job (a PR run made before D489 landed; its merge group's run has the job).
-// A green visual job without a readable record, or with a record bound to another comparison, fails.
+// A green visual job without a readable record fails; a record for another comparison is pending (PR) or fails (group).
 export function visualState(visual, bind) {
   const run = visual?.run;
   if (!run || run.status !== "completed" || run.conclusion !== "success") return null;
@@ -131,37 +131,37 @@ export function visualState(visual, bind) {
   const record = parseVisualRecord(visual.annotations);
   if (!record.ok) return fail(record.why);
   const b = bind(record.meta, run);
-  if (!b || b.problem) return fail(`visual report not bound to this comparison: ${b?.problem ?? "no binding"}`);
+  if (!b) return fail("visual report not bound: no binding");
+  if (b.problem) return { state: b.state, why: b.problem, outside: [] };
   return judgeVisual(record, b);
 }
 
 const short = (sha) => String(sha ?? "none").slice(0, 8);
-// A PR: the run is the U11 cockpit run of the PR head, the report names that head, its subject is a merge commit whose
-// parents (read by the gate from GitHub, not from the report) are [report base, PR head], and that base is on main
-// (checked by the gate with git). proof: { subjectParents, baseOnMain }.
-export function bindPr(head, decl, proof = {}) {
-  return (meta, run) => {
-    if (run.head_sha !== head) return { problem: `run ${run.id} is for ${short(run.head_sha)}, not the head ${short(head)}` };
-    if (meta.head !== head) return { problem: `report head ${short(meta.head)} is not the PR head ${short(head)}` };
-    const p = proof.subjectParents;
-    if (!Array.isArray(p) || p.length !== 2 || p[0] !== meta.base || p[1] !== head)
-      return { problem: `report subject ${short(meta.subject)} is not the merge of base ${short(meta.base)} and the head (parents ${Array.isArray(p) ? p.map(short).join(",") : "unreadable"})` };
-    if (proof.baseOnMain !== true) return { problem: `report base ${short(meta.base)} is not on main` };
-    return decl;
-  };
+export const OTHER_BASE = "visual report is for another base — re-run U11";
+// R11 ruling (#1320 round 3): a report counts only when its base is exactly the base the gate computes now and its head
+// is the evaluated head. No ancestry proof, no search over earlier merges.
+const mismatch = (meta, base, head) => !base || meta.base !== base || meta.head !== head;
+const detail = (meta, base, head) => `(report base ${short(meta.base)} head ${short(meta.head)}; expected base ${short(base)} head ${short(head)})`;
+
+// A PR: expectedBase is the first parent of the PR's current merge ref, read by the gate from GitHub (null when it
+// cannot be read). Any other report, an older merge of the same head included, is PENDING until U11 re-runs.
+export function bindPr(head, decl, expectedBase) {
+  return (meta, run) => (run.head_sha !== head || mismatch(meta, expectedBase, head)
+    ? { state: "pending", problem: `${OTHER_BASE} ${detail(meta, expectedBase, head)}` } : decl);
 }
 
-// A merge group: the run is the group commit's, the report's subject and head are the group commit, and its base is the
-// first parent of one of the group's queue merge commits (steps, bottom first, each { commit, base, decl }): the queue
-// base, or a lower group's commit this group was built on. Only the PRs merged above that base can have changed pixels,
-// so their declarations (union) and accepts count.
+// The merge_group.base_sha of a queue run: GitHub names the queue branch gh-readonly-queue/main/pr-<n>-<base sha>.
+const QUEUE_BRANCH = /^gh-readonly-queue\/main\/pr-[0-9]+-([0-9a-f]{40})$/;
+export const queueBase = (run) => QUEUE_BRANCH.exec(String(run?.head_branch ?? ""))?.[1] ?? null;
+
+// A merge group: the report's head is the group commit and its base is the run's merge_group.base_sha; otherwise
+// FAILURE. The declarations and accepts of every PR in the group count (union).
 export function bindGroup(groupSha, steps) {
   return (meta, run) => {
-    if (!groupSha || run.head_sha !== groupSha) return { problem: `run ${run.id} is for ${short(run.head_sha)}, not the group ${short(groupSha)}` };
-    if (meta.subject !== groupSha || meta.head !== groupSha) return { problem: `report subject ${short(meta.subject)} is not the group commit ${short(groupSha)}` };
-    const i = steps.findIndex((s) => s.base === meta.base);
-    if (i < 0) return { problem: `report base ${short(meta.base)} is not a base of this group` };
-    const vs = steps.slice(i).map((s) => s.decl ?? { declared: [], present: false, accepted: false });
+    const base = queueBase(run);
+    if (!groupSha || run.head_sha !== groupSha || mismatch(meta, base, groupSha))
+      return { state: "failure", problem: `visual report is for another comparison ${detail(meta, base, groupSha)}` };
+    const vs = steps.map((s) => s.decl ?? { declared: [], present: false, accepted: false });
     return { declared: [...new Set(vs.flatMap((v) => v.declared))], present: vs.some((v) => v.present), accepted: vs.some((v) => v.accepted) };
   };
 }

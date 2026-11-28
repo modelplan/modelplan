@@ -77,7 +77,7 @@ test("visualState: only a green run with a visual job is judged", () => {
   assert.equal(V.visualState({ run: run({ conclusion: "failure" }) }), null, "ciState fails it");
   assert.equal(V.visualState({ run: run(), job: null }), null, "a run made before D489 landed");
   assert.equal(V.visualState({ run: run(), job: { ...job, conclusion: "skipped" } }), null, "queue-scope skipped it");
-  const bind = V.bindPr(H, { declared: [], present: false, accepted: false }, { subjectParents: [BASE, H], baseOnMain: true });
+  const bind = V.bindPr(H, { declared: [], present: false, accepted: false }, BASE);
   assert.equal(V.visualState({ run: run({ head_sha: H }), job, annotations: undefined }, bind).state, "failure");
   assert.equal(V.visualState({ run: run({ head_sha: H }), job, annotations: record() }, bind).state, "success");
   assert.equal(V.visualRun([run({ id: 1 }), run({ id: 5 }), { ...run({ id: 9 }), path: ".github/workflows/ci.yml" }]).id, 5);
@@ -92,7 +92,7 @@ const pr = (body = "") => ({ number: 7, state: "open", draft: false, user: ME, b
 const runs = [runOf(".github/workflows/ci.yml"), runOf(V.VISUAL_WORKFLOW, 2)];
 const gripChange = record({ "full-day-en": [box(50, 660, 20, 40, { grip: 300 })] });
 const evalPr = ({ body = "", comments = [], annotations = gripChange } = {}) => R.evaluatePr({ pr: pr(body), items: R.feed(comments, []), files: [{ filename: "desktop/cockpit/src/cockpit.css" }],
-  runs, statuses: [], verifiedEdge: () => false, conf, visual: { run: runs[1], job: { name: "visual", conclusion: "success" }, annotations, subjectParents: [BASE, H], baseOnMain: true } });
+  runs, statuses: [], verifiedEdge: () => false, conf, visual: { run: runs[1], job: { name: "visual", conclusion: "success" }, annotations, expectedBase: BASE } });
 
 test("evaluatePr: an undeclared change fails naming scene, box and area; declaring or accepting it lets the review gate decide", () => {
   const r = evalPr();
@@ -110,7 +110,7 @@ test("evaluatePr: an undeclared change fails naming scene, box and area; declari
 });
 
 test("evaluateGroup: the group diff may change the union of its PRs' declared areas, or anything if one accepted", () => {
-  const qrun = (path, id = 1) => runOf(path, id, { head_branch: `gh-readonly-queue/main/pr-7-${OLD}`, event: "merge_group", pull_requests: [] });
+  const qrun = (path, id = 1) => runOf(path, id, { head_branch: `gh-readonly-queue/main/pr-7-${BASE}`, event: "merge_group", pull_requests: [] });
   const queueRuns = R.QUEUE_WORKFLOWS.map((p, i) => qrun(p, i + 1));
   const visualRun = queueRuns.find((r) => r.path === V.VISUAL_WORKFLOW);
   const twoAreas = record({ "full-day-en": [box(50, 660, 20, 40, { grip: 300 })], "full-night-en": [box(30, 300, 10, 10, { band: 50 })] });
@@ -125,36 +125,58 @@ test("evaluateGroup: the group diff may change the union of its PRs' declared ar
   assert.equal(R.evaluateGroup({ steps: [step(1, decl())], queueRuns }).state, R.SUCCESS, "no visual data: no cockpit change in the group");
 });
 
-// macrev2-1320-3: a report counts only for the comparison the gate resolved itself.
-test("bindPr: the report must name the PR head, a subject merging its base and the head, a base on main, the head's run", () => {
-  const job = { name: "visual", conclusion: "success" }, decl = { declared: [], present: false, accepted: false };
-  const st = (annotations, proof = { subjectParents: [BASE, H], baseOnMain: true }, runHead = H) =>
-    V.visualState({ run: { id: 4, path: V.VISUAL_WORKFLOW, status: "completed", conclusion: "success", head_sha: runHead }, job, annotations, ...proof }, V.bindPr(H, decl, proof));
-  const zero = (over) => [meta(over), ...record().slice(1)];
-  assert.equal(st(record()).state, "success", "bound zero-pixel report");
-  for (const [why, r, re] of [
-    ["missing head", st(zero({ head: undefined })), /report head none is not the PR head/],
-    ["other head", st(zero({ head: OLD })), /report head bbbbbbbb is not the PR head/],
-    ["subject not a merge of base and head", st(record(), { subjectParents: [BASE, OLD], baseOnMain: true }), /is not the merge of base/],
-    ["other base", st(zero({ base: OLD }), { subjectParents: [BASE, H], baseOnMain: true }), /is not the merge of base bbbbbbbb/],
-    ["subject parents unreadable", st(record(), { baseOnMain: true }), /parents unreadable/],
-    ["base not on main", st(record(), { subjectParents: [BASE, H], baseOnMain: false }), /is not on main/],
-    ["another head's run", st(record(), undefined, OLD), /run 4 is for bbbbbbbb, not the head/],
-  ]) { assert.equal(r.state, "failure", why); assert.match(r.why, re, why); }
+// R11 ruling (#1320 round 3, macrev2-1320-3 / macrevb-1320-2): a report counts only when its base is exactly the base the gate
+// computes now and its head is the evaluated head. PR: otherwise PENDING "re-run U11"; group: otherwise FAILURE.
+const zeroWith = (over) => [meta(over), ...record().slice(1)];
+const greenRun = (over = {}) => ({ id: 4, path: V.VISUAL_WORKFLOW, status: "completed", conclusion: "success", head_sha: H, ...over });
+const job = { name: "visual", conclusion: "success" };
+
+test("bindPr: report base must equal the current merge ref's first parent and head the PR head, else pending", () => {
+  const decl = { declared: [], present: false, accepted: false };
+  const st = (annotations, expectedBase = BASE, run = greenRun()) => V.visualState({ run, job, annotations, expectedBase }, V.bindPr(H, decl, expectedBase));
+  assert.equal(st(record()).state, "success", "report for the current base");
+  for (const [why, r] of [
+    ["missing head", st(zeroWith({ head: undefined }))],
+    ["other head", st(zeroWith({ head: OLD }))],
+    ["other base", st(zeroWith({ base: OLD }))],
+    ["merge ref unreadable", st(record(), null)],
+    ["another head's run", st(record(), BASE, greenRun({ head_sha: OLD }))],
+  ]) { assert.equal(r.state, "pending", why); assert.match(r.why, /^visual report is for another base — re-run U11 \(report base/, why); }
 });
 
-test("bindGroup: subject and head are the group commit; the base is one of the group's bases; only PRs above it declare", () => {
-  const job = { name: "visual", conclusion: "success" }, run = { id: 5, path: V.VISUAL_WORKFLOW, status: "completed", conclusion: "success", head_sha: H };
+test("reviewer case macrevb-1320-2: a coherent zero-change report of an earlier merge of the same head never passes", () => {
+  // main moved from A to B; the PR head H is unchanged. The selected comparison (base B) changes the MFD, undeclared; the
+  // run carries a self-consistent report for the earlier merge (base A, same head, zero change).
+  const A = "1".repeat(40), B = "2".repeat(40);
+  const earlier = [meta({ base: A }), ...record().slice(1)];
+  const selected = [meta({ base: B }), ...record({ "full-night-en": [box(398, 598, 4, 4, { mfd: 16 })] }).slice(1)];
+  const prRuns = [runOf(".github/workflows/ci.yml"), runOf(V.VISUAL_WORKFLOW, 2)];
+  const ev = (annotations, comments = []) => R.evaluatePr({ pr: pr(""), items: R.feed([...comments, comment(`VERDICT: merge @ ${H} (ghglm)`)], []), files: [{ filename: "desktop/cockpit/src/cockpit.css" }],
+    runs: prRuns, statuses: [], verifiedEdge: () => false, conf, visual: { run: prRuns[1], job, annotations, expectedBase: B } });
+  const old = ev(earlier);
+  assert.equal(old.state, R.PENDING, old.why);
+  assert.match(old.why, /^visual report is for another base — re-run U11/);
+  assert.equal(ev(earlier, [comment(`VISUAL-ACCEPT @ ${H}`)]).state, R.PENDING, "a trusted accept does not make another comparison count");
+  const now = ev(selected);
+  assert.equal(now.state, R.FAILURE, "the selected comparison gets the usual pixel judgment");
+  assert.match(now.why, /full-night-en 398,598 4x4 \(16 px\) in mfd/);
+  assert.equal(ev(selected, [comment(`VISUAL-ACCEPT @ ${H}`)]).state, R.SUCCESS);
+});
+
+test("bindGroup: report head is the group commit and base the queue branch's merge_group.base_sha, else failure", () => {
+  const run = greenRun({ head_branch: `gh-readonly-queue/main/pr-7-${BASE}`, event: "merge_group" });
   const grip = record({ "full-day-en": [box(50, 660, 20, 40, { grip: 300 })] });
-  const steps = [{ base: BASE, decl: { declared: ["grip"], present: true, accepted: false } }, { base: OLD, decl: { declared: [], present: true, accepted: false } }];
+  const steps = [{ decl: { declared: ["grip"], present: true, accepted: false } }, { decl: { declared: [], present: true, accepted: false } }];
   const st = (annotations, groupSha = H, r = run) => V.visualState({ run: r, job, annotations }, V.bindGroup(groupSha, steps));
-  assert.equal(st(grip).state, "success", "base = queue base: both PRs above it, grip declared by the first");
-  const fromOld = [meta({ base: OLD }), ...grip.slice(1)];
-  assert.equal(st(fromOld).state, "failure", "built on the lower group: only the second PR counts, it declared nothing");
-  assert.match(st([meta({ base: "e".repeat(40) }), ...grip.slice(1)]).why, /report base eeeeeeee is not a base of this group/);
-  assert.match(st([meta({ subject: OLD }), ...grip.slice(1)]).why, /report subject bbbbbbbb is not the group commit/);
-  assert.match(st(grip, H, { ...run, head_sha: OLD }).why, /run 5 is for bbbbbbbb, not the group/);
-  assert.match(st(grip, null).why, /not the group/);
+  assert.equal(V.queueBase(run), BASE);
+  assert.equal(st(grip).state, "success", "union of the group's declarations");
+  for (const [why, r] of [
+    ["other base", st([meta({ base: OLD }), ...grip.slice(1)])],
+    ["other head", st([meta({ head: OLD }), ...grip.slice(1)])],
+    ["another commit's run", st(grip, H, { ...run, head_sha: OLD })],
+    ["no group sha", st(grip, null)],
+    ["queue branch without a base", st(grip, H, { ...run, head_branch: "feature/x" })],
+  ]) { assert.equal(r.state, "failure", why); assert.match(r.why, /^visual report is for another comparison/, why); }
 });
 
 test("rollout marker: rules.mjs carries the exact line the visual job looks for on main", async () => {

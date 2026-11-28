@@ -170,10 +170,10 @@ test('rollout: strict until main judges reports, then fail undeclared, pass decl
       return { title, annotation_level: 'notice', message: message.replaceAll('%0A', '\n').replaceAll('%0D', '\r').replaceAll('%25', '%') };
     });
     const runRow = (path) => ({ id: 9, workflow_id: path, path, name: path, status: 'completed', conclusion: 'success', head_sha: G, head_repository: { full_name: 'modelplan/modelplan' },
-      head_branch: 'gh-readonly-queue/main/pr-2-x', event: 'merge_group', pull_requests: [] });
+      head_branch: `gh-readonly-queue/main/pr-2-${BASE}`, event: 'merge_group', pull_requests: [] });
     const queueRuns = R.QUEUE_WORKFLOWS.map(runRow), visualRun = queueRuns.find((r) => r.path === '.github/workflows/u11-cockpit.yml');
-    const step = (pr, visual, base) => ({ pr, base, mergeProof: { ok: true }, prResult: { state: R.SUCCESS, why: 'ok', hostedExempt: true, visual } });
-    const group = (v2) => R.evaluateGroup({ steps: [step(1, { declared: [], present: true, accepted: false }, BASE), step(2, v2, 'd'.repeat(40))], queueRuns, groupSha: G,
+    const step = (pr, visual) => ({ pr, mergeProof: { ok: true }, prResult: { state: R.SUCCESS, why: 'ok', hostedExempt: true, visual } });
+    const group = (v2) => R.evaluateGroup({ steps: [step(1, { declared: [], present: true, accepted: false }), step(2, v2)], queueRuns, groupSha: G,
       visual: { run: visualRun, job: { name: 'visual', conclusion: 'success' }, annotations } });
     const undeclared = group({ declared: [], present: false, accepted: false });
     assert.equal(undeclared.state, R.FAILURE);

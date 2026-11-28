@@ -853,7 +853,7 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   // VISUAL-ACCEPT at this head (visual.mjs). extra.visual feeds the merge-group check.
   const declared = parseVisualChange(pr.body);
   extra.visual = { declared: declared.areas, present: declared.present, accepted: visualAccepted(items, head) };
-  const vis = visualState(visual, bindPr(head, extra.visual, visual ?? {}));
+  const vis = visualState(visual, bindPr(head, extra.visual, visual?.expectedBase ?? null));
   if (vis?.state === FAILURE) return res(FAILURE, say(vis.why), extra);
   if (vis && extra.visual.accepted && vis.outside.length) notes.push("VISUAL-ACCEPT");
   const guiClasses = dataSync ? [] : requiredGuiClasses(paths, guiMaps, { truncated: files.length >= FILE_LIST_LIMIT });
@@ -869,6 +869,8 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
     return res(PENDING, say("waiting for mac-compile at this head"), extra);
   // D481: after mac-compile, because the coordinator dispatches the PR GUI run only once mac-compile passed.
   if (gui && gui.state !== SUCCESS) return res(PENDING, say(gui.why), extra);
+  // D489 R11: a report for another base than the current merge ref's waits for a U11 re-run.
+  if (vis?.state === PENDING) return res(PENDING, say(vis.why), extra);
   return res(SUCCESS, say(`tier ${tier}: gates pass${chain.length ? ` (carried ${chain.length})` : ""}`), extra);
 }
 
@@ -1069,8 +1071,8 @@ export function evaluateGroup({ steps, queueRuns, queueStatuses = [], queueCheck
   if (ci.state !== SUCCESS) return { state: ci.state, why: `group ${ci.why}` };
   // D489: the group commit's visual diff against the queue base may change only the areas its PRs declare (union), unless
   // one of them carries a trusted VISUAL-ACCEPT at its head.
-  // The report must name this group commit and one of its bases (visual.mjs bindGroup); steps carry commit and base.
-  const vis = visualState(visual, bindGroup(groupSha, steps.map((s) => ({ base: s.base, decl: s.prResult.visual }))));
+  // The report must name this group commit and the run's merge_group.base_sha (visual.mjs bindGroup).
+  const vis = visualState(visual, bindGroup(groupSha, steps.map((s) => ({ decl: s.prResult.visual }))));
   if (vis?.state === FAILURE) return { state: FAILURE, why: `group ${vis.why}` };
   return { state: SUCCESS, why: `group of ${steps.length}: gates pass` };
 }

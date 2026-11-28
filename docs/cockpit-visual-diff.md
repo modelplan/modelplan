@@ -58,13 +58,12 @@ run for the head:
 - Merge group: the group commit's diff against the queue base may change only the union of its PRs' declared areas,
   unless one of them has a VISUAL-ACCEPT at its head.
 - A PR run made before D489 landed has no visual job and is not judged at PR level; its merge group's run has the job.
-- The report must belong to the comparison the gate resolves itself, or the gate fails closed:
-  - PR: the run is the U11 cockpit run of the PR head, and the report names that head. The gate reads the report
-    subject's parents from GitHub; they must be `[report base, PR head]`. The gate checks with git that the report base
-    is on main.
-  - Merge group: the run is the group commit's, and the report's subject and head are the group commit. Its base must
-    be the first parent of one of the group's queue merges: the queue base, or a lower group's commit this group was
-    built on. Only the PRs merged above that base contribute declarations and accepts.
+- The report must be for the comparison the gate computes now (R11 ruling). Its base must equal that base exactly, and
+  its head must be the evaluated head. There is no ancestry proof and no search over earlier merges.
+  - PR: the base is the first parent of the PR's current merge ref, read from GitHub. Any other report, an older merge
+    of the same head included, leaves the gate PENDING: "visual report is for another base — re-run U11".
+  - Merge group: the base is `merge_group.base_sha`, read from the queue branch name
+    `gh-readonly-queue/main/pr-<n>-<base sha>`, and the head is the group commit. Any other report FAILS the group.
 
 The job runs the PR's own code, like today's WebKit job. A PR that changes the diff script, the scene spec or the
 workflow is reviewed as such.
