@@ -156,9 +156,11 @@
           "D377StatusAutoDisplayTests",
           "MENU04MenuBarDisplayTests",
           "MenuBarRangeSelectorTests",
+          "NotchStatusItemPlacementTests",
           "StatusItemAnchorTests",
           "StatusItemLaunchTests",
-          "U6StatusItemFrameTests"
+          "U6StatusItemFrameTests",
+          "WP17LaunchOpenTests"
         ]
       }
     },
@@ -195,6 +197,7 @@
           "NativeShellBatchTests",
           "NormalEntryActivityTests",
           "NormalEntryFirstRunWindowJourneyTests",
+          "NotchStatusItemPlacementTests",
           "P1ExactPlacementTests",
           "ResourcePluginInstallTests",
           "S04FirstUseHintJourneyTests",

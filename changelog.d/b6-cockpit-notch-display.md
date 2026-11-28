@@ -1,0 +1,1 @@
+Cockpit on two displays: the widget's red button, the shortcut and reopening the app no longer open the cockpit just left of the notch on the built-in display when the menu bar icon is hidden there; it opens under the icon on the display that shows it, and a menu bar icon click opens on the display clicked.

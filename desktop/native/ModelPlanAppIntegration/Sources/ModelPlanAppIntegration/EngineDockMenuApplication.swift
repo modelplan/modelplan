@@ -445,23 +445,40 @@ struct StatusNoticePresentation {
     /// Build 5 (owner 11-25): resolved by `StatusItemAnchor` from the button window's rect, accepted only once the menu
     /// bar has placed it, and the click that opened the cockpit, so a parking frame or another display's copy of the
     /// item never becomes the anchor.
+    /// Build 6 (owner 11-27): the copy on the display the user acted on (`StatusItemAnchor.placement`); a copy behind
+    /// the notch never anchors, so the red button no longer opens the cockpit just left of the notch.
     var cockpitAnchor: CGRect? {
-        guard !statusItemHidden, let status, status.isVisible, let button = status.button else { return nil }
-        let window = button.window.flatMap { window in
-            window.isVisible ? window.convertToScreen(button.convert(button.bounds, to: nil)) : nil
-        }
-        return StatusItemAnchor.resolve(window: window, click: statusClickAnchor, itemWidth: button.bounds.width,
-                                        displays: statusDisplays(), menuHeight: NSStatusBar.system.thickness)
+        guard !statusItemHidden, let status, status.isVisible, status.button != nil else { return nil }
+        return cockpitPlacement?.anchor
     }
     /// The status item's display even when the item is squeezed out: the clicked copy's display while that click is
-    /// current, else the button window's.
+    /// current, else the display `placement` picks, else the button window's.
     var cockpitStatusScreen: CGRect? {
-        // macrev2-1251-1: the clicked display does not depend on the item's width.
-        if let display = StatusItemAnchor.clickedDisplay(statusClickAnchor, displays: statusDisplays(), menuHeight: NSStatusBar.system.thickness) {
-            return display.frame
-        }
-        return status?.button?.window?.screen?.frame
+        cockpitPlacement?.display?.frame ?? status?.button?.window?.screen?.frame
     }
+    private var cockpitPlacement: StatusItemAnchor.Placement? {
+        guard let button = status?.button else { return nil }
+        // macrevc-1283-1: every reported copy carries whether it is drawn, so an occluded one never anchors.
+        let window = button.window.map { window in
+            StatusItemAnchor.Known(window.convertToScreen(button.convert(button.bounds, to: nil)), drawn: Self.drawn(window))
+        }
+        return StatusItemAnchor.placement(window: window, copies: statusCopyFrames?() ?? otherStatusWindowFrames(button: button),
+                                          click: statusClickAnchor, actedAt: cockpitOpenPoint, lastClick: lastStatusClick,
+                                          itemWidth: button.bounds.width, displays: statusDisplays(), menuHeight: NSStatusBar.system.thickness)
+    }
+    /// The frames of the item's other status-bar windows (one per menu bar with separate Spaces), when AppKit lists them.
+    private func otherStatusWindowFrames(button: NSStatusBarButton) -> [StatusItemAnchor.Known] {
+        statusItemWindows().filter { $0 !== button.window && abs($0.frame.width - button.bounds.width) < 1 }
+            .map { StatusItemAnchor.Known($0.frame, drawn: Self.drawn($0)) }
+    }
+    private static func drawn(_ window: NSWindow) -> Bool { window.isVisible && window.occlusionState.contains(.visible) }
+    /// Test seam: the other copies' frames and drawn state (nil reads the real status-bar windows).
+    var statusCopyFrames: (@MainActor () -> [StatusItemAnchor.Known])?
+    /// Build 6: the last completed status-item click, kept after the cockpit closes; opens without a click (shortcut,
+    /// menu, reopen, a red button whose display hides the item) go to its display while the arrangement is the same.
+    private(set) var lastStatusClick: StatusItemAnchor?
+    /// Test seam for the press point; production reads the window server (`StatusItemAnchor.eventScreenPoint`).
+    var statusPressLocation: @MainActor (NSEvent) -> CGPoint? = { StatusItemAnchor.eventScreenPoint($0) }
     /// The press on the status item that opened the cockpit; nil for every other entry and after the cockpit closes.
     /// A press becomes this only on its release over the item (`statusPress` holds it until then, so an aborted press
     /// never moves the anchor).
@@ -470,8 +487,8 @@ struct StatusNoticePresentation {
     var statusDisplays: @MainActor () -> [StatusItemAnchor.Display] = { StatusItemAnchor.Display.system() }
 
     /// Build 14c (G3-79): the screen point the latest open came from (the widget's ignition click). Nil for the menu
-    /// bar icon, the status menu and shortcuts. Only a detached open uses it; attached, the cockpit always opens under
-    /// the menu bar icon's display (G3-128).
+    /// bar icon, the status menu and shortcuts. A detached open goes to its display; attached (build 6, owner 11-27) the
+    /// cockpit opens under the icon on its display, or on the display that shows the icon when the notch hides it there.
     var cockpitOpenPoint: CGPoint?
     /// D88: `fromStatusItem` is the menu bar icon's own click: the attached cockpit grows out of the icon.
     /// `openPoint` is the click that opened it elsewhere (the widget's ignition): a detached cockpit with no remembered
@@ -1115,8 +1132,12 @@ struct StatusNoticePresentation {
         for window in NSApp.windows where String(describing: type(of: window)).contains("StatusBar") && !windows.contains(where: { $0 === window }) { windows.append(window) }
         return windows
     }
+    /// Build 6 (owner 11-27): a window behind the notch is not visible even when AppKit says it is drawn, and a display
+    /// without a window of its own counts through its projected copy (`StatusItemAnchor.copyVisibilities`).
     private func realStatusWindowVisibilities() -> [Bool] {
-        statusItemWindows().map { window in window.isVisible && window.occlusionState.contains(.visible) && NSScreen.screens.contains { $0.frame.intersects(window.frame) } }
+        StatusItemAnchor.copyVisibilities(windows: statusItemWindows().map { window in
+            (frame: window.frame, drawn: Self.drawn(window))
+        }, itemWidth: status?.button?.bounds.width, displays: statusDisplays(), menuHeight: NSStatusBar.system.thickness)
     }
     private var statusOcclusionObserver: NSObjectProtocol?
     private func watchStatusItemVisibility() {
@@ -1235,7 +1256,7 @@ struct StatusNoticePresentation {
             if onStatusItem {
                 if setupActive { Task { await reopenSetup() } } else {
                     // The completed click is the one that names the item; toggleConsole forgets it again on a close.
-                    if let press { statusClickAnchor = press }
+                    if let press { statusClickAnchor = press; lastStatusClick = press }
                     toggleConsole()
                 }
             }
@@ -1245,7 +1266,7 @@ struct StatusNoticePresentation {
               !terminating, setupActive || (cockpitEntryEnabled && (!lifecyclePaused || inLaunchPause)) else { return false }
         statusPressPending = true
         statusPress = status?.button.flatMap { button in
-            StatusItemAnchor.eventScreenPoint(event).flatMap { point in
+            statusPressLocation(event).flatMap { point in
                 StatusItemAnchor.click(pointer: point, local: button.convert(event.locationInWindow, from: nil),
                                        buttonBounds: button.bounds, flipped: button.isFlipped, displays: statusDisplays())
             }
@@ -1265,7 +1286,7 @@ struct StatusNoticePresentation {
         guard let status else { return }
         self.status = nil
         if let statusClickMonitor { NSEvent.removeMonitor(statusClickMonitor) }
-        statusClickMonitor = nil; statusPressPending = false; statusClickAnchor = nil; statusPress = nil
+        statusClickMonitor = nil; statusPressPending = false; statusClickAnchor = nil; statusPress = nil; lastStatusClick = nil
         noticeIndicator.removeFromSuperview(); usedUpDot.removeFromSuperview()
         status.menu = nil
         NSStatusBar.system.removeStatusItem(status)
