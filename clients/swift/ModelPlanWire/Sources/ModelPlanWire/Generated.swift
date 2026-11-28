@@ -1079,11 +1079,13 @@ public struct RowsResetCardSource: Codable, Sendable {
 public enum RowsResetCardSourceKind: Codable, Sendable, Equatable {
     case `codexAccount`
     case `codexbar`
+    case `zcodeAccount`
     case unknown(String)
     public init(rawValue: String) {
         switch rawValue {
         case "codex-account": self = .`codexAccount`
         case "codexbar": self = .`codexbar`
+        case "zcode-account": self = .`zcodeAccount`
         default: self = .unknown(rawValue)
         }
     }
@@ -1091,6 +1093,7 @@ public enum RowsResetCardSourceKind: Codable, Sendable, Equatable {
         switch self {
         case .`codexAccount`: return "codex-account"
         case .`codexbar`: return "codexbar"
+        case .`zcodeAccount`: return "zcode-account"
         case .unknown(let value): return value
         }
     }

@@ -409,6 +409,8 @@ type codexbarEntry struct {
 	SubscriptionRef string `json:"subscriptionRef,omitempty"`
 	// ReportedModels (D99): model slugs the tool itself lists for the signed-in account; slugs only.
 	ReportedModels []string `json:"reportedModels,omitempty"`
+	// Cards: the account's reserve (extra resets) when the reader reads one (ZCode Coding Plan, zcode_reset.go).
+	Cards []Card `json:"cards,omitempty"`
 
 	identity string
 }

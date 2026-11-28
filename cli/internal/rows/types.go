@@ -77,6 +77,8 @@ type ResetCardSourceKind string
 const (
 	ResetCardCodexAccount ResetCardSourceKind = "codex-account"
 	ResetCardCodexBar     ResetCardSourceKind = "codexbar"
+	// ResetCardZCodeAccount: ZCode's Coding Plan reset opportunities (zcode_reset.go).
+	ResetCardZCodeAccount ResetCardSourceKind = "zcode-account"
 )
 
 // ResetCards is a consent-fenced observation; count is nil when unknown.

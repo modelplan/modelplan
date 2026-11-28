@@ -60,6 +60,7 @@ type zcodeLogin struct {
 	billing    bool   // Start Plan balance (JWT) rather than Coding Plan quota (account key)
 	credential string
 	deviceMid  string
+	reset      zcodeResetAuth // the reserve call's tokens (zcode_reset.go); empty when not readable
 	// What names the account (zcodeAccountMaterial) and the still-sealed store it came from, so
 	// the read can record it for the projection (zcodeRememberSeal). In memory only.
 	material string
@@ -511,6 +512,7 @@ func readZCodeLogin(ctx context.Context, dir string, keychain *ZCodeKeychain, no
 	if format == "os" && keychain.StillValid != nil && !keychain.StillValid() {
 		return zcodeLogin{}, "consent_required"
 	}
+	login.reset = zcodeResetCredentials(store, open, family, kind, dir, now)
 	login.credential = strings.TrimSpace(login.credential)
 	if len(login.credential) > 8192 || strings.ContainsAny(login.credential, "\r\n\x00") {
 		return zcodeLogin{}, "unsupported_login"
@@ -600,7 +602,7 @@ func fetchZCodeLoginAs(ctx context.Context, c *http.Client, source ZaiConfigSour
 			e.Error = e.ErrorCode
 			return e
 		}
-		return parseZCodeBilling(r, now)
+		return withZCodeResets(ctx, c, login, parseZCodeBilling(r, now), now)
 	}
 	host := zaiHosts[login.region]
 	if host == "" {
@@ -613,7 +615,7 @@ func fetchZCodeLoginAs(ctx context.Context, c *http.Client, source ZaiConfigSour
 		e.Error = e.ErrorCode
 		return e
 	}
-	e = parseZai(r, now)
+	e = withZCodeResets(ctx, c, login, parseZai(r, now), now)
 	if e.Status != "ok" {
 		e.ErrorCode = zcodeLoginFailure(e.ErrorCode)
 		e.Error = e.ErrorCode

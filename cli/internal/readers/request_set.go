@@ -71,6 +71,12 @@ func requestSet(scope string, r *http.Request) (requestPin, bool) {
 		case host == "zcode.z.ai" && path == "/api/v1/zcode-plan/billing/balance":
 			valid = true
 			p.headers = append(p.headers, "X-Device-Mid")
+		case host == "zcode.z.ai" && path == "/api/v1/coding-plan/reset/status":
+			// The reserve (extra resets), read after the quota with ZCode's own JWT and MaaS token. It is
+			// a second stage on zcode.z.ai even when the quota came from the region host; status only.
+			valid = true
+			p.limit, p.stage, p.crossHost = 2, 1, true
+			p.headers = append(p.headers, "X-Device-Mid", "X-Bigmodel-Authorization", "Bigmodel-Target-Type")
 		}
 	case consent.ScopeOpenCodeGoAccountUsageAPIKey:
 		valid = host == "opencode.ai" && path == "/zen/go/v1/usage"
