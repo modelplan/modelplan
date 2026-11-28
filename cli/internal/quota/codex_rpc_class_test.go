@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/modelplan/modelplan/cli/internal/consent"
 )
 
 // Owner bad case 2026-11-28: the Codex card said "Codex 后台服务出错" for three hours. Every
@@ -160,7 +162,7 @@ func TestCodexUsageCreditsCarryTheCreditsUnit(t *testing.T) {
 
 // F4 (owner diagnostics 2026-11-28): an old npm Codex CLI first on PATH hid a newer Homebrew one.
 // Every runnable codex is a candidate; the newest `codex --version` wins, each binary is asked at
-// most once a minute while unchanged, and an app-bundled copy is never run (#14).
+// most once a minute while unchanged.
 func TestCodexBinPicksTheNewestInstalledCLI(t *testing.T) {
 	isolateHome(t)
 	home := t.TempDir()
@@ -188,7 +190,7 @@ func TestCodexBinPicksTheNewestInstalledCLI(t *testing.T) {
 	if got := CodexBin(home); got != newer {
 		t.Fatalf("picked %s, want the newest %s", got, newer)
 	}
-	if v := codexVersionFor(newer); v != "0.161.2" {
+	if v := codexMemoLoad("").versionAt(newer, now); v != "0.161.2" {
 		t.Fatalf("version %q", v)
 	}
 	asked := func() int { b, _ := os.ReadFile(calls); return strings.Count(string(b), "\n") }
@@ -238,40 +240,37 @@ func TestCodexBinWithoutVersionsKeepsTheLookupOrder(t *testing.T) {
 	}
 }
 
-// The reading records which CLI answered, as a home-relative or system path and a version only.
+// Review macrevb-1316-1: the reading records only where the CLI came from and its version. A
+// folder whose name is an account identifier reaches neither the caches nor the doctor row.
 func TestCodexReadingRecordsTheCLIForDoctor(t *testing.T) {
 	isolateHome(t)
 	home, _ := os.UserHomeDir()
-	dir := filepath.Join(home, ".local", "bin")
-	_ = os.MkdirAll(dir, 0o700)
-	bin, _ := fakeCodex(t, acctResponse)
-	b, _ := os.ReadFile(bin)
-	target := filepath.Join(dir, "codex")
-	script := strings.Replace(string(b), "[ \"$1\" = app-server ] || exit 2", "[ \"$1\" = --version ] && { echo 'codex-cli 0.161.2'; exit 0; }\n[ \"$1\" = app-server ] || exit 2", 1)
-	if err := os.WriteFile(target, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	const identifier = "acct-SYNTH-77810"
+	target := filepath.Join(home, identifier, "bin", "codex")
+	codexStub(t, target, "0.161.2", codexInitOK, codexRateOK, "")
+	t.Setenv("PATH", filepath.Dir(target))
+	t.Setenv("MODELPLAN_CODEX", "")
+	t.Setenv("CODEX_CLI_PATH", "")
 	resetCodexVersions(t)
 	cache := t.TempDir()
-	if err := RefreshCodexAccount(context.Background(), cache, target, acctNow); err != nil {
+	if err := RefreshCodexAccountDiscover(context.Background(), cache, home, acctNow); err != nil {
 		t.Fatal(err)
 	}
 	s := loadAccount(cache)
-	if s.CLI == nil || s.CLI.Path != "~/.local/bin/codex" || s.CLI.Version != "0.161.2" || s.CLI.Source != "other" {
+	if s.CLI == nil || s.CLI.Version != "0.161.2" || s.CLI.Source != "path" {
 		t.Fatalf("cli %+v", s.CLI)
 	}
-	if strings.Contains(string(mustRead(t, accountPath(cache))), home) {
-		t.Fatal("the home path reached the cache")
-	}
-	for _, c := range []struct{ path, want string }{
-		{filepath.Join(home, ".nvm", "versions", "node", "v22.21.1", "bin", "codex"), "~/.nvm/versions/node/v22.21.1/bin/codex"},
-		{"/opt/homebrew/bin/codex", "/opt/homebrew/bin/codex"},
-		{"/Users/Someone Else/bin/codex", "other"},
-		{filepath.Join(home, "odd dir", "codex"), "other"},
-	} {
-		if got := codexDisplayPath(c.path, home); got != c.want {
-			t.Fatalf("display %s = %q, want %q", c.path, got, c.want)
+	_ = filepath.WalkDir(cache, func(p string, d os.DirEntry, err error) error {
+		if err == nil && !d.IsDir() && (strings.Contains(string(mustRead(t, p)), identifier) || strings.Contains(string(mustRead(t, p)), home)) {
+			t.Fatalf("%s keeps the identifier or the home folder", filepath.Base(p))
 		}
+		return nil
+	})
+	state, _ := consent.Current()
+	row := codexDiagnostic(Paths{Cache: cache}, state, true, acctNow.Add(time.Minute))
+	out, _ := json.Marshal(row)
+	if row.CodexCLI != "path 0.161.2" || strings.Contains(string(out), identifier) || strings.Contains(string(out), home) {
+		t.Fatalf("doctor row %s", out)
 	}
 }
 
@@ -286,12 +285,9 @@ func mustRead(t *testing.T, p string) []byte {
 
 func resetCodexVersions(t *testing.T) {
 	t.Helper()
-	codexVersions.Lock()
-	codexVersions.m = map[string]codexVersionProbe{}
-	codexVersions.Unlock()
-	codexPin.Lock()
-	codexPin.app, codexPin.appKey, codexPin.alt = "", "", ""
-	codexPin.Unlock()
+	codexMemory.Lock()
+	codexMemory.memo = nil
+	codexMemory.Unlock()
 	clock, dirs, apps := codexClock, codexSearchDirs, codexAppPaths
 	// No desktop app of the machine running the tests takes part.
 	codexAppPaths = func(string) []string { return nil }
@@ -308,21 +304,21 @@ func resetCodexVersions(t *testing.T) {
 	t.Cleanup(func() { codexClock, codexSearchDirs, codexAppPaths = clock, dirs, apps })
 }
 
-// doctor prints only a display path and a version from the cached note; anything else is dropped.
-func TestCodexCLIDiagnosticRejectsAnythingButAPathAndVersion(t *testing.T) {
+// doctor prints only a source word and a version from the cached note; anything else is dropped.
+func TestCodexCLIDiagnosticRejectsAnythingButASourceAndVersion(t *testing.T) {
 	for _, c := range []struct {
 		cli  *codexCLI
 		want string
 	}{
-		{&codexCLI{Source: "npm", Path: "~/.nvm/versions/node/v22.21.1/bin/codex", Version: "0.146.0"}, "npm ~/.nvm/versions/node/v22.21.1/bin/codex 0.146.0"},
-		{&codexCLI{Source: "homebrew", Path: "/opt/homebrew/bin/codex", Version: "0.144.1"}, "homebrew /opt/homebrew/bin/codex 0.144.1"},
-		{&codexCLI{Source: "app", Path: "/Applications/ChatGPT.app/Contents/Resources/codex", Version: "0.171.0-alpha.13.2"}, "app /Applications/ChatGPT.app/Contents/Resources/codex 0.171.0-alpha.13.2"},
-		{&codexCLI{Path: "other"}, "other other"},
-		{&codexCLI{Source: "surprise", Path: "~/bin/codex"}, ""},
-		{&codexCLI{Source: "npm", Path: "/Users/Synthetic Person/bin/codex", Version: "1.0.0"}, ""},
-		{&codexCLI{Source: "npm", Path: "/Users/synthetic/bin/codex", Version: "1.0.0"}, ""},
-		{&codexCLI{Source: "npm", Path: "~/../../etc/codex"}, ""},
-		{&codexCLI{Source: "npm", Path: "~/bin/codex", Version: "Bearer synthetic"}, ""},
+		{&codexCLI{Source: "npm", Version: "0.146.0"}, "npm 0.146.0"},
+		{&codexCLI{Source: "homebrew", Version: "0.144.1"}, "homebrew 0.144.1"},
+		{&codexCLI{Source: "app", Version: "0.171.0-alpha.13.2"}, "app 0.171.0-alpha.13.2"},
+		{&codexCLI{Source: "path"}, "path"},
+		{&codexCLI{Source: "override", Version: "1.2.3"}, "override 1.2.3"},
+		{&codexCLI{Source: "surprise"}, ""},
+		{&codexCLI{Source: "npm", Version: "Bearer synthetic"}, ""},
+		{&codexCLI{Source: "~/acct-SYNTH-77810/bin/codex"}, ""},
+		{&codexCLI{}, ""},
 		{nil, ""},
 	} {
 		if got := codexCLIDiagnostic(c.cli); got != c.want {
@@ -361,7 +357,7 @@ func TestCodexBinPrefersTheDesktopAppCLI(t *testing.T) {
 		return []string{filepath.Join(apps, "ChatGPT.app", "Contents", "Resources", "codex"), filepath.Join(apps, "ChatGPT.app", "Contents", "Resources", "codex-cli", "bin", "codex"), filepath.Join(apps, "Codex.app", "Contents", "Resources", "codex")}
 	}
 	// No app: the newest installed copy.
-	if p, source := codexChoice(home); p != npm || source != "npm" {
+	if p, source := codexChoice(codexMemoLoad(""), home); p != npm || source != "npm" {
 		t.Fatalf("without an app: %s (%s)", p, source)
 	}
 	// An app CLI that does not answer --version is skipped; the next app place that does is used,
@@ -372,7 +368,7 @@ func TestCodexBinPrefersTheDesktopAppCLI(t *testing.T) {
 	codexAppPaths = func(string) []string {
 		return []string{filepath.Join(apps, "ChatGPT.app", "Contents", "Resources", "codex"), bundled, filepath.Join(apps, "Codex.app", "Contents", "Resources", "codex")}
 	}
-	if p, source := codexChoice(home); p != bundled || source != "app" {
+	if p, source := codexChoice(codexMemoLoad(""), home); p != bundled || source != "app" {
 		t.Fatalf("with the app: %s (%s)", p, source)
 	}
 	if got := CodexBin(home); got != bundled {
@@ -380,11 +376,11 @@ func TestCodexBinPrefersTheDesktopAppCLI(t *testing.T) {
 	}
 	// An explicit path wins: CodexBar's CODEX_CLI_PATH as well as MODELPLAN_CODEX.
 	t.Setenv("CODEX_CLI_PATH", brew)
-	if p, source := codexChoice(home); p != brew || source != "override" {
+	if p, source := codexChoice(codexMemoLoad(""), home); p != brew || source != "override" {
 		t.Fatalf("CODEX_CLI_PATH: %s (%s)", p, source)
 	}
 	t.Setenv("MODELPLAN_CODEX", npm)
-	if p, _ := codexChoice(home); p != npm {
+	if p, _ := codexChoice(codexMemoLoad(""), home); p != npm {
 		t.Fatalf("MODELPLAN_CODEX: %s", p)
 	}
 }
@@ -396,7 +392,7 @@ func TestCodexSourceNamesWhereACopyCameFrom(t *testing.T) {
 		"/opt/homebrew/bin/codex":                                                          "homebrew",
 		"/Applications/ChatGPT.app/Contents/Resources/codex":                               "app",
 		filepath.Join(home, "Applications", "Codex.app", "Contents", "Resources", "codex"): "app",
-		"/somewhere/else/codex":                                                            "other",
+		"/somewhere/else/codex":                                                            "path",
 		"":                                                                                 "",
 	} {
 		if got := codexSource(p); got != want {
@@ -405,92 +401,261 @@ func TestCodexSourceNamesWhereACopyCameFrom(t *testing.T) {
 	}
 }
 
-// D487 addendum: the desktop app's CLI can be an alpha. When it fails the protocol (initialize
-// refused, an unknown method, a decode error) the next binary in the order is tried once in the same
-// read, and the working one is kept until the app's CLI changes. A provider error (5xx) or a sign-in
-// error is not a protocol failure and tries nothing else.
+const (
+	codexInitOK = `{"id":1,"result":{"userAgent":"x"}}`
+	codexRateOK = "" // the account reading in acctResponse
+)
+
+// codexStub writes a fake codex at p that logs each start ("<$1>") to calls, answers --version
+// with version (none when empty), initialize with initReply and the rate-limit read with
+// rateReply (acctResponse when empty).
+func codexStub(t *testing.T, p, version, initReply, rateReply, calls string) string {
+	t.Helper()
+	if rateReply == "" {
+		rateReply = `{"id":2,"result":` + strings.ReplaceAll(acctResponse, "\n", "") + `}`
+	}
+	if calls == "" {
+		calls = filepath.Join(t.TempDir(), "calls")
+	}
+	answer := "exit 0"
+	if version != "" {
+		answer = "echo 'codex-cli " + version + "'; exit 0"
+	}
+	script := "#!/bin/sh\necho \"<$1>\" >> '" + calls + "'\n[ \"$1\" = --version ] && { " + answer + "; }\n[ \"$1\" = app-server ] || exit 2\n" +
+		"while IFS= read -r line; do\n  case \"$line\" in\n" +
+		"    *'\"id\":1,'*) echo '" + initReply + "' ;;\n" +
+		"    *'\"method\":\"account/rateLimits/read\"'*) echo '" + rateReply + "' ;;\n" +
+		"    *'\"method\":\"account/read\"'*) echo '{\"id\":3,\"result\":{\"account\":null}}' ;;\n" +
+		"    *'\"method\":\"model/list\"'*) echo \"$line\" | sed -n 's/.*\"id\":\\([0-9]*\\).*/{\"id\":\\1,\"result\":{\"data\":[],\"nextCursor\":null}}/p' ;;\n" +
+		"  esac\ndone\n"
+	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func countCalls(t *testing.T, calls, what string) int {
+	t.Helper()
+	b, _ := os.ReadFile(calls)
+	return strings.Count(string(b), "<"+what+">")
+}
+
+// D487 addendum and review macrevb-1316-2: only a protocol failure of the desktop app's CLI (an
+// unknown method or params, an answer it cannot decode) tries the next binary, once, in the same
+// read. A provider outage or a sign-in failure, even at initialize, is the account's: no other CLI
+// starts and the outage is recorded.
 func TestCodexProtocolFailureOfTheAppCLIFallsBackOnce(t *testing.T) {
-	isolateHome(t)
-	home, _ := os.UserHomeDir()
-	good, _ := fakeCodex(t, acctResponse)
-	goodScript := string(mustRead(t, good))
-	withVersion := func(script, version string) string {
-		return strings.Replace(script, "[ \"$1\" = app-server ] || exit 2", "[ \"$1\" = --version ] && { echo 'codex-cli "+version+"'; exit 0; }\n[ \"$1\" = app-server ] || exit 2", 1)
-	}
-	failing := func(version, reply string) string {
-		calls := filepath.Join(t.TempDir(), "calls")
-		return "#!/bin/sh\n[ \"$1\" = --version ] && { echo 'codex-cli " + version + "'; exit 0; }\n[ \"$1\" = app-server ] || exit 2\n" +
-			"while IFS= read -r line; do\n  echo x >> '" + calls + "'\n  case \"$line\" in\n    *'\"id\":1,'*) echo '" + reply + "' ;;\n" +
-			"    *'\"method\":\"account/rateLimits/read\"'*) echo '{\"id\":2,\"error\":{\"code\":-32603,\"message\":\"failed to fetch codex rate limits: request failed: 500\"}}' ;;\n  esac\ndone\n"
-	}
-	put := func(p, body string) string {
-		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(p, []byte(body), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		return p
-	}
-	npm := put(filepath.Join(home, ".nvm", "versions", "node", "v22.21.1", "bin", "codex"), withVersion(goodScript, "0.146.0"))
-	app := filepath.Join(home, "Applications", "ChatGPT.app", "Contents", "Resources", "codex")
-	t.Setenv("PATH", filepath.Dir(npm))
-	t.Setenv("MODELPLAN_CODEX", "")
-	t.Setenv("CODEX_CLI_PATH", "")
+	incompatible := `{"id":2,"result":{"rateLimits":{"primary":{"usedPercent":"lots"}}}}`
 	for _, c := range []struct {
-		name, reply string
-		fallback    bool
+		name, init, rate string
+		fallback         bool
+		code             string
 	}{
-		{"initialize refused", `{"id":1,"error":{"code":-32600,"message":"unsupported client"}}`, true},
-		{"unknown method", `{"id":1,"error":{"code":-32601,"message":"Method not found"}}`, true},
-		{"provider outage", `{"id":1,"result":{"userAgent":"x"}}`, false},
+		{"unknown method at initialize", `{"id":1,"error":{"code":-32601,"message":"Method not found"}}`, "", true, ""},
+		{"invalid params at initialize", `{"id":1,"error":{"code":-32602,"message":"invalid params"}}`, "", true, ""},
+		{"incompatible rate-limit result", codexInitOK, incompatible, true, ""},
+		{"undecodable answer", codexInitOK, `{"id":2,"error":{"code":-32603,"message":"failed to fetch codex rate limits: Decode error: unknown variant` + "`x`" + `"}}`, true, ""},
+		{"outage at initialize", `{"id":1,"error":{"code":-32603,"message":"failed: 503 Service Unavailable"}}`, "", false, "http_5xx"},
+		{"sign-in at initialize", `{"id":1,"error":{"code":-32603,"message":"codex account authentication required to read rate limits"}}`, "", false, "not_signed_in"},
+		{"outage at the read", codexInitOK, `{"id":2,"error":{"code":-32603,"message":"failed to fetch codex rate limits: request failed: 500"}}`, false, "http_5xx"},
+		{"other error at initialize", `{"id":1,"error":{"code":-32600,"message":"unsupported client"}}`, "", false, "rpc_error"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
+			isolateHome(t)
+			home, _ := os.UserHomeDir()
+			calls := filepath.Join(t.TempDir(), "calls")
+			npm := codexStub(t, filepath.Join(home, ".nvm", "versions", "node", "v22.21.1", "bin", "codex"), "0.146.0", codexInitOK, codexRateOK, calls+".npm")
+			app := codexStub(t, filepath.Join(home, "Applications", "ChatGPT.app", "Contents", "Resources", "codex"), "0.171.0-alpha.13.2", c.init, c.rate, calls+".app")
+			t.Setenv("PATH", filepath.Dir(npm))
+			t.Setenv("MODELPLAN_CODEX", "")
+			t.Setenv("CODEX_CLI_PATH", "")
 			resetCodexVersions(t)
 			codexAppPaths = func(string) []string { return []string{app} }
-			put(app, failing("0.171.0-alpha.13.2", c.reply))
 			cache := t.TempDir()
-			if p, source := codexChoice(home); p != app || source != "app" {
+			if p, source := codexChoice(codexMemoLoad(cache), home); p != app || source != "app" {
 				t.Fatalf("first choice %s (%s)", p, source)
 			}
-			err := RefreshCodexAccount(context.Background(), cache, CodexBin(home), acctNow)
+			err := RefreshCodexAccountDiscover(context.Background(), cache, home, acctNow)
 			s := loadAccount(cache)
 			if !c.fallback {
-				if err == nil || s.Status == "ok" || s.ErrorCode != "http_5xx" || CodexBin(home) != app {
-					t.Fatalf("a provider error moved to another CLI: %v %+v", err, s)
+				if err == nil || s.Status == "ok" || s.ErrorCode != c.code || countCalls(t, calls+".npm", "app-server") != 0 {
+					t.Fatalf("a %s moved to another CLI: %v %+v, npm app-server starts %d", c.code, err, s, countCalls(t, calls+".npm", "app-server"))
+				}
+				if p, _ := codexChoice(codexMemoLoad(cache), home); p != app {
+					t.Fatalf("a %s pinned another CLI: %s", c.code, p)
 				}
 				return
 			}
-			if err != nil || s.Status != "ok" || s.CLI == nil || s.CLI.Source != "npm" || s.CLI.Version != "0.146.0" {
-				t.Fatalf("no fallback read: %v %+v", err, s)
+			if err != nil || s.Status != "ok" || s.CLI == nil || s.CLI.Source != "npm" || s.CLI.Version != "0.146.0" || countCalls(t, calls+".npm", "app-server") != 1 {
+				t.Fatalf("no single fallback read: %v %+v", err, s)
 			}
-			// Remembered while the app's CLI is unchanged.
-			if p := CodexBin(home); p != npm {
+			if p, _ := codexChoice(codexMemoLoad(cache), home); p != npm {
 				t.Fatalf("working copy not kept: %s", p)
-			}
-			// A new app CLI (new version, new file) is tried first again.
-			put(app, failing("0.172.0", `{"id":1,"result":{"userAgent":"x"}}`))
-			future := acctNow.Add(time.Hour)
-			_ = os.Chtimes(app, future, future)
-			codexClock = func() time.Time { return future }
-			if p := CodexBin(home); p != app {
-				t.Fatalf("an updated app CLI was not tried again: %s", p)
 			}
 		})
 	}
 }
 
-// An explicit path, or a binary the reader did not find itself, has no fallback.
-func TestCodexProtocolFailureOfAnExplicitCLITriesNothingElse(t *testing.T) {
+// Review macrevb-1316-2: an incompatible answer with no other CLI to try is schema_changed.
+func TestCodexIncompatibleResultWithoutAFallbackIsSchemaChanged(t *testing.T) {
 	isolateHome(t)
+	home, _ := os.UserHomeDir()
+	app := codexStub(t, filepath.Join(home, "Applications", "ChatGPT.app", "Contents", "Resources", "codex"), "0.171.0-alpha.13.2", codexInitOK,
+		`{"id":2,"result":{"rateLimits":{"primary":{"usedPercent":"lots"}}}}`, "")
+	t.Setenv("PATH", filepath.Join(home, "nothing"))
+	t.Setenv("MODELPLAN_CODEX", "")
+	t.Setenv("CODEX_CLI_PATH", "")
+	resetCodexVersions(t)
+	codexAppPaths = func(string) []string { return []string{app} }
+	cache := t.TempDir()
+	_ = RefreshCodexAccountDiscover(context.Background(), cache, home, acctNow)
+	if s := loadAccount(cache); s == nil || s.Status == "ok" || s.ErrorCode != "schema_changed" {
+		t.Fatalf("snapshot %+v", s)
+	}
+}
+
+// Review macrevb-1316-5: the versions and the working fallback outlive the CLI process. Two due
+// reads in separate processes (the in-process memo cleared between them) share one cache: the second
+// asks no --version and does not start the known-incompatible app CLI. A replaced app CLI is
+// considered again on the next eligible read.
+func TestCodexFallbackAndVersionsPersistAcrossProcesses(t *testing.T) {
+	isolateHome(t)
+	home, _ := os.UserHomeDir()
+	calls := filepath.Join(t.TempDir(), "calls")
+	npm := codexStub(t, filepath.Join(home, ".nvm", "versions", "node", "v22.21.1", "bin", "codex"), "0.146.0", codexInitOK, codexRateOK, calls+".npm")
+	appPath := filepath.Join(home, "Applications", "ChatGPT.app", "Contents", "Resources", "codex")
+	app := codexStub(t, appPath, "0.171.0-alpha.13.2", `{"id":1,"error":{"code":-32601,"message":"Method not found"}}`, "", calls+".app")
+	t.Setenv("PATH", filepath.Dir(npm))
+	t.Setenv("MODELPLAN_CODEX", "")
+	t.Setenv("CODEX_CLI_PATH", "")
+	resetCodexVersions(t)
+	codexAppPaths = func(string) []string { return []string{app} }
+	cache := t.TempDir()
+	now := acctNow
+	codexClock = func() time.Time { return now }
+	read := func() {
+		t.Helper()
+		codexMemory.Lock()
+		codexMemory.memo = nil // a new process
+		codexMemory.Unlock()
+		if err := RefreshCodexAccountDiscover(context.Background(), cache, home, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	read()
+	if a, n := countCalls(t, calls+".app", "--version")+countCalls(t, calls+".app", "app-server"), countCalls(t, calls+".npm", "--version")+countCalls(t, calls+".npm", "app-server"); a != 2 || n != 2 {
+		t.Fatalf("first read: app starts %d, npm starts %d", a, n)
+	}
+	if info, err := os.Stat(codexMemoPath(cache)); err != nil || info.Mode().Perm() != 0o600 || strings.Contains(string(mustRead(t, codexMemoPath(cache))), home) {
+		t.Fatalf("memo file %v %v", info, err)
+	}
+	now = now.Add(AccountEvery)
+	read()
+	if a, n := countCalls(t, calls+".app", "--version")+countCalls(t, calls+".app", "app-server"), countCalls(t, calls+".npm", "--version")+countCalls(t, calls+".npm", "app-server"); a != 2 || n != 3 {
+		t.Fatalf("second read: app starts %d (want no new), npm starts %d (want one app-server)", a, n)
+	}
+	// The app CLI is replaced (a new build that works): the next eligible read considers it again.
+	codexStub(t, appPath, "0.172.0", codexInitOK, codexRateOK, calls+".app")
+	future := now.Add(time.Minute)
+	_ = os.Chtimes(appPath, future, future)
+	now = now.Add(AccountEvery)
+	read()
+	if s := loadAccount(cache); s.CLI == nil || s.CLI.Source != "app" || s.CLI.Version != "0.172.0" || countCalls(t, calls+".app", "app-server") != 2 {
+		t.Fatalf("the replaced app CLI was not used: %+v", s.CLI)
+	}
+}
+
+// Review macrevb-1316-3: discovery runs programs, so a read that is off, too soon or not
+// permitted starts none (no --version either), at the CLI entry and the scheduler's entry.
+func TestCodexDiscoveryStartsNothingUnlessTheReadGoesAhead(t *testing.T) {
+	isolateHome(t)
+	home, _ := os.UserHomeDir()
+	calls := filepath.Join(t.TempDir(), "calls")
+	npm := codexStub(t, filepath.Join(home, ".nvm", "versions", "node", "v22.21.1", "bin", "codex"), "0.146.0", codexInitOK, codexRateOK, calls)
+	t.Setenv("PATH", filepath.Dir(npm))
+	t.Setenv("MODELPLAN_CODEX", "")
+	t.Setenv("CODEX_CLI_PATH", "")
 	resetCodexVersions(t)
 	cache := t.TempDir()
-	bin := codexScript(t, "[ \"$1\" = app-server ] || exit 2\nwhile IFS= read -r line; do echo '{\"id\":1,\"error\":{\"code\":-32601,\"message\":\"Method not found\"}}'; done\n")
+	started := func() int { b, _ := os.ReadFile(calls); return strings.Count(string(b), "\n") }
+	t.Setenv("MODELPLAN_CODEX_ACCOUNT", "off")
+	if r := RefreshAccountNowDiscover(context.Background(), cache, home, acctNow); r.Status != "failed" || started() != 0 {
+		t.Fatalf("off: %+v, %d starts", r, started())
+	}
+	if err := RefreshCodexAccountDiscover(context.Background(), cache, home, acctNow); err == nil || started() != 0 {
+		t.Fatalf("off (scheduler entry): %v, %d starts", err, started())
+	}
+	t.Setenv("MODELPLAN_CODEX_ACCOUNT", "")
+	if err := RefreshCodexAccountDiscover(context.Background(), cache, home, acctNow); err != nil || started() == 0 {
+		t.Fatalf("a due read: %v, %d starts", err, started())
+	}
+	before := started()
+	if r := RefreshAccountNowDiscover(context.Background(), cache, home, acctNow.Add(time.Minute)); r.Status != "too_soon" || started() != before {
+		t.Fatalf("too soon: %+v, %d new starts", r, started()-before)
+	}
+	if err := RefreshCodexAccountDiscover(context.Background(), cache, home, acctNow.Add(time.Minute)); err != nil || started() != before {
+		t.Fatalf("too soon (scheduler entry): %v, %d new starts", err, started()-before)
+	}
+}
+
+// Review macrevb-1316-4: semantic-version precedence, numeric prerelease parts numerically.
+func TestCodexVersionPrecedence(t *testing.T) {
+	for _, c := range []struct{ newer, older string }{
+		{"0.171.0-alpha.10", "0.171.0-alpha.9"},
+		{"0.171.0", "0.171.0-alpha.10"},
+		{"0.171.0-beta", "0.171.0-alpha.10"},
+		{"0.171.0-alpha.1.1", "0.171.0-alpha.1"},
+		{"0.171.0-alpha", "0.171.0-1"},
+		{"0.172.0-alpha.1", "0.171.9"},
+		{"1.10.0", "1.9.0"},
+	} {
+		if !codexNewer(c.newer, c.older) || codexNewer(c.older, c.newer) {
+			t.Fatalf("%s should outrank %s", c.newer, c.older)
+		}
+	}
+	if codexNewer("0.171.0-alpha.9", "0.171.0-alpha.9") {
+		t.Fatal("equal versions")
+	}
+	// Discovery picks alpha.10 over alpha.9 in both PATH orders, and a release over either.
+	isolateHome(t)
+	home, _ := os.UserHomeDir()
+	a9 := codexStub(t, filepath.Join(t.TempDir(), "a9", "codex"), "0.171.0-alpha.9", codexInitOK, codexRateOK, "")
+	a10 := codexStub(t, filepath.Join(t.TempDir(), "a10", "codex"), "0.171.0-alpha.10", codexInitOK, codexRateOK, "")
+	rel := codexStub(t, filepath.Join(t.TempDir(), "rel", "codex"), "0.171.0", codexInitOK, codexRateOK, "")
+	t.Setenv("MODELPLAN_CODEX", "")
+	t.Setenv("CODEX_CLI_PATH", "")
+	for _, order := range [][]string{{a9, a10}, {a10, a9}} {
+		resetCodexVersions(t)
+		t.Setenv("PATH", filepath.Dir(order[0])+string(os.PathListSeparator)+filepath.Dir(order[1]))
+		if got := CodexBin(home); got != a10 {
+			t.Fatalf("PATH %v picked %s", order, got)
+		}
+	}
+	resetCodexVersions(t)
+	t.Setenv("PATH", strings.Join([]string{filepath.Dir(a10), filepath.Dir(rel), filepath.Dir(a9)}, string(os.PathListSeparator)))
+	if got := CodexBin(home); got != rel {
+		t.Fatalf("a release lost to a prerelease: %s", got)
+	}
+}
+
+// An explicit path has no fallback: a protocol failure stays its own.
+func TestCodexProtocolFailureOfAnExplicitCLITriesNothingElse(t *testing.T) {
+	isolateHome(t)
+	home, _ := os.UserHomeDir()
+	calls := filepath.Join(t.TempDir(), "calls")
+	npm := codexStub(t, filepath.Join(home, ".nvm", "versions", "node", "v22.21.1", "bin", "codex"), "0.146.0", codexInitOK, codexRateOK, calls)
+	t.Setenv("PATH", filepath.Dir(npm))
+	resetCodexVersions(t)
+	bin := codexStub(t, filepath.Join(t.TempDir(), "codex"), "", `{"id":1,"error":{"code":-32601,"message":"Method not found"}}`, "", "")
 	t.Setenv("MODELPLAN_CODEX", bin)
-	if err := RefreshCodexAccount(context.Background(), cache, CodexBin(os.Getenv("HOME")), acctNow); err == nil {
+	cache := t.TempDir()
+	if err := RefreshCodexAccountDiscover(context.Background(), cache, home, acctNow); err == nil {
 		t.Fatal("an explicit failing CLI read succeeded")
 	}
-	if s := loadAccount(cache); s == nil || s.Status == "ok" || s.CLI == nil || s.CLI.Source != "override" {
+	if s := loadAccount(cache); s == nil || s.Status == "ok" || s.CLI == nil || s.CLI.Source != "override" || countCalls(t, calls, "app-server") != 0 {
 		t.Fatalf("snapshot %+v", s)
 	}
 }

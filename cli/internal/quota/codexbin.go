@@ -4,6 +4,9 @@ package quota
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -28,41 +31,125 @@ import (
 //  3. the newest by `codex --version` among every runnable codex on PATH and in the usual install
 //     folders (the places CodexBar and Pulse d34d708 Sources/Pulse/Providers/CodexAppServer.swift:263
 //     look; both take the first hit, comparing versions is ours).
+// Discovery runs programs (`--version`), so it only runs once a read is admitted and due
+// (refreshCodexAccount), never while the reader is off.
 
-// codexCLI is what doctor shows about the CLI a read ran: where it came from, a display path and a version.
+// codexCLI is what doctor shows about the CLI a read ran: where it came from and its version. No
+// path: a folder name can be an account name (review macrevb-1316-1).
 type codexCLI struct {
-	Source  string `json:"source,omitempty"` // override | app | homebrew | npm | other
-	Path    string `json:"path"`
+	Source  string `json:"source,omitempty"` // override | app | homebrew | npm | path
 	Version string `json:"version,omitempty"`
 }
 
 // codexAppPaths: the desktop apps' CLIs in order (a test seam).
 var codexAppPaths = toolcli.CodexAppPaths
 
-// codexChoice is the codex a read runs and its source (codexCLI.Source): the first of codexOrder,
-// unless the desktop app's CLI failed the protocol and another copy worked (codexPin).
-func codexChoice(home string) (string, string) {
-	order, override := codexOrder(home)
+// codexMemo remembers, across CLI processes (codex-cli.json in the cache), each binary's version
+// answer and the working fallback for the desktop app's CLI. Binaries are keyed by a hash of their
+// path, so the file holds no path.
+type codexMemo struct {
+	SchemaVersion int                          `json:"schemaVersion"`
+	Versions      map[string]codexVersionProbe `json:"versions,omitempty"`
+	Pin           *codexPinRecord              `json:"pin,omitempty"`
+	cache         string
+}
+
+type codexVersionProbe struct {
+	Key     string    `json:"key"`               // the file's mtime and size when it was asked
+	Version string    `json:"version,omitempty"` // "" when it did not answer with a version
+	At      time.Time `json:"at"`
+}
+
+// codexPinRecord (D487 addendum): the app CLI (App) failed the protocol at AppKey (file and
+// version) and Alt worked; Alt is used until the app's CLI changes.
+type codexPinRecord struct {
+	App    string `json:"app"`
+	AppKey string `json:"appKey"`
+	Alt    string `json:"alt"`
+}
+
+// codexMemory is the memo of a caller without a cache folder (this process only).
+var codexMemory = struct {
+	sync.Mutex
+	memo *codexMemo
+}{}
+
+const codexMemoFile = "codex-cli.json"
+
+func codexMemoPath(cache string) string { return filepath.Join(cache, "observed", codexMemoFile) }
+
+// codexMemoLoad reads the memo; a missing or unreadable file is an empty memo.
+func codexMemoLoad(cache string) *codexMemo {
+	if cache == "" {
+		codexMemory.Lock()
+		defer codexMemory.Unlock()
+		if codexMemory.memo == nil {
+			codexMemory.memo = &codexMemo{SchemaVersion: 1}
+		}
+		return codexMemory.memo
+	}
+	m := &codexMemo{}
+	if b, status := readBounded(codexMemoPath(cache), 64<<10); status == "" {
+		_ = json.Unmarshal(b, m)
+	}
+	if m.SchemaVersion != 1 {
+		m = &codexMemo{SchemaVersion: 1}
+	}
+	m.cache = cache
+	return m
+}
+
+// save writes the memo (0600, atomically); best effort.
+func (m *codexMemo) save() {
+	if m.cache == "" {
+		return
+	}
+	if len(m.Versions) > codexVersionsMax {
+		m.Versions = nil
+	}
+	b, err := json.Marshal(m)
+	if err != nil || os.MkdirAll(filepath.Dir(codexMemoPath(m.cache)), 0o700) != nil {
+		return
+	}
+	_ = writeAtomic(codexMemoPath(m.cache), b)
+}
+
+func codexPathKey(p string) string {
+	sum := sha256.Sum256([]byte(filepath.Clean(p)))
+	return hex.EncodeToString(sum[:16])
+}
+
+// codexChoice is the codex a read runs and its source: the first of codexOrder, unless the desktop
+// app's CLI failed the protocol and another copy worked (the memo's pin).
+func codexChoice(m *codexMemo, home string) (string, string) {
+	order, override := codexOrder(m, home)
 	if len(order) == 0 {
 		return "", ""
 	}
 	if override {
 		return order[0], "override"
 	}
-	if alt := codexPinned(order); alt != "" {
+	if alt := m.pinned(order); alt != "" {
 		return alt, codexSource(alt)
 	}
 	return order[0], codexSource(order[0])
 }
 
+func codexOverride() string {
+	for _, env := range []string{"MODELPLAN_CODEX", "CODEX_CLI_PATH"} {
+		if p := os.Getenv(env); p != "" {
+			return p
+		}
+	}
+	return ""
+}
+
 // codexOrder lists the codex binaries a read may run, best first: an explicit path alone; else the
 // desktop apps' CLIs that answer --version, then the installed copies (the newest-rule pick first,
 // then the rest in lookup order). override reports the explicit path.
-func codexOrder(home string) (order []string, override bool) {
-	for _, env := range []string{"MODELPLAN_CODEX", "CODEX_CLI_PATH"} {
-		if p := os.Getenv(env); p != "" {
-			return []string{p}, true
-		}
+func codexOrder(m *codexMemo, home string) (order []string, override bool) {
+	if p := codexOverride(); p != "" {
+		return []string{p}, true
 	}
 	exe := "codex"
 	if runtime.GOOS == "windows" {
@@ -74,11 +161,11 @@ func codexOrder(home string) (order []string, override bool) {
 		if err != nil || !info.Mode().IsRegular() || info.Mode()&0o111 == 0 || toolcli.InsideOtherApp(p) {
 			continue
 		}
-		if codexVersionAt(p, now) != "" {
+		if m.versionAt(p, now) != "" {
 			order = append(order, p)
 		}
 	}
-	if best := newestCodex(home, exe); best != "" {
+	if best := newestCodex(m, home, exe); best != "" {
 		order = append(order, best)
 		for _, c := range codexCandidates(home, exe) {
 			if c != best {
@@ -86,36 +173,32 @@ func codexOrder(home string) (order []string, override bool) {
 			}
 		}
 	}
+	m.save()
 	return order, false
 }
 
-// codexProtocolError marks a read that failed in the protocol itself, not at the provider.
+// codexProtocolError marks a read that failed in the protocol itself (an unknown method or params,
+// an answer this CLI cannot decode), not at the provider or the sign-in.
 type codexProtocolError struct{ error }
 
 func (e codexProtocolError) Unwrap() error { return e.error }
 
-// codexPin (D487 addendum): the desktop app's CLI failed the protocol and alt worked; alt is used
-// until the app's CLI changes (its version or file).
-var codexPin = struct {
-	sync.Mutex
-	app, appKey, alt string
-}{}
+func (m *codexMemo) appKey(p string) string {
+	return codexFileKey(p) + "|" + m.versionAt(p, codexClock())
+}
 
-func codexAppKey(p string) string { return codexFileKey(p) + "|" + codexVersionFor(p) }
-
-// codexPinned is the remembered working copy while it still applies to the first app CLI in order.
-func codexPinned(order []string) string {
-	codexPin.Lock()
-	defer codexPin.Unlock()
-	if codexPin.alt == "" {
+// pinned is the remembered working copy while it still applies to the first app CLI in order.
+func (m *codexMemo) pinned(order []string) string {
+	if m.Pin == nil {
 		return ""
 	}
-	if len(order) == 0 || order[0] != codexPin.app || codexAppKey(codexPin.app) != codexPin.appKey {
-		codexPin.app, codexPin.appKey, codexPin.alt = "", "", ""
+	if len(order) == 0 || codexPathKey(order[0]) != m.Pin.App || m.appKey(order[0]) != m.Pin.AppKey {
+		m.Pin = nil
+		m.save()
 		return ""
 	}
 	for _, p := range order[1:] {
-		if p == codexPin.alt {
+		if codexPathKey(p) == m.Pin.Alt {
 			return p
 		}
 	}
@@ -124,13 +207,14 @@ func codexPinned(order []string) string {
 
 // codexFallbackRead tries, once, the next binary after failed in codexOrder, when failed was
 // chosen by discovery (an explicit path or a binary from elsewhere has no fallback). A working
-// fallback for the desktop app's CLI is remembered.
-func codexFallbackRead(ctx context.Context, failed string) (string, *rlResponse) {
-	home, _ := os.UserHomeDir()
-	order, override := codexOrder(home)
-	if override {
+// fallback for the desktop app's CLI is remembered in the memo.
+func codexFallbackRead(ctx context.Context, cache, failed string) (string, *rlResponse) {
+	if codexOverride() != "" || ctx.Err() != nil {
 		return "", nil
 	}
+	home, _ := os.UserHomeDir()
+	m := codexMemoLoad(cache)
+	order, _ := codexOrder(m, home)
 	next := ""
 	for i, p := range order {
 		if p == failed && i+1 < len(order) {
@@ -138,7 +222,7 @@ func codexFallbackRead(ctx context.Context, failed string) (string, *rlResponse)
 			break
 		}
 	}
-	if next == "" || ctx.Err() != nil {
+	if next == "" {
 		return "", nil
 	}
 	resp, err := askCodex(ctx, next)
@@ -146,9 +230,8 @@ func codexFallbackRead(ctx context.Context, failed string) (string, *rlResponse)
 		return "", nil
 	}
 	if codexSource(failed) == "app" {
-		codexPin.Lock()
-		codexPin.app, codexPin.appKey, codexPin.alt = failed, codexAppKey(failed), next
-		codexPin.Unlock()
+		m.Pin = &codexPinRecord{App: codexPathKey(failed), AppKey: m.appKey(failed), Alt: codexPathKey(next)}
+		m.save()
 	}
 	return next, resp
 }
@@ -176,21 +259,8 @@ func codexSource(p string) string {
 			return "homebrew"
 		}
 	}
-	return "other"
+	return "path"
 }
-
-type codexVersionProbe struct {
-	key     string // the file's mtime and size when it was asked
-	version string // "" when it did not answer with a version
-	at      time.Time
-}
-
-// codexVersions remembers each binary's answer while the file is unchanged. A changed file is
-// asked again, but never more often than codexVersionEvery.
-var codexVersions = struct {
-	sync.Mutex
-	m map[string]codexVersionProbe
-}{m: map[string]codexVersionProbe{}}
 
 var codexClock = time.Now
 
@@ -239,19 +309,19 @@ func codexCandidates(home, exe string) []string {
 // newestCodex is the candidate with the newest version. The first one in lookup order stays the
 // choice unless it answers with a version and another answers with a newer one: a copy that does
 // not answer is never passed over for one that merely does.
-func newestCodex(home, exe string) string {
+func newestCodex(m *codexMemo, home, exe string) string {
 	candidates := codexCandidates(home, exe)
 	if len(candidates) == 0 {
 		return ""
 	}
 	now := codexClock()
-	best, bestVersion := candidates[0], codexVersionAt(candidates[0], now)
+	best, bestVersion := candidates[0], m.versionAt(candidates[0], now)
 	if bestVersion == "" {
 		return best
 	}
 	for _, c := range candidates[1:] {
-		v := codexVersionAt(c, now)
-		if v != "" && (bestVersion == "" || codexNewer(v, bestVersion)) {
+		v := m.versionAt(c, now)
+		if v != "" && codexNewer(v, bestVersion) {
 			best, bestVersion = c, v
 		}
 	}
@@ -266,27 +336,24 @@ func codexFileKey(p string) string {
 	return fmt.Sprintf("%d:%d", info.ModTime().UnixNano(), info.Size())
 }
 
-// codexVersionAt is the binary's version, asked at most once a minute and again only after it changed.
-func codexVersionAt(p string, now time.Time) string {
-	key := codexFileKey(p)
-	codexVersions.Lock()
-	probe, seen := codexVersions.m[p]
-	codexVersions.Unlock()
-	if seen && (probe.key == key || !now.Before(probe.at) && now.Sub(probe.at) < codexVersionEvery) {
-		return probe.version
+// versionAt is the binary's version, asked at most once a minute and again only after it changed.
+func (m *codexMemo) versionAt(p string, now time.Time) string {
+	key, id := codexFileKey(p), codexPathKey(p)
+	if m.cache == "" {
+		codexMemory.Lock()
+		defer codexMemory.Unlock()
+	}
+	probe, seen := m.Versions[id]
+	if seen && (probe.Key == key || !now.Before(probe.At) && now.Sub(probe.At) < codexVersionEvery) {
+		return probe.Version
 	}
 	v := askCodexVersion(p)
-	codexVersions.Lock()
-	if len(codexVersions.m) >= codexVersionsMax {
-		codexVersions.m = map[string]codexVersionProbe{}
+	if m.Versions == nil {
+		m.Versions = map[string]codexVersionProbe{}
 	}
-	codexVersions.m[p] = codexVersionProbe{key: key, version: v, at: now}
-	codexVersions.Unlock()
+	m.Versions[id] = codexVersionProbe{Key: key, Version: v, At: now.UTC()}
 	return v
 }
-
-// codexVersionFor is the remembered (or newly asked) version of one binary.
-func codexVersionFor(p string) string { return codexVersionAt(p, codexClock()) }
 
 // askCodexVersion runs `codex --version` with a short deadline and keeps only the version number.
 func askCodexVersion(p string) string {
@@ -321,66 +388,79 @@ func (l *limitedWriter) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
-// codexNewer: a is a later version than b; a release is later than its own prerelease.
-func codexNewer(a, b string) bool {
-	pa, xa := codexVersionParts(a)
-	pb, xb := codexVersionParts(b)
-	for i := range pa {
-		if pa[i] != pb[i] {
-			return pa[i] > pb[i]
+// codexNewer: a has higher semantic-version precedence than b (semver 2.0.0 section 11): the core
+// numbers first; a release outranks its own prereleases; prerelease identifiers compare left to
+// right, numeric ones numerically and below alphanumeric ones, and a longer list wins a tie.
+func codexNewer(a, b string) bool { return codexCompare(a, b) > 0 }
+
+func codexCompare(a, b string) int {
+	ca, pa, _ := strings.Cut(a, "-")
+	cb, pb, _ := strings.Cut(b, "-")
+	na, nb := strings.SplitN(ca, ".", 3), strings.SplitN(cb, ".", 3)
+	for i := 0; i < 3; i++ {
+		x, y := 0, 0
+		if i < len(na) {
+			x, _ = strconv.Atoi(na[i])
+		}
+		if i < len(nb) {
+			y, _ = strconv.Atoi(nb[i])
+		}
+		if x != y {
+			return cmpInt(x, y)
 		}
 	}
-	if xa == "" || xb == "" {
-		return xa == "" && xb != ""
+	switch {
+	case pa == "" && pb == "":
+		return 0
+	case pa == "":
+		return 1
+	case pb == "":
+		return -1
 	}
-	return xa > xb
+	ia, ib := strings.Split(pa, "."), strings.Split(pb, ".")
+	for i := 0; i < len(ia) && i < len(ib); i++ {
+		x, xErr := strconv.Atoi(ia[i])
+		y, yErr := strconv.Atoi(ib[i])
+		switch {
+		case xErr == nil && yErr == nil:
+			if x != y {
+				return cmpInt(x, y)
+			}
+		case xErr == nil:
+			return -1
+		case yErr == nil:
+			return 1
+		case ia[i] != ib[i]:
+			if ia[i] > ib[i] {
+				return 1
+			}
+			return -1
+		}
+	}
+	return cmpInt(len(ia), len(ib))
 }
 
-func codexVersionParts(v string) ([3]int, string) {
-	var out [3]int
-	core, pre, _ := strings.Cut(v, "-")
-	for i, part := range strings.SplitN(core, ".", 3) {
-		out[i], _ = strconv.Atoi(part)
+func cmpInt(x, y int) int {
+	switch {
+	case x > y:
+		return 1
+	case x < y:
+		return -1
 	}
-	return out, pre
+	return 0
 }
 
-// codexCLIInfo describes the binary a read runs, for doctor; nil when there is none.
-func codexCLIInfo(codex string) *codexCLI {
+// codexCLIInfo describes the binary a read ran, for doctor: its source and version only.
+func codexCLIInfo(cache, codex string) *codexCLI {
 	if codex == "" {
 		return nil
 	}
-	home, _ := os.UserHomeDir()
+	m := codexMemoLoad(cache)
 	source := codexSource(codex)
-	for _, env := range []string{"MODELPLAN_CODEX", "CODEX_CLI_PATH"} {
-		if os.Getenv(env) == codex {
-			source = "override"
-		}
+	if codexOverride() == codex {
+		source = "override"
 	}
-	return &codexCLI{Source: source, Path: codexDisplayPath(codex, home), Version: codexVersionFor(codex)}
-}
-
-var codexDisplaySafe = regexp.MustCompile(`^[A-Za-z0-9._@+/-]{1,200}$`)
-
-// codexSystemDirs are install prefixes that name no person.
-var codexSystemDirs = []string{"/Applications/", "/opt/homebrew/", "/usr/local/", "/usr/bin/", "/bin/", "/opt/local/", "/nix/"}
-
-// codexDisplayPath shows a path under the home folder as ~/..., a system install path as is, and
-// anything else as "other", so doctor output never carries a user name.
-func codexDisplayPath(p, home string) string {
-	p = filepath.Clean(p)
-	if home != "" {
-		if rest, ok := strings.CutPrefix(p, filepath.Clean(home)+string(filepath.Separator)); ok {
-			if codexDisplaySafe.MatchString(rest) {
-				return "~/" + filepath.ToSlash(rest)
-			}
-			return "other"
-		}
-	}
-	for _, dir := range codexSystemDirs {
-		if strings.HasPrefix(p, dir) && codexDisplaySafe.MatchString(p) {
-			return p
-		}
-	}
-	return "other"
+	info := &codexCLI{Source: source, Version: m.versionAt(codex, codexClock())}
+	m.save()
+	return info
 }

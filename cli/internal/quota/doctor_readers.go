@@ -34,9 +34,8 @@ type ReaderDiagnostic struct {
 	Cause string `json:"cause,omitempty"`
 	// Failures: Codex's recent failures, oldest first (fixed codes and times only).
 	Failures []DiagnosticFailure `json:"failures,omitempty"`
-	// CodexCLI: the Codex CLI the newest read ran, "<source> <path> <version>": source is override,
-	// app (the desktop app's own CLI), homebrew, npm or other; the path is home-relative (~/) or a
-	// system install path (codexbin.go). Codex only.
+	// CodexCLI: the Codex CLI the newest read ran, "<source> <version>": source is override, app (the
+	// desktop app's own CLI), homebrew, npm or path. Never a path (codexbin.go). Codex only.
 	CodexCLI string `json:"codexCli,omitempty"`
 }
 
@@ -195,32 +194,19 @@ func codexDiagnostic(p Paths, policy consent.State, detected bool, now time.Time
 	return row
 }
 
-var codexCLIDiagnosticPattern = regexp.MustCompile(`^(override|app|homebrew|npm|other) (other|~/[A-Za-z0-9._@+/-]{1,200}|/[A-Za-z0-9._@+/-]{1,200})( [0-9]{1,6}\.[0-9]{1,6}\.[0-9]{1,6}(-[0-9A-Za-z.]{1,32})?)?$`)
+var codexCLIDiagnosticPattern = regexp.MustCompile(`^(override|app|homebrew|npm|path)( [0-9]{1,6}\.[0-9]{1,6}\.[0-9]{1,6}(-[0-9A-Za-z.]{1,32})?)?$`)
 
-// codexCLIDiagnostic re-checks the cached CLI note before printing it: "<source> <path> [version]",
-// where only a source word, a display path from codexDisplayPath and a version number pass.
+// codexCLIDiagnostic re-checks the cached CLI note before printing it: "<source> [version]" only.
+// No path ever reaches doctor (review macrevb-1316-1).
 func codexCLIDiagnostic(c *codexCLI) string {
-	if c == nil {
+	if c == nil || c.Source == "" {
 		return ""
 	}
-	if c.Path != "other" && !strings.HasPrefix(c.Path, "~/") {
-		system := false
-		for _, dir := range codexSystemDirs {
-			system = system || strings.HasPrefix(c.Path, dir)
-		}
-		if !system {
-			return ""
-		}
-	}
-	source := c.Source
-	if source == "" {
-		source = "other"
-	}
-	out := source + " " + c.Path
+	out := c.Source
 	if c.Version != "" {
 		out += " " + c.Version
 	}
-	if strings.Contains(out, "..") || !codexCLIDiagnosticPattern.MatchString(out) {
+	if !codexCLIDiagnosticPattern.MatchString(out) {
 		return ""
 	}
 	return out

@@ -421,7 +421,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			refreshed = &quota.AccountRefresh{Source: "codex", Status: "not_allowed"}
 			if consent.Allowed("codex", consent.Runtime) {
 				home, _ := os.UserHomeDir()
-				refreshed = quota.RefreshAccountNow(context.Background(), st.Dir, quota.CodexBin(home), time.Now())
+				refreshed = quota.RefreshAccountNowDiscover(context.Background(), st.Dir, home, time.Now())
 				if *quiet {
 					return 0
 				}

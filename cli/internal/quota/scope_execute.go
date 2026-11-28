@@ -81,7 +81,7 @@ func ExecuteScopeRefresh(ctx context.Context, p Paths, scope string, now time.Ti
 	}
 	if scope == consent.ScopeCodexRuntimeUsage {
 		home, _ := os.UserHomeDir()
-		return RefreshCodexAccount(ctx, p.Cache, CodexBin(home), now)
+		return RefreshCodexAccountDiscover(ctx, p.Cache, home, now)
 	}
 	return RefreshNativeProviders(context.WithValue(ctx, refreshScopeKey{}, scope), p, now, []string{definition.Tool})
 }

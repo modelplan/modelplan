@@ -51,8 +51,8 @@ func doctorReaders(stdout, stderr io.Writer, c common, refresh bool) int {
 			cause = "  cause=" + r.Cause
 		}
 		fmt.Fprintf(stdout, "%s  detected=%s  consent=%s  admitted=%s  state=%s%s  windows=%d  last=%s  beta=%t\n", r.Provider, r.Detected, r.Consent, r.Admitted, r.State, cause, r.Windows, r.Last, r.Beta)
-		if r.CodexCLI != "" {
-			fmt.Fprintf(stdout, "  %s cli  %s\n", r.Provider, codexCLILine(r.CodexCLI, c.lang))
+		if line := codexCLILine(r.CodexCLI, c.lang); line != "" {
+			fmt.Fprintf(stdout, "  %s cli  %s\n", r.Provider, line)
 		}
 		for _, f := range r.Failures {
 			fmt.Fprintf(stdout, "  %s failure  code=%s  at=%s  streak=%ds\n", r.Provider, f.Code, f.At, f.StreakSeconds)
@@ -62,17 +62,22 @@ func doctorReaders(stdout, stderr io.Writer, c common, refresh bool) int {
 	return 0
 }
 
-// codexCLILine names the source of the Codex CLI in the reader's language (owner decision D487).
+// codexCLILine names the source of the Codex CLI in the reader's language (owner decision D487);
+// the note carries a source word and a version, never a path.
 func codexCLILine(note, lang string) string {
-	source, rest, _ := strings.Cut(note, " ")
-	en := map[string]string{"override": "set path", "app": "desktop app", "homebrew": "Homebrew", "npm": "npm", "other": "other"}
-	zh := map[string]string{"override": "指定路径", "app": "桌面应用内置", "homebrew": "Homebrew", "npm": "npm", "other": "其他"}
+	source, version, _ := strings.Cut(note, " ")
+	en := map[string]string{"override": "explicit path", "app": "desktop app", "homebrew": "Homebrew", "npm": "npm", "path": "PATH"}
+	zh := map[string]string{"override": "指定路径", "app": "桌面应用内置", "homebrew": "Homebrew", "npm": "npm", "path": "PATH"}
 	names := en
 	if lang == "zh" {
 		names = zh
 	}
-	if name, ok := names[source]; ok {
-		return name + "  " + rest
+	name, ok := names[source]
+	if !ok {
+		return ""
 	}
-	return note
+	if version == "" {
+		return name
+	}
+	return name + "  " + version
 }

@@ -220,8 +220,8 @@ func TestDoctorReadersIdentifiersNeverReachAnyField(t *testing.T) {
 								t.Fatal("unreviewed cause", row)
 							}
 						case "codexCli":
-							// The Codex CLI a read ran: a home-relative or system path and a version only.
-							if row["provider"] != "codex" || !regexp.MustCompile(`^(override|app|homebrew|npm|other) (other|~/[A-Za-z0-9._@+/-]+|/(Applications|opt/homebrew|usr/local|usr/bin|bin|opt/local|nix)/[A-Za-z0-9._@+/-]+)( [0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?)?$`).MatchString(value.(string)) {
+							// The Codex CLI a read ran: a source word and a version only, never a path.
+							if row["provider"] != "codex" || !regexp.MustCompile(`^(override|app|homebrew|npm|path)( [0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?)?$`).MatchString(value.(string)) {
 								t.Fatal("unreviewed codex cli note", row)
 							}
 						case "failures":

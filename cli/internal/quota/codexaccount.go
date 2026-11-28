@@ -439,7 +439,7 @@ func off() bool {
 // $CODEX_CLI_PATH; else the CLI the ChatGPT or Codex desktop app carries; else the newest of every
 // codex on PATH and in the usual install places (hooks run with a short PATH). Empty when there is none.
 func CodexBin(home string) string {
-	p, _ := codexChoice(home)
+	p, _ := codexChoice(codexMemoLoad(""), home)
 	return p
 }
 
@@ -455,6 +455,29 @@ type AccountRefresh struct {
 // RefreshAccountNow runs RefreshCodexAccount and says what came of it: that call returns nil
 // both when it is too soon to ask and when it caches a failure.
 func RefreshAccountNow(ctx context.Context, cache, codex string, now time.Time) *AccountRefresh {
+	return refreshAccountNow(ctx, cache, func() string { return codex }, now)
+}
+
+// RefreshAccountNowDiscover is RefreshAccountNow with the Codex CLI found only once the read is
+// admitted and due (review macrevb-1316-3): a refresh that is off, too soon or not permitted starts
+// no program, not even `codex --version`.
+func RefreshAccountNowDiscover(ctx context.Context, cache, home string, now time.Time) *AccountRefresh {
+	return refreshAccountNow(ctx, cache, codexDiscover(cache, home), now)
+}
+
+// RefreshCodexAccountDiscover is RefreshCodexAccount with the same late discovery.
+func RefreshCodexAccountDiscover(ctx context.Context, cache, home string, now time.Time) error {
+	return refreshCodexAccount(ctx, cache, codexDiscover(cache, home), now)
+}
+
+func codexDiscover(cache, home string) func() string {
+	return func() string {
+		p, _ := codexChoice(codexMemoLoad(cache), home)
+		return p
+	}
+}
+
+func refreshAccountNow(ctx context.Context, cache string, resolve func() string, now time.Time) *AccountRefresh {
 	r := &AccountRefresh{Source: "codex"}
 	failure := func() string {
 		if s := loadAccount(cache); s != nil && s.Status != "ok" {
@@ -468,7 +491,7 @@ func RefreshAccountNow(ctx context.Context, cache, codex string, now time.Time) 
 		r.Status, r.NextAt, r.Reason = "too_soon", &at, failure()
 		return r
 	}
-	if err := RefreshCodexAccount(ctx, cache, codex, now); err != nil {
+	if err := refreshCodexAccount(ctx, cache, resolve, now); err != nil {
 		r.Status, r.Reason = "failed", err.Error()
 		return r
 	}
@@ -484,6 +507,13 @@ func RefreshAccountNow(ctx context.Context, cache, codex string, now time.Time) 
 // (or the failure, so a missing login is not retried for half an hour once firstReadRetries are
 // spent). One refresh at a time.
 func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time) error {
+	return refreshCodexAccount(ctx, cache, func() string { return codex }, now)
+}
+
+// refreshCodexAccount resolves the Codex CLI (resolve) only after the off switch, the consent
+// admission, the lock, the budget and the fence have all let the read go ahead.
+func refreshCodexAccount(ctx context.Context, cache string, resolve func() string, now time.Time) error {
+	codex := ""
 	if cache == "" {
 		return errors.New("reader budget unavailable")
 	}
@@ -506,7 +536,7 @@ func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time
 	// transient failure); its own result then sets the next automatic read.
 	shortcut := false
 	commit := func(s *accountSnap) error {
-		s.CLI = codexCLIInfo(codex)
+		s.CLI = codexCLIInfo(cache, codex)
 		s.Admission = state.CaptureStamp(consent.ScopeCodexRuntimeUsage)
 		s.Failures = nextFailures(previous, s, now)
 		wait := AccountEvery
@@ -562,17 +592,17 @@ func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time
 	if err := reserveReaderAttempt(cache, "codex", now.Add(reserve)); err != nil {
 		return err
 	}
-	if codex == "" {
-		return commit(&accountSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Status: "error", Error: "codex not found", ErrorCode: "not_found"})
-	}
 	if !consent.CurrentFence(state.Fence()) {
 		return errors.New("consent changed; refresh stopped")
+	}
+	if codex = resolve(); codex == "" {
+		return commit(&accountSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Status: "error", Error: "codex not found", ErrorCode: "not_found"})
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	resp, err := askCodex(ctx, codex)
 	if err != nil && errors.As(err, new(codexProtocolError)) {
-		if alt, altResp := codexFallbackRead(ctx, codex); altResp != nil {
+		if alt, altResp := codexFallbackRead(ctx, cache, codex); altResp != nil {
 			codex, resp, err = alt, altResp, nil
 		}
 	}
@@ -728,11 +758,12 @@ func askCodex(ctx context.Context, codex string) (*rlResponse, error) {
 				rpcMessage = m.Error.Message
 				code := codexRPCErrorCode(m.Error.Message)
 				err := codeError(code, code)
-				// D487 addendum: a failure of the protocol itself (initialize refused, an unknown
-				// method or params, a decode error) may be this CLI build; another installed one is
-				// tried once (codexFallbackRead).
-				if id == 1 || code == "schema_changed" || m.Error.Code == -32601 || m.Error.Code == -32602 ||
-					strings.Contains(strings.ToLower(m.Error.Message), "method not found") {
+				// D487 addendum: only a failure of the protocol itself (an unknown method or params,
+				// an answer this CLI cannot decode) may be this CLI build, and another installed one
+				// is tried once (codexFallbackRead). A provider outage or a sign-in failure is the
+				// account's, whichever CLI asks (review macrevb-1316-2).
+				unknown := m.Error.Code == -32601 || m.Error.Code == -32602 || strings.Contains(strings.ToLower(m.Error.Message), "method not found")
+				if code == "schema_changed" || unknown && code == "rpc_error" {
 					err = codexProtocolError{err}
 				}
 				return nil, err
@@ -770,7 +801,9 @@ func askCodex(ctx context.Context, codex string) (*rlResponse, error) {
 		}
 		r.RateLimitsByLimitID = map[string]*rlSnapshot{"codex": snap}
 	} else if err := json.Unmarshal(raw, &r); err != nil {
-		return nil, err
+		// An answer whose fields this reader cannot decode: the CLI speaks another protocol
+		// version (review macrevb-1316-2), so it is schema_changed and another CLI may be tried.
+		return nil, codexProtocolError{codeError("schema_changed", "schema_changed")}
 	}
 	if IdentityOff() {
 		return &r, nil
