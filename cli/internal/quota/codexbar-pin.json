@@ -1,10 +1,10 @@
 {
-  "version": "0.83.0",
-  "release": "https://github.com/steipete/CodexBar/releases/tag/v0.83.0",
+  "version": "0.85.0",
+  "release": "https://github.com/steipete/CodexBar/releases/tag/v0.85.0",
   "assets": {
-    "darwin/arm64": ["macos-arm64", "3fb6af9582a0b232dc1708e1d8f13985441dbe2e74903791c902d1fa8bb7c4a9"],
-    "darwin/amd64": ["macos-x86_64", "29e26cf8b0781bded65970028cccbf60c0ef5153a9a1ee3e5c65b00f489b61c7"],
-    "linux/arm64": ["linux-aarch64", "bb12897c935555faba951d0c026f422912a921d87db21295c30288aa470042b5"],
-    "linux/amd64": ["linux-x86_64", "e278eb0a1b6d620b5c84c157dfb16860a82477af6ec7330b6b6fb5c7f2729b5b"]
+    "darwin/arm64": ["macos-arm64", "741c2d6f18c895b1c2ccf79893f287deac1d62ececb31f5a338473eb1e69f308"],
+    "darwin/amd64": ["macos-x86_64", "d97ab99c5195d963a3385e3ca8c6e3f3bba846bf4b80fa70dd67f58bc9fc6abe"],
+    "linux/arm64": ["linux-aarch64", "209d475d23e676f463590c9f304c58c0673b924ef618c58bc4629dee79e420b5"],
+    "linux/amd64": ["linux-x86_64", "adaa5c7b4e09e26b135e5b958705a746189b289ade7fc3c26b1d0538259572a5"]
   }
 }
