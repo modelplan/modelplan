@@ -21,7 +21,8 @@ const waiting = provider === "waiting";
 const oversize = provider === "oversize";   // sol-prepare.mjs: the own delta is over the request budget (D428)
 // sol-call.mjs asked twice and both answers failed the verdict format: a short advisory note instead of a verdict.
 const noVerdict = !waiting && existsSync(join(dir, "noverdict")) ? read(join(dir, "noverdict")).trim() || "invalid answer" : "";
-const answer = waiting || oversize || noVerdict ? null : parseAnswer(read(join(dir, "answer.md")), head);
+const priorIds = read(join(dir, "prior-blockers")).split("\n").filter(Boolean);
+const answer = waiting || oversize || noVerdict ? null : parseAnswer(read(join(dir, "answer.md")), head, priorIds);
 // R18: an answer without a final VERDICT or record gives no verdict; the next trigger (or a dispatch) reviews again.
 if (answer && !answer.ok) fail(answer.why);
 const lane = postLane(env.LANE, provider);

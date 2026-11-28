@@ -230,6 +230,36 @@ test("D484-5: a lane may replace its own latest block at the same head on a forc
   assert.match(S.postProblem({ pr: pr(), items: items([...blk, comment(v("merge", H, "ghglm"))]), head: H, lane: "ghsol", posted: "ghglm", force: true, files: t1, glmTiers: [1] }), /already has a verdict/, "a second delivery after the replacement never posts twice");
 });
 
+test("D484-5 (macrev2-1312-1): the replacement is posted by the provider of the blocking lane, never the other one", () => {
+  const items = (cs) => R.feed(cs);
+  const blk = [comment(v("block", H, "ghglm"))];
+  const d = decide({ comments: blk, force: true, glmTiers: [1] });
+  assert.deepEqual(d.providers, ["glm"], "a ghglm block is replaced by GLM only (no openai, so no quota fallback to a ghsol merge)");
+  assert.deepEqual(d.replace.lanes, ["(ghglm)"]);
+  assert.deepEqual(decide({ comments: [comment(v("block", H, "ghsol"))], force: true, glmTiers: [1] }).providers, ["openai"]);
+  const post = (posted, cs = blk) => S.postProblem({ pr: pr(), items: items(cs), head: H, lane: "ghsol", posted, force: true, files: t1, glmTiers: [1] });
+  assert.match(post("ghsol"), /would not replace the block of \(ghglm\)/, "a ghsol merge must not strand the ghglm block");
+  assert.equal(post("ghglm"), null);
+  assert.deepEqual(R.verdicts(items([...blk, comment(v("merge", H, "ghglm"))]), H, []).get("(ghglm)"), "merge");
+});
+
+test("D484-5 (macrev2-1312-2): the replacement brief carries the block and its Record, and a merge must dispose of every blocker", () => {
+  const body = `BLOCKER X-1 (P2) - Trigger: a. Consequence: b. Acceptance test: c.\n\nRecord: ${H}\ncrit -> open X-1\n\n${v("block", H, "ghglm")}`;
+  const d = decide({ comments: [comment(body)], force: true, glmTiers: [1] });
+  assert.deepEqual(d.replace.ids, ["X-1"]);
+  assert.equal(d.record.sha, H);
+  assert.match(d.record.text, /open X-1/);
+  assert.ok(d.earlier.some((e) => e.sha === H && /BLOCKER X-1/.test(e.body)), "the block is in the earlier list");
+  const prompt = S.buildSolPrompt({ pr: { number: 9, title: "t", body: "b" }, d: { ...d, mode: "full", base: OLD }, lane: "ghsol", stat: "", diff: "" });
+  assert.match(prompt, /Same-head replacement[\s\S]*X-1/);
+  assert.match(prompt, /BLOCKER X-1/);
+  const ans = (rec) => `Record: ${H}\n${rec}\n\nVERDICT: merge`;
+  assert.equal(S.parseAnswer(ans("crit -> ok"), H, ["X-1"]).ok, false, "no disposition: rejected");
+  assert.match(S.parseAnswer(ans("crit -> ok"), H, ["X-1"]).why, /X-1/);
+  assert.equal(S.parseAnswer(ans("X-1 -> closed, test t"), H, ["X-1"]).ok, true);
+  assert.equal(S.parseAnswer(ans("crit -> ok"), H, []).ok, true, "no prior block: unchanged");
+});
+
 test("D484-5: the gate takes the latest verdict per lane at a head, in both directions", () => {
   const lanes = (...cs) => R.verdicts(R.feed(cs), H, []).get("(ghglm)");
   assert.equal(lanes(comment(v("block", H, "ghglm")), comment(v("merge", H, "ghglm"))), "merge", "a later merge supersedes the earlier block");

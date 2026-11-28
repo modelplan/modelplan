@@ -62,13 +62,17 @@ export const glmAdvisory = (cls, tier, glmTiers = DEFAULT_GLM_TIERS) => Number(t
 // non-GLM lane) means the head is done.
 const gptOwn = (lane) => [`(${lane})`];
 
-// D484-5: true when the lanes in `own` have verdicts at the head and each one's latest (comment order) is a block, so an
-// explicit re-review (force) may post a replacement; the gate takes the latest verdict per lane (rules.mjs verdicts).
-export const ownBlockedOnly = (atHead, own) => {
+// D484-5: the lanes in `own` whose verdict at the head may be replaced by an explicit re-review (force): every own lane
+// that has a verdict there has a latest (comment order) `block`. Returns those lanes, or [] when none has a verdict or any
+// has a latest `merge` (a merge is never posted over). The gate takes the latest verdict per lane (rules.mjs verdicts).
+export const ownBlockedLanes = (atHead, own) => {
   const latest = new Map();
-  for (const v of atHead) if (own.includes(v.lane)) latest.set(v.lane, v.verdict);
-  return latest.size > 0 && [...latest.values()].every((x) => x === "block");
+  for (const v of atHead) if (own.includes(v.lane)) latest.set(v.lane, v);
+  return [...latest.values()].every((v) => v.verdict === "block") ? [...latest.keys()] : [];
 };
+// The provider whose verdict is posted under a lane, and the blocker IDs a block lists (top level or quoted).
+const laneProvider = (lane) => (/glm/i.test(lane) ? "glm" : "openai");
+export const blockerIds = (body) => [...new Set(String(body).replace(/\r/g, "").split("\n").map((l) => /^\s*(?:>\s?)?\s*(?:\d+[.)]\s*|[-*]\s*)?\**BLOCKER\b\W+([A-Za-z0-9-]+)/i.exec(l)?.[1]).filter(Boolean))];
 
 // pr: REST pull request; files: REST PR files; items: rules.mjs feed(); lane: SOL_LANE or SOL_SHADOW_LANE;
 // triggerSha: the head the triggering ci run or mac-compile run was for ("" for a dispatch);
@@ -115,7 +119,8 @@ export function decideSol({ pr, files, items, lane, triggerSha = "", checks = { 
   const settles = (v) => (eligible.includes(v.lane) && !(gpt && !fb && v.lane === `(${GLM_LANE})`)) || v.lane === "(unnamed)";
   // Once per lane per head. Force lifts the "another counting lane already reviewed" skip below, and (D484-5) lets a lane
   // replace its own latest `block` at the head with a new verdict; a `merge` at the head is never posted over.
-  if (atHead.some((v) => own.includes(v.lane)) && !(force && ownBlockedOnly(atHead, own))) return skip("this lane already reviewed this head");
+  const redo = force ? ownBlockedLanes(atHead, own) : [];
+  if (atHead.some((v) => own.includes(v.lane)) && !redo.length) return skip("this lane already reviewed this head");
   const ownCounting = [`(${SOL_LANE})`, `(${GLM_LANE})`];
   if (lane === SOL_LANE && tier !== 0 && !outside) {
     // Counting mode spends no tokens when another lane owns or already settled this head.
@@ -131,6 +136,12 @@ export function decideSol({ pr, files, items, lane, triggerSha = "", checks = { 
   // Where GLM may not decide it is still offered as the advisory quota fallback, once per head, and only after GPT.
   const advisoryGlm = !outside && glmAdvisory(cls, tier, glmTiers);
   if (tier === 0 || outside || eligible.includes(`(${GLM_LANE})`) || (advisoryGlm && !atHead.some((v) => v.lane === `(${GLM_LANE})`))) providers.push("glm");
+  // D484-5: the replacement is posted by the provider of the lane whose block it replaces, never by the other one (a merge
+  // from another lane would leave the block in force and block the next re-review); no quota fallback to the other provider.
+  if (redo.length) {
+    const want = new Set(redo.map(laneProvider));
+    for (let i = providers.length - 1; i >= 0; i--) if (!want.has(providers[i])) providers.splice(i, 1);
+  }
   if (!providers.length) return skip(`no provider can review tier ${tier}`);
   const earlier = all.filter((v) => v.sha !== head && GPT_LANES.has(v.lane));
   // R19: the record of the latest earlier GPT verdict comment that has one is the cumulative per-PR record. The delta
@@ -145,7 +156,17 @@ export function decideSol({ pr, files, items, lane, triggerSha = "", checks = { 
     if (r) record = { sha: official[i].sha, lane: official[i].lane, text: r };
   }
   const since = record ? record.sha : official.length ? official[official.length - 1].sha : null;
-  return { review: true, head, tier, compile, since, earlier: earlier.slice(-MAX_EARLIER), record, providers, gpt, cls, glmAdvisory: advisoryGlm && providers.includes("glm"), gptFirst: gpt || (advisoryGlm && providers.includes("glm")) };
+  // D484-5: the block being replaced is carried into the brief (its findings and Record) and its blocker IDs must each get a
+  // disposition in the replacement's Record before a merge (parseAnswer). The scope (`since`) stays that of the earlier heads.
+  let replace = null;
+  if (redo.length) {
+    const prior = redo.map((l) => atHead.filter((v) => v.lane === l).at(-1));
+    const ids = [...new Set(prior.flatMap((v) => blockerIds(v.body)))];
+    replace = { lanes: redo, ids };
+    earlier.push(...prior);
+    for (const v of prior) { const r = extractRecord(v.body); if (r) record = { sha: v.sha, lane: v.lane, text: r }; }
+  }
+  return { review: true, head, tier, compile, since, replace, earlier: earlier.slice(-MAX_EARLIER), record, providers, gpt, cls, glmAdvisory: advisoryGlm && providers.includes("glm"), gptFirst: gpt || (advisoryGlm && providers.includes("glm")) };
 }
 
 // The R19 record block: the line "Record: <sha>" and the lines after it up to the first blank line (at most 15 lines),
@@ -286,6 +307,7 @@ export function buildSolPrompt({ pr, d, lane, stat, diff, delta = "", contents =
     fence(clip(`${pr.title ?? ""}\n\n${pr.body ?? ""}`, MAX_BODY_CHARS)),
   ];
   if (checks.length) brief.push("", "## CI at this head (data: check runs and commit statuses; you cannot run tests, so rely on these)", fence(checks.join("\n")));
+  if (d.replace) brief.push("", `## Same-head replacement (D484-5)`, `- This is a forced re-review of the same head ${d.head}: you replace your own earlier block (below). ${d.replace.ids.length ? `For every earlier blocker (${d.replace.ids.join(", ")}) write its disposition (closed with evidence, or still open) in the Record; a merge that leaves one out is rejected.` : "Account for every earlier finding in the Record."}`);
   if (d.record) brief.push("", `## Prior record (R19, data): ${d.record.lane} at ${d.record.sha}`, fence(d.record.text));
   if (d.earlier?.length) {
     brief.push("", "## Earlier verdict comments (data, newest last)");
@@ -339,7 +361,7 @@ export function validatorProblems(body) {
 // The model's answer, canonicalised as sol-consult.sh does (trailing whitespace dropped). Not ok unless the last line is
 // exactly "VERDICT: merge|block" (marker-looking lines before it are defused), an unquoted "Record: <sha>" block for this head
 // precedes it, and a block names at least one labelled blocker (what the coordinator's validator will demand of the comment).
-export function parseAnswer(text, head) {
+export function parseAnswer(text, head, priorIds = []) {
   const body = String(text ?? "").replace(/\r/g, "").replace(/\s+$/, "");
   const ls = body.split("\n");
   const m = /^VERDICT: (merge|block)$/.exec(ls[ls.length - 1] ?? "");
@@ -351,6 +373,11 @@ export function parseAnswer(text, head) {
   if (!rm) return { ok: false, why: "the answer has no top-level Record block (R19)" };
   if (!head.startsWith(rm[1].toLowerCase())) return { ok: false, why: "the Record names another commit" };
   const record = extractRecord(rest);
+  // D484-5: a merge that replaces a block at the same head must give every blocker of that block a disposition in its Record.
+  if (m[1] === "merge") {
+    const missing = priorIds.filter((id) => !new RegExp(`(?<![A-Za-z0-9-])${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![A-Za-z0-9-])`, "i").test(record ?? ""));
+    if (missing.length) return { ok: false, why: `the Record gives no disposition for the replaced blocker ${missing.join(", ")}` };
+  }
   const problems = validatorProblems(`${rest}\n\nVERDICT: ${m[1]} @ ${head} (ghsol)`);
   if (problems.length) return { ok: false, why: `the answer would fail the verdict format: ${problems[0]}` };
   return { ok: true, verdict: m[1], body: rest, record };
@@ -425,7 +452,12 @@ export function postProblem({ pr, items, head, lane, posted = lane, force = fals
   const atHead = verdictLines(items).filter((v) => v.sha === head);
   const fb = gpt && gptFallbackVerdict(items, head) !== null;
   const own = [...(gpt && tier !== 0 ? [...gptOwn(lane), ...(fb ? [`(${postLane(lane, "glm")})`] : [])] : ownLanes(lane, tier, glmTiers, cls)), ...(posted ? [`(${posted})`] : [])];
-  if (atHead.some((v) => own.includes(v.lane)) && !(force && ownBlockedOnly(atHead, own))) return `(${posted ?? lane}) already has a verdict at ${head}`;
+  if (atHead.some((v) => own.includes(v.lane))) {
+    const redo = force ? ownBlockedLanes(atHead, own) : [];
+    if (!redo.length) return `(${posted ?? lane}) already has a verdict at ${head}`;
+    // D484-5: the replacement goes out under the lane whose block it replaces; another lane's merge would strand that block.
+    if (posted && !redo.includes(`(${posted})`)) return `(${posted}) would not replace the block of ${redo.join(", ")} at ${head}`;
+  }
   if (lane === SOL_LANE && !advisory) {
     const eligible = eligibleLanes(Number(tier), glmTiers, cls);
     // NORMAL: no assignment holds the workflow back; otherwise a workflow assignment accepts either provider (D396-1).
