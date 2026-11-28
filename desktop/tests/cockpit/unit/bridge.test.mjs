@@ -495,3 +495,29 @@ test('CKP-SHELL-50: the app range arrives in the shell before the first render a
   assert.equal(f.bridge.receive(f.send('visibility',{visible:true,occluded:true,key:true}),source),true);
   assert.equal(f.bridge.action('rangeSelect','7d'),false,'an inactive page cannot ask');
 });
+test('D466 the shared news clock: strict news message, newsLook only to a host that sent one',()=>{
+  const f=fixture(),got=[];
+  const view=f.bridge['view'];view.news=items=>got.push(items);
+  assert.equal(f.bridge.newsLook([{id:'e1',status:'confirmed'}]),false,'no news host yet: nothing is posted');
+  for(const items of [[{id:'e1',status:'done',untilUnixMs:null}],[{id:'e1',status:'confirmed'}],[{id:'',status:'confirmed',untilUnixMs:null}],[{id:'e1',status:'confirmed',untilUnixMs:'1.5'}],Array.from({length:65},()=>({id:'e',status:'announced',untilUnixMs:null}))])
+    assert.equal(f.bridge.receive(f.send('news',{items}),source),false);
+  assert.equal(got.length,0);
+  assert.equal(f.bridge.receive(f.send('news',{items:[{id:'e1',status:'confirmed',untilUnixMs:'1795770000000'},{id:'e2',status:'announced',untilUnixMs:null}]}),source),true);
+  assert.deepEqual(got.at(-1),[{id:'e1',status:'confirmed',until:1795770000000},{id:'e2',status:'announced',until:null}]);
+  assert.equal(f.bridge.newsLook([{id:'e1',status:'confirmed'}]),true);
+  assert.deepEqual(f.events.at(-1).events,[{id:'e1',status:'confirmed'}]);assert.equal(f.events.at(-1).action,'newsLook');
+  assert.equal(f.bridge.newsLook([{id:'e1',status:'later'}]),false);
+});
+test('macrevb-1290-1 late negotiation: looks before the first news message are replayed once, with their time, if still live',()=>{
+  const f=fixture(),looks=()=>f.events.filter(e=>e.type==='action'&&e.action==='newsLook');
+  const at=Date.now()-60_000;
+  assert.equal(f.bridge.newsLook([{id:'live',status:'confirmed'},{id:'gone',status:'announced'}],at),false);
+  assert.equal(f.bridge.newsLook([{id:'live',status:'confirmed'}],at+5000),false,'a second look at the same news keeps the first time');
+  assert.equal(looks().length,0);
+  const until=String(Date.now()+3_600_000);
+  assert.equal(f.bridge.receive(f.send('news',{items:[{id:'live',status:'confirmed',untilUnixMs:until},{id:'gone',status:'announced',untilUnixMs:null}]}),source),true);
+  assert.deepEqual(looks().map(e=>e.events),[[{id:'live',status:'confirmed',atUnixMs:String(at)}]]);
+  // Replayed once only: a later news message posts nothing more.
+  assert.equal(f.bridge.receive(f.send('news',{items:[{id:'live',status:'confirmed',untilUnixMs:until}]}),source),true);
+  assert.equal(looks().length,1);
+});

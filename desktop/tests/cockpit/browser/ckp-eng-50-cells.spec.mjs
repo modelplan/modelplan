@@ -35,7 +35,7 @@ function fixture(n) {
 }
 const cell=(page,i,row='first')=>page.locator(`.eng-cols > .ec[data-col]`).nth(i).locator(`.qcell[data-row="${row}"]`);
 
-for(const [locale,unreadable,usedUp,quotaOnly] of [['en','no reading','used up','Quota only'],['zh-CN','读不到','已用完','仅额度']])
+for(const [locale,unreadable,usedUp,quotaOnly,reset,stale] of [['en','no reading','used up','Quota only','in 3h20','in 3h20 1h ago'],['zh-CN','读不到','已用完','仅额度','3h20后','3h20后 1h前']])
  test(`CKP-ENG-50 the six cell states on the page (${locale})`,async({page})=>{
   const {data,account,sync}=fixture(6);
   // 0 normal · 1 loading · 2 unreadable · 3 stale · 4 used up · 5 no usage record
@@ -46,13 +46,13 @@ for(const [locale,unreadable,usedUp,quotaOnly] of [['en','no reading','used up',
   data.details.subscriptions[5].today=[];
   sync();
   await open(page,data,locale);
-  await expect(cell(page,0).locator('.qvalue')).toHaveText('75');await expect(cell(page,0).locator('.qtxt')).toHaveText('3h20');
+  await expect(cell(page,0).locator('.qvalue')).toHaveText('75');await expect(cell(page,0).locator('.qtxt.ql1')).toHaveText(reset);// D474: line 1 = the reset, narrow form (6 columns)
   await expect(page.locator('.eng-cols > .ec[data-col]').nth(1).locator('.qph')).toHaveCount(3);
   await expect(page.locator('.eng-cols > .ec[data-col]').nth(1).locator('.qvalue,.qtxt')).toHaveCount(0);
   await expect(cell(page,2).locator('.qvalue')).toHaveText('--');await expect(cell(page,2).locator('.qtxt.dim')).toHaveText(unreadable);
-  await expect(cell(page,3).locator('.qtxt')).toHaveText(locale==='en'?'3h 1h ago':'3h 1h前');// stale: drawn like current, plus its reading age (CKP-ENG-22)
+  await expect(cell(page,3).locator('.qtxt.ql1')).toHaveText(stale);// stale: drawn like current, plus its reading age (CKP-ENG-22)
   await expect(page.locator('.eng-cols > .ec[data-col]').nth(3)).not.toHaveClass(/\bgrey\b/);
-  await expect(cell(page,4).locator('.qvalue')).toHaveText('0');await expect(cell(page,4).locator('.qtxt.crit')).toHaveText(usedUp);
+  await expect(cell(page,4).locator('.qvalue')).toHaveText('0');await expect(cell(page,4).locator('.qtxt.ql2.crit')).toHaveText(usedUp);await expect(cell(page,4).locator('.qtxt.ql1')).toHaveText(reset);
   const [ink,low]=await cell(page,4).evaluate(e=>{const p=document.createElement('i');p.style.color='var(--st-low)';e.append(p);const r=[getComputedStyle(e.querySelector('.qnum')).color,getComputedStyle(p).color];p.remove();return r;});
   expect(ink,'the used-up number is red').toBe(low);
   await expect(page.locator('.eng-cols > .ec[data-col]').nth(5).locator('.qrow-t .qq')).toHaveText(quotaOnly);
@@ -95,21 +95,14 @@ for(const [locale,text,retry,reason] of [['en','12 min ago','Retry','no new data
   await expect(page.locator('.eng-cols .qvalue').first()).toHaveText('75');
  });
 
-// D376: the staleness signal stays visible when the overview is not showing: an amber dot on the 全部 key.
-test('CKP-ENG-55 healthy reads put no dot on the 全部 key',async({page})=>{
- const {data}=fixture(2);await open(page,data);
- await expect(page.locator('.ek-all .ek-stale')).toHaveCount(0);
-});
-test('CKP-ENG-55 failing reads put an amber dot on the 全部 key, also while another page is showing',async({page})=>{
+// C27 (D474): the 全部 key has no stale dot any more; a failing read says 失败·2h in its own column instead.
+test('C27 failing reads put no dot on the 全部 key; the column says 失败 and keeps its numbers',async({page})=>{
  const {data,account,sync}=fixture(2);
- Object.assign(account(1),{valueState:'retained',observedAt:iso(-12),lastFailure:{at:iso(-1),code:'network'}});sync();
+ Object.assign(account(1),{valueState:'retained',observedAt:iso(-120),lastFailure:{at:iso(-1),code:'network'}});sync();
  await open(page,data);
- await expect(page.locator('.ek-all .ek-stale')).toHaveCount(1);await expect(page.locator('.ek-all .ek-stale')).toBeVisible();
- await page.locator('.mfd-pk .pk').nth(1).click();
- await expect(page.locator('.mfd-page.pg-overview')).toHaveCount(0);
- await expect(page.locator('.ek-all .ek-stale'),'still there when another page is showing').toBeVisible();
+ await expect(page.locator('.ek-all .ek-stale')).toHaveCount(0);
+ await expect(cell(page,1).locator('.qvalue')).toHaveText('75');await expect(cell(page,1).locator('.qtxt.ql1')).toHaveText('Fail·2h');
 });
-
 test('D376 one page: no pager, no strip, the keys keep full height',async({page})=>{
  const {data}=fixture(3);await open(page,data);
  await expect(page.locator('.eng-pg')).toHaveCount(0);

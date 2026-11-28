@@ -27,7 +27,8 @@ export const level = (r, redAt = 25) => r == null ? 'none' : r <= redAt ? 'low' 
 const loc = ui => ui.lang === 'en' ? 'en' : 'zh-CN';
 // Text from the shared string tables (strings/host.js) for the locale the caller passes, with plural selection.
 const rules = {en: new Intl.PluralRules('en'), 'zh-CN': new Intl.PluralRules('zh-CN')};
-const tx = (ui, key, vars) => {
+// Exported for engine-fmt.js (SET-9-38: no inline language choice there either).
+export const tx = (ui, key, vars) => {
   let s = tables[loc(ui)][key];
   if (typeof s === 'object') s = s[rules[loc(ui)].select(Number(vars?.n))] ?? s.other;
   return vars ? s.replace(/\{(\w+)\}/g, (m, n) => vars[n] ?? m) : s;
