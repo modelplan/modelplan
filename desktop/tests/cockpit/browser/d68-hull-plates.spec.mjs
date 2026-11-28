@@ -33,7 +33,8 @@ test(`D68 ${tier}${closed?' closed':''}: r3 plain wall from ${wallTop} px to the
   // Nothing covers the slab: the page's closed-state section stays transparent (the study has no dark cap there).
   expect(v.cap).toBe('none rgba(0, 0, 0, 0)');
   // The dark body meets the slab's foot (30 px), as in the study: no transparent band between slab and strip.
-  expect(v.body).toMatch(/^inset\(30px /);
+  // The body starts 1 px under the cap (G3-108 overlap): at a fractional page zoom a butt joint showed the desktop (owner build 6).
+  expect(v.body).toMatch(/^inset\(29px /);
   // The slab saves the study's 6 px (cap 16 + 2 px first row): the strip sits at 39 px and the record panel ends
   // 22 px above the bottom, on the aft plate's edge, not over it.
   expect([v.headTop,v.tapeGap]).toEqual([39,22]);

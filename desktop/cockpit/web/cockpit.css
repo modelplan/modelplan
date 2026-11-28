@@ -222,7 +222,9 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
 :root[data-theme="night"] #cockpit .ck-shell .hull-lower{top:calc(var(--hull-taper-top) + 30px);bottom:21px;height:auto;background-position:50% calc(var(--hull-cap-h) - 21px - var(--hull-taper-top));-webkit-mask-image:var(--hull-lower-mask),var(--hull-lower-skin-mask);mask-image:var(--hull-lower-mask),var(--hull-lower-skin-mask);-webkit-mask-size:636px var(--hull-lower-h),636px 32px;mask-size:636px var(--hull-lower-h),636px 32px;-webkit-mask-repeat:no-repeat,repeat-y;mask-repeat:no-repeat,repeat-y;-webkit-mask-position:50% calc(100% - 1px),50% 0;mask-position:50% calc(100% - 1px),50% 0}
 /* Overlap the inner edges of the wall masks. At fractional page zoom, two
    adjoining antialiased edges can expose the desktop through the joint. */
-:root[data-theme="night"] #cockpit .ck-shell::before{clip-path:inset(var(--hull-cap-h) 14px 22px)}
+/* Owner build 6 (+j): the body also butted the canopy row (top) and the aft plate (bottom) on one edge, so at some fractional zooms
+   the desktop showed through a 1 px band at both joints. It now reaches 1 px under each; the canopy and the aft plate paint over it. */
+:root[data-theme="night"] #cockpit .ck-shell::before{clip-path:inset(calc(var(--hull-cap-h) - 1px) 14px 21px)}
 /* G3-108 (owner, build 14e): the closed root stands on the open root's floor, so the strip, the panels and the base are
    at the same page place open or closed (strip at 253) and the shutter never moves the body on the
    page. The page canvas is always the open root's; the native window leaves out the band above the slab (closed:
@@ -564,8 +566,53 @@ html[data-reduce-motion="true"] [data-wait-shown="true"] .ck-eng .ec-empty{anima
 .cal-wk .wk-adr.chip.pending span{border-style:dashed;background:transparent;color:var(--c)}
 /* Owner window pack: the title-edge decoration exists only for the official night skin (hull.css shows it); it is never a flex item here. */
 .ck-head>.mp-title-edge{display:none}
+/* D466: one blue dot means reset news (hollow = announced, solid = confirmed): the subscription key's right end and the
+   alert-list bullet. Rows without news carry no bullet. The reserve is one quiet line; its "+1" is the same blue. */
+.ck-eng .ek .ek-news{position:absolute;right:5px;top:50%;width:6px;height:6px;margin-top:-4px;border-radius:50%;box-sizing:border-box;pointer-events:none}
+.ck-eng .ek .ek-news.solid{background:var(--trial);box-shadow:0 0 4px color-mix(in srgb,var(--trial) 60%,transparent)}
+.ck-eng .ek .ek-news.hollow{border:1.4px solid var(--trial)}
+#cockpit .mfd-alerts li > i,#cockpit .mfd-alerts .al-row > i{display:inline-block;width:10px;height:10px;position:relative}
+#cockpit .al-dot::before{content:"";position:absolute;left:2px;top:3px;width:6px;height:6px;border-radius:50%;box-sizing:border-box}
+#cockpit .al-dot.solid::before{background:var(--trial)}
+#cockpit .al-dot.hollow::before{border:1.4px solid var(--trial)}
+.ck-eng .qrow-r{flex-direction:row;align-items:center;justify-content:flex-start;gap:4px;padding-top:0;color:var(--lcd-muted);white-space:nowrap;overflow:hidden}
+.ck-eng .qrow-r .qrv-c,.ck-eng .qrow-r .qrv-p,.ck-eng .qrow-r .qrv-x{display:inline-block;flex:0 1 auto;min-width:0;max-width:none;color:var(--lcd-muted)}
+.ck-eng .qrow-r .qrv-x.warn{color:var(--st-mid)}
+.ck-eng .qrow-r .qrv-sep{font-style:normal;flex:none}
+.ck-eng .qrow-r .qrv-plus{flex:none;margin-left:3px;padding:0;border:0;background:none;color:var(--trial);font-weight:600}
 
 /* D411 nitpick 8: the subscription key row ends where the panels below end (632 px), not 2 px short. */
 .ck-eng .eng-keys{right:var(--eng-pr)}
 /* D411 nitpick 10: opaque rules in the engine panel, so crossing lines do not stack into a brighter dot. */
 :root[data-theme="night"] .ck-eng{--lcd-rule:#181b20}
+
+/* #1290 (D474 §2.2, §3.2, §6.1, C3, C26, C36): two lines per quota cell. The number sits left; line 1 (the reset, ink-3,
+   never coloured) and line 2 (the estimate: amber/red only when it runs out before the reset, else faint 够用) stack at the
+   right. Wide: number 21, line 1 11.5, line 2 11. Narrow (< 140 pt): number 16 with a 10 px %, both lines 10.5, and at
+   least 4 pt between the % and line 2. F5 floor: nothing under 10 px. */
+.ck-eng .qcell .qline{align-items:center;justify-content:space-between;gap:4px}
+.ck-eng .qcell .qnum{font-size:21px;line-height:23px}
+.ck-eng .qcell .qnum small{font-size:11px}
+.ck-eng .qlines{display:flex;flex-direction:column;align-items:flex-end;min-width:0;flex:1 1 auto;overflow:hidden}
+.ck-eng .qlines .qtxt{max-width:100%;text-align:right;color:var(--lcd-muted)}
+.ck-eng .qlines .ql1{font-size:11.5px;line-height:13px}
+.ck-eng .qlines .ql2{font-size:11px;line-height:13px}
+.ck-eng .qlines .ql1.warn,.ck-eng .qlines .ql1.crit{color:var(--lcd-muted)}
+.ck-eng .qlines .ql2.warn{color:var(--st-mid)}.ck-eng .qlines .ql2.crit{color:var(--st-low)}
+.cls-narrow .qcell .qnum{font-size:16px;line-height:19px}
+.cls-narrow .qcell .qnum small{font-size:10px}
+.cls-narrow .qcell .qline{gap:4px}
+.cls-narrow .qlines .ql1,.cls-narrow .qlines .ql2{font-size:10.5px;line-height:12px}
+.ck-eng .qcell.lapsed .qnum{color:var(--lcd-muted)}
+/* §3.1 reserve: the narrow line uses tight separators; the points drop first (the view leaves them out beside an expiry). */
+.ck-eng .qrow-r.narrow{gap:0}.ck-eng .qrow-r.narrow .qrv-sep{padding:0}
+/* #1290 (D474 §3.3, CKP-MFD-55): the alert list shows 6 rows, then scrolls; 时段 rows carry a small ink-2 square; a
+   line 1 that does not fit fades its subscription name over the last 12 pt (only when it overflows), never the time. */
+#cockpit .pg-alerts .mfd-alerts.all{max-height:calc(6 * 30px);overflow-y:auto}
+#cockpit .mfd-alerts .al-sq{display:inline-block;width:10px;height:10px;position:relative}
+#cockpit .mfd-alerts .al-sq::before{content:"";position:absolute;left:2px;top:3px;width:5px;height:5px;border-radius:1px;background:var(--lcd-ink-2,#b9c2ca)}
+#cockpit .mfd-alerts .al-l1.al-split{display:flex;min-width:0;white-space:nowrap}
+#cockpit .mfd-alerts .al-who{min-width:0;flex:0 1 auto;overflow:hidden;white-space:nowrap}
+#cockpit .mfd-alerts .al-who.over{-webkit-mask-image:linear-gradient(to left,transparent 0,#000 12px);mask-image:linear-gradient(to left,transparent 0,#000 12px)}
+#cockpit .mfd-alerts .al-rest{flex:none;white-space:nowrap}
+.ck-eng .qrow-r .drop{display:none}

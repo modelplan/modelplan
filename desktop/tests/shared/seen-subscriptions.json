@@ -1,0 +1,33 @@
+{
+ "comment": "D474 decision 3 (C13, C45): a subscription gets a ring and a column only after its first good reading on this Mac. The host (#1289) keeps the memory in seen-subscriptions.json (written when a reading is current or retained; cleared on Forget and on a privacy clear) and sends it to the cockpit page as the strict bridge message `seen`. The page (#1290, src/bridge.ts and src/members.ts) validates it and applies the column rule below. Both sides are tested against this file: `messages` are the payload fields after the common header (type \"seen\"), `columns` the rule. Without any `seen` message (an older host, tests) the page keeps every member, as before.",
+ "message": {
+  "type": "seen",
+  "fields": ["ids"],
+  "maxIds": 64,
+  "idForm": "a cockpit member key: a verified subscriptionRef (16 lowercase hex) or a session fallback key <row>#<route>[#<n>]; never \"all\"; no repeats",
+  "when": "after `load` and before or with the first `display`, then whenever the stored set changes; an empty list is valid (nothing seen yet)"
+ },
+ "messages": [
+  {"name": "two verified refs", "ids": ["0000000000000001", "00000000000000ab"], "valid": true},
+  {"name": "nothing seen yet", "ids": [], "valid": true},
+  {"name": "a session fallback key", "ids": ["codex#local_log"], "valid": true},
+  {"name": "a numbered fallback key", "ids": ["codex#local_log#2"], "valid": true},
+  {"name": "the all scope is not a member", "ids": ["all"], "valid": false},
+  {"name": "a repeated key", "ids": ["0000000000000001", "0000000000000001"], "valid": false},
+  {"name": "not a list", "ids": "0000000000000001", "valid": false},
+  {"name": "a non-string key", "ids": [1], "valid": false},
+  {"name": "an unknown route", "ids": ["codex#carrier_pigeon"], "valid": false},
+  {"name": "65 keys", "ids": "65 distinct verified refs", "count": 65, "valid": false},
+  {"name": "64 keys", "ids": "64 distinct verified refs", "count": 64, "valid": true}
+ ],
+ "columns": {
+  "rule": "with a seen set: a member shows when its key is in the set, or its reading is good now (valueState current or retained: normal, stale, 失败·2h). A member never read on this Mac (valueState none, not in the set) has no column and no ring; it lives in Settings and the grey line. A member in the set whose reading now fails keeps its column with -- 读不到.",
+  "cases": [
+   {"name": "no seen message: every member shows", "seen": null, "members": [{"key": "0000000000000001", "valueState": "none"}, {"key": "0000000000000002", "valueState": "current"}], "shown": ["0000000000000001", "0000000000000002"]},
+   {"name": "never read: no column", "seen": [], "members": [{"key": "0000000000000001", "valueState": "none"}, {"key": "0000000000000002", "valueState": "current"}], "shown": ["0000000000000002"]},
+   {"name": "read before, failing now: column kept", "seen": ["0000000000000001"], "members": [{"key": "0000000000000001", "valueState": "none"}], "shown": ["0000000000000001"]},
+   {"name": "a retained reading counts as good", "seen": [], "members": [{"key": "0000000000000003", "valueState": "retained"}], "shown": ["0000000000000003"]},
+   {"name": "forgotten (cleared set) and failing: column gone", "seen": [], "members": [{"key": "0000000000000001", "valueState": "none"}], "shown": []}
+  ]
+ }
+}
