@@ -1106,7 +1106,7 @@ test("D395-4: an outside PR reviewed on the owner's dispatch posts its advisory 
 // a renamed docs file and a workflow-only change all need (and dispatch) an exact-head Sol review; a NORMAL tier-0 PR needs none.
 test("macrevb-1311-1: tier-0 IMPORTANT PRs (review:gpt docs, renamed docs, workflow-only) wait for an exact-head Sol verdict and dispatch Sol", () => {
   const docs = [{ filename: "docs/a.md" }], moved = [{ filename: "docs/b.md", status: "renamed", previous_filename: "docs/a.md" }];
-  const wf = [{ filename: ".github/workflows/ci.yml" }];
+  const wf = [{ filename: ".github/workflows/trusted-mac.yml" }];
   const labelled = pr({ labels: [{ name: "review:gpt" }] });
   const conf = { include: [], exclude: [], pinonly: [] };
   const ci = [{ path: ".github/workflows/ci.yml", status: "completed", conclusion: "success", head_sha: H, head_repository: { full_name: "modelplan/modelplan" }, head_branch: "feature/x", event: "pull_request", pull_requests: [{ number: 7 }] }];

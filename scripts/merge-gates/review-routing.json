@@ -1,5 +1,5 @@
 {
-  "decision": "D482 (owner 2026-11-28; narrows D395/D396/D404): most PRs are reviewed by the GitHub GLM reviewer and its exact-head verdict counts. A Codex/GPT Sol-tier verdict is required ONLY for an IMPORTANT PR: (a) privacy, consent, credentials, tokens or security; (b) merge gates, CI workflows, release and signing; (c) an owner-reported fix PR (its body has a Ledger: G3-nn line, rule R13; its tier is at least ledgerMinTier, so even a docs-only one needs the verdict). A PR is IMPORTANT when it carries a label below, its body matches ledger, a trusted REVIEW-TIER: <overrideTier> comment raises it, it touches maxFiles or more files, a file is renamed, it has no file list, or ANY touched non-test path matches ANY area pattern (one important path makes the whole PR important; test files, rules.mjs TEST_RE, never match an area). An IMPORTANT PR is at least tier importantMinTier, so a workflow-only or docs-only IMPORTANT PR (path tier 0) still needs the Sol verdict. Path tier 2, spanning native Swift and cockpit web, and design-touching no longer make a PR important by themselves. On an IMPORTANT PR (ghglm) never decides (REVIEW_GLM_TIERS does not widen it); Terra decides only tier 1 of a NORMAL PR. Patterns are case-insensitive (ledger is also multi-line) and use only syntax JavaScript and Python read alike. The coordinator (decide.py review_class) reads this same file from main; both sides test against examples.",
+  "decision": "D482 (owner 2026-11-28; narrows D395/D396/D404): most PRs are reviewed by the GitHub GLM reviewer and its exact-head verdict counts. A Codex/GPT Sol-tier verdict is required ONLY for an IMPORTANT PR: (a) privacy, consent, credentials, tokens or security; (b) merge gates, the gate and reviewer workflows (merge-gates, pr-review, mac-compile, trusted-mac), release/packaging/signing/notarization workflows, shared actions, release and signing (a feature PR that only adds a test leg to ci.yml or desktop.yml is NORMAL); (c) an owner-reported fix PR (its body has a Ledger: G3-nn line, rule R13; its tier is at least ledgerMinTier, so even a docs-only one needs the verdict). A PR is IMPORTANT when it carries a label below, its body matches ledger, a trusted REVIEW-TIER: <overrideTier> comment raises it, it touches maxFiles or more files, a file is renamed, it has no file list, or ANY touched non-test path matches ANY area pattern (one important path makes the whole PR important; test files, rules.mjs TEST_RE, never match an area). An IMPORTANT PR is at least tier importantMinTier, so a workflow-only or docs-only IMPORTANT PR (path tier 0) still needs the Sol verdict. Path tier 2, spanning native Swift and cockpit web, and design-touching no longer make a PR important by themselves. On an IMPORTANT PR (ghglm) never decides (REVIEW_GLM_TIERS does not widen it); Terra decides only tier 1 of a NORMAL PR. Patterns are case-insensitive (ledger is also multi-line) and use only syntax JavaScript and Python read alike. The coordinator (decide.py review_class) reads this same file from main; both sides test against examples.",
   "version": 2,
   "maxFiles": 100,
   "labels": ["review:codex", "review:gpt"],
@@ -12,7 +12,7 @@
     { "area": "privacy", "re": "privacy|redact|^cli/internal/diagnostics/|(^|/)Diagnostics[A-Za-z]*\\.swift$" },
     { "area": "credentials", "re": "credential|keychain|secret|manualkey|identity|_login\\.go$|LoginService|claudesession|browser_session|oauth|(auth|access|refresh|bearer|api|session)[_-]?token|api[_-]?key" },
     { "area": "security", "re": "sandbox|entitlement|permission|(^|/)SECURITY|-pin[^/]*$|(^|/)pins?\\.[a-z]+$|(^|/)go\\.(mod|sum)$|(^|/)Package\\.resolved$|(^|/)package-lock\\.json$" },
-    { "area": "gates-ci", "re": "^\\.github/workflows/|^\\.github/actions/|^scripts/(merge-gates|pr-review|mac-compile)/|^desktop/native/verification/scenario-tiers\\.tsv$" },
+    { "area": "gates-ci", "re": "^\\.github/workflows/(merge-gates|pr-review|mac-compile|trusted-mac)[^/]*$|^\\.github/workflows/[^/]*(release|packag|candidate|sign|notar|distribution)[^/]*$|^\\.github/actions/|^scripts/(merge-gates|pr-review|mac-compile)/|^desktop/native/verification/scenario-tiers\\.tsv$" },
     { "area": "release", "re": "release|notari[sz]|codesign|signing|sparkle|cliupdate|(^|/)update\\.go$|install|\\.entitlements$|(^|/)Info\\.plist$" }
   ],
   "examples": [
@@ -23,7 +23,13 @@
     { "paths": ["desktop/native/credential-agent-artifact-pin.json"], "cls": "important", "why": "credentials" },
     { "paths": ["claude-code/cli-pin.json"], "cls": "important", "why": "security" },
     { "paths": ["cli/go.sum"], "cls": "important", "why": "security" },
-    { "paths": [".github/workflows/ci.yml"], "cls": "important", "why": "gates-ci" },
+    { "paths": [".github/workflows/trusted-mac.yml"], "cls": "important", "why": "gates-ci" },
+    { "paths": [".github/workflows/merge-gates.yml"], "cls": "important", "why": "gates-ci" },
+    { "paths": [".github/workflows/mac-compile.yml"], "cls": "important", "why": "gates-ci" },
+    { "paths": [".github/workflows/cli-release.yml"], "cls": "important", "why": "gates-ci" },
+    { "paths": [".github/actions/build/action.yml"], "cls": "important", "why": "gates-ci" },
+    { "paths": [".github/workflows/ci.yml"], "cls": "normal" },
+    { "paths": [".github/workflows/desktop.yml", "desktop/native/ModelPlanDock/Sources/ModelPlanDock/DockRevealMotion.swift"], "cls": "normal" },
     { "paths": ["scripts/merge-gates/rules.mjs"], "cls": "important", "why": "gates-ci" },
     { "paths": ["cli/internal/cliupdate/update.go"], "cls": "important", "why": "release" },
     { "paths": ["scripts/tool.mjs"], "labels": ["review:gpt"], "cls": "important", "why": "label" },
