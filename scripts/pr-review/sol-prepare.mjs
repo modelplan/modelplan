@@ -113,6 +113,7 @@ writeFileSync(join(dir, "request.md"), buildSolPrompt({ pr, d, lane, stat, diff,
 
 console.log(`pr-review-sol: review #${n} @ ${d.head} tier ${d.tier} ${mode} from ${base} as (${lane}); ${contents.length} files inline, ${omitted.length} omitted`);
 summary(`Reviewing #${n} @ \`${d.head}\` — tier ${d.tier}, ${mode} review from \`${base.slice(0, 12)}\`, lane (${lane})${d.record ? `, carrying the record at \`${d.record.sha.slice(0, 12)}\`` : ""}`);
+writeFileSync(join(dir, "prior-blockers"), (d.replace?.ids ?? []).join("\n"));
 output("review", "true");
 output("head", d.head);
 output("tier", String(d.tier));

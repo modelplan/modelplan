@@ -496,7 +496,7 @@ func (v PerfView) Boundaries() []time.Time {
 		out = append(out, localday.Next(l))
 	}
 	for _, r := range v.Ledger.Live {
-		out = append(out, r.LastAt.Add(LiveWithin))
+		out = append(out, r.LastAt.Add(LiveWithin), r.LastAt.Add(LiveIdleKeep))
 		for _, s := range r.Samples {
 			out = append(out, s.At.Add(LiveRateWindow))
 		}

@@ -17,7 +17,7 @@
 // title bar and lifecycle stay here. A draw that throws falls back to the plugin's cells or lines; a size change draws
 // again; focus on a `data-focus` element survives every redraw.
 //
-// State: the host (Settings › Subscriptions › Plugins) owns the durable copy and sends it as a `plugins` message. Until
+// State: the host (Settings › Plugins) owns the durable copy and sends it as a `plugins` message. Until
 // the host has sent one, page edits stay in this page only and nothing is posted, so an older host never sees an action
 // it does not know, and default-on plugins stay off (an older host's cockpit is the v1 table).
 //
