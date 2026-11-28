@@ -459,8 +459,17 @@ actor S4RowsClient: EngineClient {
         eventRows[0]["accounts"]=eventAccounts;projection["rows"]=eventRows;data["projection"]=projection
         let restarted=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:data))
         try await synthetic.replaceRows(restarted)
-        guard let restartedSignal=entry.composition.resetSignals.first(where:{$0.id == matching.id}) else { throw Failure(description:"restarted member missing") }
-        try require(restartedSignal.reset?.restartedReading == true && DockNoticeProjection.selected(for:restartedSignal,at:confirmationClock) == nil,"a current reading restarted after confirmation must clear the confirmed notice")
+        // DOCK-3.7-03 / C19 (D474, macrev2-1289-4): once the current reading shows the window restarted after the
+        // confirmation, the confirmed direct reset is no longer news on any surface: the signal carries no reset (so no
+        // dot, menu notice or card block), where D166 kept the event and only flagged the restart. Wait for that reading.
+        func restartedMember() -> DockSubscriptionSignal? { entry.composition.resetSignals.first(where:{$0.id == matching.id}) }
+        func cleared() -> Bool { restartedMember()?.reset == nil && entry.noticeIndicator.notice == nil && entry.composition.menuPresentation.title.isEmpty }
+        for _ in 0..<100 where !cleared() { try await Task.sleep(for:.milliseconds(10)) }
+        guard let restartedSignal=restartedMember() else { throw Failure(description:"restarted member missing") }
+        try require(restartedSignal.reset == nil && DockNoticeProjection.selected(for:restartedSignal,at:confirmationClock) == nil,"a current reading restarted after confirmation must clear the confirmed notice")
+        try require(entry.noticeIndicator.notice == nil && entry.composition.menuPresentation.title.isEmpty,"the restarted reading must leave no menu-bar notice")
+        let restartedCard=try entry.composition.dock.cardContent(for:matching.id)
+        try require(restartedCard?.rows.contains(where:{$0.id.hasPrefix("reset-event:"+decoded[0].id)}) != true,"the card news block must clear with the dot")
         events[0].removeValue(forKey:"confirms");projection["resetEvents"]=events;data["projection"]=projection
         let unlinked=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:data))
         try await synthetic.replaceRows(unlinked)

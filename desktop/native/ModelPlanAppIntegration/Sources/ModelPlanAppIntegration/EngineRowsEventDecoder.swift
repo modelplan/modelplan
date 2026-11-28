@@ -90,6 +90,9 @@ extension EngineResetEvent {
     /// reading, taken after it, of a current window that began after it (its reset minus its duration).
     /// A routine refresh of a window that started earlier is not evidence. Reset credits never restart a
     /// window by themselves (the user redeems them), so they never claim one.
+    /// The cycle start may sit up to `restartSkew` before the confirmation: the same clock-skew tolerance as the cockpit's
+    /// `NEWS_RESTART_SKEW_MS` (news-clock.ts), so the widget and the cockpit retire the same direct reset (DOCK-3.7-03).
+    public static let restartSkew: TimeInterval = 60
     public func restartedReading(in account: RowsAccount) -> Bool {
         guard !isResetCredit, account.valueState == .current else { return false }
         let confirmed = confirmedAt ?? publishedAt
@@ -97,7 +100,7 @@ extension EngineResetEvent {
             guard window.current, let duration = window.durationSeconds, duration > 0,
                   let observed = EngineResetTimestampContract.date(window.observedAt),
                   let resets = EngineResetTimestampContract.date(window.resetsAt) else { return false }
-            return observed > confirmed && resets.addingTimeInterval(-TimeInterval(duration)) > confirmed
+            return observed > confirmed && resets.addingTimeInterval(-TimeInterval(duration)) >= confirmed.addingTimeInterval(-Self.restartSkew)
         }
     }
 }

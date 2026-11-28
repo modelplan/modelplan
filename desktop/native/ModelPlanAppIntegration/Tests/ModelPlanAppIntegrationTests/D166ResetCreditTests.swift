@@ -151,6 +151,12 @@ final class D166ResetCreditTests: XCTestCase {
         let restarted = try account(observed: confirmed.addingTimeInterval(120), resets: confirmed.addingTimeInterval(60 + 18000))
         XCTAssertTrue(direct.restartedReading(in: restarted))
         XCTAssertFalse(credit.restartedReading(in: restarted), "banked resets wait for the user to redeem them")
+        // macrev2-1289-4: the cycle start may precede the confirmation by clock skew only (60 s, as the cockpit's
+        // NEWS_RESTART_SKEW_MS); a cycle that began minutes earlier is the previous one.
+        for (start, expected) in [(-30.0, true), (-EngineResetEvent.restartSkew, true), (-EngineResetEvent.restartSkew - 1, false), (-240, false)] {
+            let skewed = try account(observed: confirmed.addingTimeInterval(120), resets: confirmed.addingTimeInterval(start + 18000))
+            XCTAssertEqual(direct.restartedReading(in: skewed), expected, "cycle start \(start) s from the confirmation")
+        }
         let zh = EngineResetEventWording(english: false, calendar: shanghai)
         XCTAssertEqual(zh.notification(direct, rose: direct.restartedReading(in: routine)).body, "余量以本机读数为准。")
     }
