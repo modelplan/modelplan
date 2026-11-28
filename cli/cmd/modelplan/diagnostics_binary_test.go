@@ -105,7 +105,7 @@ func TestShareAndFlagErrorsRealBinaryAreCopySafe(t *testing.T) {
 	}
 	t.Setenv("MODELPLAN_BASE", "https://example.invalid")
 	out, exit = run("doctor")
-	if exit != 0 || !strings.Contains(out, "https://example.invalid/path") || !strings.Contains(out, "previous sync failed") {
+	if exit != 0 || !strings.Contains(out, "https://example.invalid/path") || !strings.Contains(out, `"lastError": "sync-failed"`) || strings.Contains(out, password) {
 		t.Fatalf("doctor redaction failed: %d %q", exit, out)
 	}
 	t.Setenv("MODELPLAN_BASE", poison)

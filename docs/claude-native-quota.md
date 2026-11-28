@@ -10,7 +10,7 @@ grant permits no tool-file, Keychain or network access. Legacy connection settin
 alone do not grant access. The consent line is: “Read Claude Code's saved login to
 show usage. The credential is sent to Anthropic to authenticate. macOS may ask
 you to allow Keychain access.” `MODELPLAN_READERS=passive|off` suspends collection.
-The App's configured system proxy belongs on the injected HTTP client; the reader
+The proxy policy is on the default transport (`cli/internal/netproxy`); the reader
 preserves that transport and refuses redirects. CLIJIT owns command/consent wiring.
 
 ## Local sources and identity

@@ -39,8 +39,10 @@ func RestartDelay(crashes []time.Time, now time.Time, protocolMismatch bool) (ti
 // Keys whose value can name a binary or path, such as MODELPLAN_CODEXBAR, stay out.
 // The one exception is MODELPLAN_PROFILE_ROOT (D164): it names no binary and only
 // moves ModelPlan's own config and cache under a test build's fresh-profile folder.
+// The proxy keys are here because a proxy-only user reaches nothing without them; both cases, as Unix tools use both.
+// A value can hold a proxy password, so it goes to the child and to nothing else (internal/netproxy).
 func ChildEnvironmentKeys() []string {
-	return []string{"HOME", "KIMI_CODE_API_KEY", "LANG", "LC_ALL", "LC_CTYPE", "MINIMAX_CODING_API_KEY", "MODELPLAN_CODEX_ACCOUNT", "MODELPLAN_PROFILE_ROOT", "MODELPLAN_READERS", "MODELPLAN_VERIFY_READERS", "OPENCODE_API_KEY", "PATH", "TMPDIR", "Z_AI_API_KEY"}
+	return []string{"ALL_PROXY", "HOME", "HTTPS_PROXY", "HTTP_PROXY", "KIMI_CODE_API_KEY", "LANG", "LC_ALL", "LC_CTYPE", "MINIMAX_CODING_API_KEY", "MODELPLAN_CODEX_ACCOUNT", "MODELPLAN_PROFILE_ROOT", "MODELPLAN_READERS", "MODELPLAN_VERIFY_READERS", "NO_PROXY", "OPENCODE_API_KEY", "PATH", "TMPDIR", "Z_AI_API_KEY", "all_proxy", "http_proxy", "https_proxy", "no_proxy"}
 }
 
 // ChildEnvironment creates an allow-listed copy without inspecting the host
