@@ -45,7 +45,8 @@ import XCTest
         let window = try XCTUnwrap(surface.window)
         XCTAssertTrue(window.isVisible)
         XCTAssertLessThan(window.alphaValue, 1, "starts transparent and fades in")
-        try await Task.sleep(for: .milliseconds(450))
+        let fadedIn = ContinuousClock.now + .seconds(3)  // wait for the fade, not a fixed delay: a loaded runner lags the animation
+        while abs(window.alphaValue - 1) > 0.01 && ContinuousClock.now < fadedIn { try await Task.sleep(for: .milliseconds(20)) }
         XCTAssertEqual(window.alphaValue, 1, accuracy: 0.01)
         surface.hide(fadeOut: 0.3)
         let end = ContinuousClock.now + .seconds(2)
