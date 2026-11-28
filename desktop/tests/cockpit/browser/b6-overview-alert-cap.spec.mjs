@@ -63,3 +63,20 @@ for(const locale of ['en','zh-CN'])
   const t=await box(page,'.dk-mfd .mfd-tip'),r=await box(page,'.pg-overview .ov-top');
   expect(t.top).toBeGreaterThanOrEqual(r.bottom-.5);
  });
+
+for(const locale of ['en','zh-CN'])
+ for(const n of [1,2])
+  test(`b6: an alert line's tooltip never covers the totals headline, with ${n} alert(s) (${locale})`,async({page})=>{
+   await open(page,withAlerts(n),locale);
+   const rows=page.locator('.pg-overview .mfd-alerts li[data-tip]');await expect(rows).toHaveCount(n);
+   const first=await box(page,'.pg-overview .mfd-alerts li[data-tip]');
+   await page.mouse.move(first.left+6,(first.top+first.bottom)/2);
+   await expect(page.locator('.dk-mfd .mfd-tip')).toBeVisible();
+   const t=await box(page,'.dk-mfd .mfd-tip'),head=await box(page,'.pg-overview .ov-top');
+   expect(t.bottom<=head.top+.5||t.top>=head.bottom-.5).toBe(true);
+   await expect(page.locator('.dk-mfd .mfd-tip')).not.toBeEmpty();
+   // the totals row's own tip still sits below it when space permits
+   await page.mouse.move(head.left+6,head.top+6);
+   const own=await box(page,'.dk-mfd .mfd-tip');
+   expect(own.top).toBeGreaterThanOrEqual(head.bottom-.5);
+  });

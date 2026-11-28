@@ -282,7 +282,12 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   let left=r.right-box.left+6+w<=box.width?r.right-box.left+6:Math.max(0,r.left-box.left-6-w),top=Math.min(Math.max(0,r.top-box.top),Math.max(0,box.height-h));
   // A row-wide source (the totals row's "On this Mac") has no room beside it, and beside it would cover its own headline:
   // the tip goes just below it (above it when nothing fits below), at the pointer's side.
-  if(r.width>box.width*.6){left=Math.min(Math.max(0,e.clientX-box.left),Math.max(0,box.width-w));top=r.bottom-box.top+4+h<=box.height?r.bottom-box.top+4:Math.max(0,r.top-box.top-4-h);}
+  // Another row-wide source (an alert line above the totals row) must not land on that headline either: the candidates are
+  // below the row, above it, then over the row itself; the first one that is clear of the headline and inside the screen wins.
+  if(r.width>box.width*.6){left=Math.min(Math.max(0,e.clientX-box.left),Math.max(0,box.width-w));
+   const head=source.matches('.ov-top')?null:page.querySelector('.ov-top')?.getBoundingClientRect(),clear=(y:number)=>!head||y+box.top+h<=head.top||y+box.top>=head.bottom;
+   const spots=[r.bottom-box.top+4,r.top-box.top-4-h,r.top-box.top];
+   top=spots.find(y=>y>=0&&y+h<=box.height&&clear(y))??spots.find(clear)??spots[0];top=Math.max(0,top);}
   tip.style.left=left+'px';tip.style.top=top+'px';};
  screen.onpointerleave=hideTip;
  // Public projection only: v1.1 charts, rankings and full session lists are
