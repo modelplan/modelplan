@@ -68,7 +68,7 @@ test('a press on an unverified (fallback-keyed) account survives the next open w
 test('activating the page re-syncs the lamp, so a caution that arrived while inactive blinks on activation',async()=>{
  const {readFileSync}=await import('node:fs');
  const view=readFileSync(new URL('../../../cockpit/src/view.ts',import.meta.url),'utf8');
- assert.match(view,/active\(value,now\)\{const was=active;[^}]*\}else if\(!was&&lastData\)\{if\(now!==undefined\)lastRenderedAt=now;syncCaution\(lastData,lastRenderedAt\);\}\}/);
+ assert.match(view,/active\(value,now\)\{const was=active;[^}]*\}else if\(!was&&lastData\)\{if\(now!==undefined\)lastRenderedAt=now;syncCaution\(lastData,lastRenderedAt\);(?:expireHold\(now\);)?\}\}/);
 });
 
 // macrev2 11-19 (CKP-MFD-57): an amber forecast whose reset time is unknown has no cycle, yet an ordinary pause of the

@@ -59,6 +59,14 @@ jobs:
       - name: Owner-accepted native Dock regression (no GUI)
         env:
           MODELPLAN_S1_REGRESSION_BASELINES: ${{ github.workspace }}/desktop/official-visuals/dock/RegressionBaselines
+          MODELPLAN_S1_REGRESSION_ACTUALS_DIR: ${{ runner.temp }}/s1-actuals
         run: swift run --package-path desktop/native/ModelPlanAppIntegration --scratch-path .tmp/official-dock-seam --jobs 2 S1Gallery
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: s1-regression-actuals
+          path: ${{ runner.temp }}/s1-actuals/
+          if-no-files-found: warn
+          retention-days: 7
       - name: Original vendor marks and native fonts (no GUI)
         run: swift test --package-path desktop/third-party/dock-resources --scratch-path .tmp/official-dock-seam --jobs 2

@@ -529,14 +529,48 @@ jobs:
           echo "run=$run" >> "$GITHUB_OUTPUT"; echo "classes=$classes" >> "$GITHUB_OUTPUT"
           echo "GUI legs: run=$run, selection: $classes" | tee -a "$GITHUB_STEP_SUMMARY"
 
+  # D488 (owner 2026-11-28): merge queue only, after gui-scope decided the GUI leg runs. The queue builds up to four
+  # groups at once, every group commit contains the ones before it, and there is one GUI Mac: an entry that is not the
+  # tail of the building window waits (bounded) for a later group's green GUI leg instead of queueing its own
+  # (scripts/merge-gates/gui-defer.mjs). own=true: this run's GUI legs run as before (the tail, a former non-tail whose
+  # later entries left, or any doubt). own=false: covered; the step below records it, and modelplan-gates accepts the
+  # skipped GUI legs only after re-verifying the covering run (rules.mjs guiCoverState). A failed defer skips the GUI
+  # legs, which fails the group. Keep the job and step names.
+  gui-defer:
+    needs: gui-scope
+    if: ${{ !cancelled() && github.event_name == 'merge_group' && needs.gui-scope.result == 'success' && needs.gui-scope.outputs.run == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    outputs:
+      own: ${{ steps.defer.outputs.own }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/merge-gates
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - id: defer
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/merge-gates/gui-defer.mjs
+      - name: GUI covered by a later group
+        if: ${{ steps.defer.outputs.own == 'false' }}
+        run: echo "a later group's verified GUI leg covers this group commit; see the defer step"
+
   native:
     name: native (${{ matrix.os }})
     # The GUI-native job occupies the ONE GUI test machine (runner label modelplan-mac-gui), and GitHub
     # schedules that machine FIFO with everything else, so urgent runs (owner test builds, ledger fixes)
     # waited behind routine ones. When it runs is decided by gui-scope above. pull_request events never
     # start a GUI leg; the draft clause is redundant and kept for scripts/workflow-policy.mjs.
-    needs: gui-scope
-    if: ${{ !cancelled() && github.event_name != 'pull_request' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.gui-scope.result == 'success' && needs.gui-scope.outputs.run == 'true' && !(inputs.gui_pool == 'hosted' || (inputs.gui_pool != 'owner-mac' && vars.MAC_CI_GUI_POOL == 'hosted')) }}
+    needs: [gui-scope, gui-defer]
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.gui-scope.result == 'success' && needs.gui-scope.outputs.run == 'true' && (github.event_name != 'merge_group' || (needs.gui-defer.result == 'success' && needs.gui-defer.outputs.own == 'true')) && !(inputs.gui_pool == 'hosted' || (inputs.gui_pool != 'owner-mac' && vars.MAC_CI_GUI_POOL == 'hosted')) }}
     strategy:
       fail-fast: false
       matrix:
@@ -553,8 +587,8 @@ jobs:
     # The GUI leg minus the ownerGui classes on hosted macos-15 (owner D62, 11-08), which has a real WindowServer
     # session, so several PRs' GUI legs run in parallel instead of queueing for the one GUI Mac. Selected by
     # MAC_CI_GUI_POOL=hosted or a gui_pool=hosted dispatch; same triggers as the job above.
-    needs: gui-scope
-    if: ${{ !cancelled() && github.event_name != 'pull_request' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.gui-scope.result == 'success' && needs.gui-scope.outputs.run == 'true' && (inputs.gui_pool == 'hosted' || (inputs.gui_pool != 'owner-mac' && vars.MAC_CI_GUI_POOL == 'hosted')) }}
+    needs: [gui-scope, gui-defer]
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.gui-scope.result == 'success' && needs.gui-scope.outputs.run == 'true' && (github.event_name != 'merge_group' || (needs.gui-defer.result == 'success' && needs.gui-defer.outputs.own == 'true')) && (inputs.gui_pool == 'hosted' || (inputs.gui_pool != 'owner-mac' && vars.MAC_CI_GUI_POOL == 'hosted')) }}
     strategy:
       fail-fast: false
       matrix:
@@ -570,8 +604,8 @@ jobs:
     name: native-owner-gui (macos-latest)
     # The ownerGui classes of native-test-partition.json (they cannot finish on a hosted Mac) on the owner's GUI Mac,
     # paired with native-hosted above: together they are exactly the GUI leg.
-    needs: gui-scope
-    if: ${{ !cancelled() && github.event_name != 'pull_request' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.gui-scope.result == 'success' && needs.gui-scope.outputs.run == 'true' && (inputs.gui_pool == 'hosted' || (inputs.gui_pool != 'owner-mac' && vars.MAC_CI_GUI_POOL == 'hosted')) }}
+    needs: [gui-scope, gui-defer]
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.gui-scope.result == 'success' && needs.gui-scope.outputs.run == 'true' && (github.event_name != 'merge_group' || (needs.gui-defer.result == 'success' && needs.gui-defer.outputs.own == 'true')) && (inputs.gui_pool == 'hosted' || (inputs.gui_pool != 'owner-mac' && vars.MAC_CI_GUI_POOL == 'hosted')) }}
     uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@f8b0dbc4795720ef51dcb86638c6156305ebbaa9
     with:
       task: native-owner-gui

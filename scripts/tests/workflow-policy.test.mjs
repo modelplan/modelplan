@@ -406,7 +406,9 @@ test("D169: desktop.yml starts GUI legs only on dispatch, in the merge queue and
   assert.match(scope, /if: \$\{\{ !cancelled\(\) && !inputs\.mac_ci_probe && !inputs\.perf && \(\(github\.event_name == 'workflow_dispatch' && \(inputs\.gui \|\| inputs\.sha != ''\)\) \|\| \(github\.event_name == 'merge_group' && needs\.queue-scope\.outputs\.gui == 'true'\) \|\| github\.event_name == 'schedule'\) \}\}/);
   for (const name of ["native", "native-hosted", "native-owner-gui"]) {
     const body = job(name);
-    assert.match(body, /needs: gui-scope\n/, name);
+    assert.match(body, /needs: \[gui-scope, gui-defer\]\n/, name);
+    // D488: in the merge queue a GUI leg runs only when gui-defer said this run owns it (the tail, or any doubt).
+    assert.ok(body.includes(" && (github.event_name != 'merge_group' || (needs.gui-defer.result == 'success' && needs.gui-defer.outputs.own == 'true')) && "), name);
     assert.match(body, /if: \$\{\{ !cancelled\(\) && github\.event_name != 'pull_request' && .*needs\.gui-scope\.result == 'success' && needs\.gui-scope\.outputs\.run == 'true'/, name);
     assert.match(body, /\n      gui_classes: \$\{\{ needs\.gui-scope\.outputs\.classes \}\}\n/, name);
   }
@@ -1097,4 +1099,40 @@ test("the nightly schedule reaches the GUI Mac without the actor gate only from 
   assert.ok(pass(base) && pass({ ...base, task: "native-owner-gui" }));
   for (const bad of [{ cron: "0 3 * * *" }, { wf: "modelplan/modelplan/.github/workflows/other.yml@refs/heads/main" }, { wf: "modelplan/modelplan/.github/workflows/desktop.yml@refs/heads/x" }, { event: "workflow_dispatch" }, { event: "push" }, { event: "pull_request" }, { repo: "fork/modelplan" }, { ref: "refs/heads/x" }, { task: "native-headless" }, { task: "probe" }, { task: "u11-native" }]) assert.ok(!pass({ ...base, ...bad }), JSON.stringify(bad));
   for (const part of ["github.event_name == 'schedule'", "github.workflow_ref == 'modelplan/modelplan/.github/workflows/desktop.yml@refs/heads/main'", "github.event.schedule == '23 9 * * *'", "github.ref == 'refs/heads/main'", "github.repository == 'modelplan/modelplan'", "inputs.task == 'native-owner-gui'"]) assert.ok(bypass.includes(part), part);
+});
+
+// D488 (owner 2026-11-28): merge-queue GUI legs only for the group tail. gui-defer runs only in merge_group runs whose
+// GUI share is needed, before the GUI jobs; its covered step is the one rules.mjs guiLegState reads; the pinned
+// trusted-mac.yml is untouched.
+test("D488: desktop.yml gui-defer gates the queue's GUI legs and declares the covered step", async () => {
+  const text = fs.readFileSync(new URL("../../.github/workflows/desktop.yml", import.meta.url), "utf8");
+  const job = (name) => new RegExp(`^  ${name}:\\n((?:(?:    .*)?\\n)+)`, "m").exec(text)?.[1] ?? "";
+  const R = await import("../merge-gates/rules.mjs");
+  const defer = job(R.GUI_DEFER_JOB);
+  assert.ok(defer, "gui-defer job");
+  assert.match(defer, /^    needs: gui-scope\n    if: \$\{\{ !cancelled\(\) && github\.event_name == 'merge_group' && needs\.gui-scope\.result == 'success' && needs\.gui-scope\.outputs\.run == 'true' \}\}\n    runs-on: ubuntu-latest\n/m);
+  // Under the merge queue's 90 min check timeout and the gate's 85 min group wait; the script's own deadline is 70 min.
+  const timeout = Number(/\n    timeout-minutes: (\d+)\n/.exec(defer)?.[1]);
+  assert.ok(timeout > 70 && timeout < 85, String(timeout));
+  assert.match(defer, /\n    outputs:\n      own: \$\{\{ steps\.defer\.outputs\.own \}\}\n/);
+  assert.match(defer, /\n      - id: defer\n        env:\n          GITHUB_TOKEN: \$\{\{ github\.token \}\}\n        run: node scripts\/merge-gates\/gui-defer\.mjs\n/);
+  const step = new RegExp(`\\n      - name: ${R.GUI_COVERED_STEP}\\n        if: \\$\\{\\{ steps\\.defer\\.outputs\\.own == 'false' \\}\\}\\n        run: (.*)\\n`).exec(defer);
+  assert.ok(step, "the covered step rules.mjs guiLegState relies on, gated on own == 'false'");
+  assert.ok(!/: /.test(step[1]) && !/ #/.test(step[1]), "plain YAML scalar");
+  assert.doesNotMatch(defer, /secrets\./, "only the run's own token");
+  assert.ok(text.indexOf("\n  gui-defer:") > text.indexOf("\n  gui-scope:") && text.indexOf("\n  gui-defer:") < text.indexOf("\n  native:"));
+  // The pinned reusable workflow is still the only GUI route and keeps its pin.
+  const pins = new Set([...text.matchAll(/uses: modelplan\/modelplan\/\.github\/workflows\/trusted-mac\.yml@([0-9a-f]{40})/g)].map((m) => m[1]));
+  assert.deepEqual([...pins], ["f8b0dbc4795720ef51dcb86638c6156305ebbaa9"]);
+  // Evaluate the GUI jobs' `if` for the queue's cases with a tiny evaluator over the expression's own terms.
+  const cond = /\n    if: \$\{\{ (.*) \}\}\n/.exec(job("native"))[1];
+  const queueTerm = "(github.event_name != 'merge_group' || (needs.gui-defer.result == 'success' && needs.gui-defer.outputs.own == 'true'))";
+  assert.ok(cond.includes(queueTerm));
+  const evalTerm = (event, result, own) => event !== "merge_group" || (result === "success" && own === "true");
+  assert.equal(evalTerm("merge_group", "success", "true"), true, "tail or doubt: own GUI leg");
+  assert.equal(evalTerm("merge_group", "success", "false"), false, "covered: no GUI leg");
+  assert.equal(evalTerm("merge_group", "failure", ""), false, "defer failed: no GUI leg (the gate fails the group)");
+  assert.equal(evalTerm("merge_group", "skipped", ""), false);
+  assert.equal(evalTerm("workflow_dispatch", "skipped", ""), true, "dispatch, PR GUI leg (D481) and nightly unchanged");
+  assert.equal(evalTerm("schedule", "skipped", ""), true);
 });
