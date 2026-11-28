@@ -736,8 +736,9 @@ actor EntrySyntheticClient: EngineClient {
             let name = try XCTUnwrap(field(dock.card, id: "row.reserve.label"))
             let value = try XCTUnwrap(field(dock.card, id: "row.reserve.value"))
             try assertVisible(name, text: title)
+            // The row's own "Reserve" label is not repeated in its value (owner 2026-11-28).
             // The line wraps inside its column when long, so check the text and that it is on the card, not its one-line width.
-            XCTAssertEqual(value.stringValue, language == .english ? "Resets 1 · Reserve 19,614" : "重置次数 1 · 储备 19,614")
+            XCTAssertEqual(value.stringValue, language == .english ? "Resets 1 · 19,614" : "重置次数 1 · 19,614")
             XCTAssertFalse(value.isHiddenOrHasHiddenAncestor)
             XCTAssertTrue(dock.card.bounds.contains(dock.card.convert(value.bounds, from: value)), "the reserve text is not clipped by the card")
             XCTAssertLessThanOrEqual(dock.card.convert(name.bounds, from: name).maxX,
@@ -819,8 +820,11 @@ actor EntrySyntheticClient: EngineClient {
         XCTAssertEqual(text(nil, "$14,207.86", "money", true), "Balance $14,207.86")
         XCTAssertEqual(text("↺1", "14,207.86", "money", false), "重置次数 1 · 余额 14,207.86")
         XCTAssertEqual(text(nil, "¥14,207.86", "money", false), "余额 ¥14,207.86")
-        // An unclassified unit makes no claim about what it is.
-        XCTAssertEqual(text(nil, "19,614", "", true), "Reserve 19,614"); XCTAssertEqual(text(nil, "19,614", "", false), "储备 19,614")
+        // An unclassified unit makes no claim about what it is, and the row's own "Reserve" label is not
+        // repeated in its text (owner bad case 2026-11-28: "储备   储备 1,865").
+        XCTAssertEqual(text(nil, "19,614", "", true), "19,614"); XCTAssertEqual(text(nil, "19,614", "", false), "19,614")
+        XCTAssertEqual(DockContentRow.reserveText(resets: "↺1", credits: "19,614", creditsLabel: "储备", english: false), "重置次数 1 · 19,614")
+        XCTAssertEqual(DockContentRow.reserveText(resets: nil, credits: "7", creditsLabel: "Tokens", english: true), "Tokens 7")
         // A reset line with no count.
         XCTAssertEqual(text("↺", nil, "", true), "Resets --")
     }

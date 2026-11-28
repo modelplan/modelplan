@@ -96,6 +96,7 @@
       ],
       "credits": {
         "balance": 1250.5,
+        "unit": "credits",
         "observedAt": "2026-10-14T09:55:00Z",
         "ageMinutes": 5
       },

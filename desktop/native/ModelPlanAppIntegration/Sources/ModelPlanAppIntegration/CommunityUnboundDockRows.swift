@@ -157,7 +157,8 @@ public struct DockContentRow: Sendable {
             case "credits":
                 let number = credits.replacingOccurrences(of: english ? " credits" : " 点数", with: "")
                 parts.append((english ? "Credits " : "点数 ") + number)
-            default: parts.append(creditsLabel.isEmpty ? credits : creditsLabel + " " + credits)
+            // The row already says "Reserve"; a credits row named the same is not named twice (owner 2026-11-28).
+            default: parts.append(creditsLabel.isEmpty || creditsLabel == (english ? "Reserve" : "储备") ? credits : creditsLabel + " " + credits)
             }
         }
         return parts.joined(separator: " · ")

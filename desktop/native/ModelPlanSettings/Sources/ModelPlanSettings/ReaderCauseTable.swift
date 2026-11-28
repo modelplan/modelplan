@@ -67,6 +67,15 @@ public enum ReaderCauseTable {
             return .init(reason: .init(name.map { "\($0)'s background service returned an error" } ?? "The tool's background service returned an error",
                                        name.map { "\($0) 后台服务出错" } ?? "工具后台服务出错"),
                          action: .init("It retries on its own; reopen the tool if it keeps failing", "会自动重试；若持续失败请重新打开该工具"), target: .guidance)
+        case "schema_changed" where (tool ?? "").lowercased() == "codex":
+            // Owner bad case 2026-11-28: Codex could not decode the usage answer, so its CLI is older than the plan.
+            return codexOutdated
+        case "http_5xx":
+            return .init(reason: .init("The provider service is unavailable; it will retry on its own", "服务商暂时不可用，稍后自动重试"),
+                         action: .init("No action needed; it retries on its own", "无需操作，会自动重试"), target: .guidance)
+        case "http_429":
+            return .init(reason: .init("The provider is receiving too many requests; it will retry on its own", "服务商请求过于频繁，稍后自动重试"),
+                         action: .init("No action needed; it retries on its own", "无需操作，会自动重试"), target: .guidance)
         case "closed":
             return .init(reason: .init("The tool's background service closed unexpectedly", "工具后台服务意外退出"),
                          action: .init("It retries on its own; reopen the tool if it keeps failing", "会自动重试；若持续失败请重新打开该工具"), target: .guidance)
@@ -141,6 +150,11 @@ public enum ReaderCauseTable {
         default: return nil
         }
     }
+
+    /// Owner bad case 2026-11-28: the Codex CLI that ran could not decode the plan's usage, and no newer one is installed.
+    public static let codexOutdated = ReaderCauseEntry(
+        reason: .init("The Codex CLI is too old; please update it", "Codex 命令行过旧，请更新"),
+        action: .init("Update the Codex CLI", "更新 Codex 命令行"), target: .guidance)
 
     /// Owner 11-22: ZCode's sign-in cannot be read automatically (unsupported or unknown store format).
     public static let zcodeUnreadable = ReaderCauseEntry(

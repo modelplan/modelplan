@@ -12,7 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -108,6 +108,9 @@ type accountSnap struct {
 	// Failures: the last accountFailureRing failed reads, oldest first, kept across later good
 	// reads so a cause is not lost once a read succeeds again. Fixed codes and times only.
 	Failures []accountFailure `json:"failures,omitempty"`
+	// CLI: which Codex CLI this read ran, for `doctor readers` (codexbin.go): a home-relative or
+	// system path and a version, never the home folder itself.
+	CLI *codexCLI `json:"cli,omitempty"`
 }
 
 // accountFailureRing is how many recent failures the snapshot keeps.
@@ -188,8 +191,126 @@ func accountFailureWait(s *accountSnap) time.Duration {
 	if s != nil && s.Status != "ok" && s.FirstFailures > 0 && s.FirstFailures <= len(firstReadRetries) {
 		return firstReadRetries[s.FirstFailures-1]
 	}
+	if s != nil && s.Status != "ok" && transientFailure(s.failureCode()) {
+		n := min(max(failureStreak(s), 1), len(transientRetries))
+		return transientRetries[n-1]
+	}
 	return accountRetryAfter
 }
+
+// transientRetries (owner bad case 2026-11-28): a failure that clears on its own is asked again
+// soon and then less often, ending at the ordinary wait. CodexBar retries every failure on its
+// normal timer (Sources/CodexBar/Settings/SettingsStore.swift:9-34, five minutes by default).
+var transientRetries = []time.Duration{5 * time.Minute, 10 * time.Minute, 20 * time.Minute, accountRetryAfter}
+
+// manualRetryAfter: an explicit refresh may ask again this soon after a transient failure.
+const manualRetryAfter = time.Minute
+
+// transientFailure: the cause clears without the user (an outage, a lost pipe, a timeout). A
+// sign-in problem, a missing or outdated CLI keep the ordinary wait.
+func transientFailure(code string) bool {
+	switch code {
+	case "rpc_error", "http_5xx", "http_429", "closed", "timeout", "network":
+		return true
+	}
+	return false
+}
+
+// failureStreak counts the failed reads in a row that end with the newest one, from the ring.
+func failureStreak(s *accountSnap) int {
+	if s == nil || len(s.Failures) == 0 {
+		return 0
+	}
+	last := s.Failures[len(s.Failures)-1]
+	start := last.At.Add(-time.Duration(last.StreakSeconds) * time.Second)
+	n := 0
+	for i := len(s.Failures) - 1; i >= 0 && !s.Failures[i].At.Before(start); i-- {
+		n++
+	}
+	return n
+}
+
+// manualRefreshKey marks a refresh the user asked for (the CLI's --refresh-account or the app's
+// member refresh), which may ask again manualRetryAfter after a transient failure.
+type manualRefreshKey struct{}
+
+// WithManualRefresh marks ctx as a refresh the user asked for.
+func WithManualRefresh(ctx context.Context) context.Context {
+	return context.WithValue(ctx, manualRefreshKey{}, true)
+}
+
+// IsManualRefresh reports a refresh marked by WithManualRefresh.
+func IsManualRefresh(ctx context.Context) bool {
+	v, _ := ctx.Value(manualRefreshKey{}).(bool)
+	return v
+}
+
+// CodexManualNext is when a refresh the user asks for may read again after a transient failure,
+// and whether that time has come by now. ok is false when the ordinary schedule applies.
+func CodexManualNext(cache string, now time.Time) (time.Time, bool) {
+	state, _ := consent.Current()
+	s := loadCurrentAccount(cache, state)
+	if s == nil || s.Status == "ok" || awaitingFirstRead(s) || !transientFailure(s.failureCode()) {
+		return time.Time{}, false
+	}
+	at := s.ObservedAt.Add(manualRetryAfter)
+	return at, !now.Before(at)
+}
+
+// codexRefreshNextFor is codexRefreshNext, shortened for a refresh the user asked for.
+func codexRefreshNextFor(cache string, now time.Time, manual bool) (time.Time, error) {
+	next, err := codexRefreshNext(cache)
+	if err != nil || !manual || !now.Before(next) {
+		return next, err
+	}
+	if at, ok := CodexManualNext(cache, now); ok {
+		return at, nil
+	}
+	return next, nil
+}
+
+// codexRPCErrorCode names the class of a JSON-RPC error from Codex's app-server with a fixed
+// reader code. The message is read here in memory only; it is never returned, logged or stored.
+// MATCH of CodexBar a26ca57b5, Sources/CodexBar/Providers/Codex/CodexConsumerProjection.swift:130-156
+// (looksCodexCLILoginRequired, looksExpired, looksInternalTransport). The HTTP status is read only
+// before the quoted body, so a number inside the body never names the class.
+func codexRPCErrorCode(message string) string {
+	lower := strings.ToLower(message)
+	head := lower
+	if i := strings.Index(head, "body="); i >= 0 {
+		head = head[:i]
+	}
+	status := 0
+	if m := codexHTTPStatus.FindStringSubmatch(head); m != nil {
+		fmt.Sscan(m[1], &status)
+	}
+	switch {
+	case strings.Contains(lower, "codex account authentication required"),
+		strings.Contains(lower, "account authentication required to read rate limits"),
+		strings.Contains(lower, "requiresopenaiauth"):
+		return "not_signed_in"
+	case strings.Contains(lower, "token_expired"),
+		strings.Contains(lower, "authentication token is expired"),
+		strings.Contains(lower, "oauth token has expired"),
+		strings.Contains(lower, "please try signing in again"),
+		strings.Contains(lower, "please sign in again"),
+		strings.Contains(lower, "401") && strings.Contains(lower, "unauthorized"),
+		status == 401:
+		return "login_expired"
+	case strings.Contains(head, "decode error"), strings.Contains(head, "unknown variant"):
+		// Codex could not decode the usage answer and no reading was recovered from its body:
+		// this Codex CLI is older than the plan or field it was sent.
+		return "schema_changed"
+	case status == 429:
+		return "http_429"
+	case status >= 500 && status <= 599:
+		return "http_5xx"
+	}
+	return "rpc_error"
+}
+
+// codexHTTPStatus: "... failed: 500", "request failed: 502", "status 503".
+var codexHTTPStatus = regexp.MustCompile(`(?:failed:?|status:?)\s+(\d{3})\b`)
 
 // CodexFailureWait is the scheduler's wait after a failed read: the budget the failure left.
 // A failure that recorded nothing keeps the ordinary wait.
@@ -314,18 +435,12 @@ func off() bool {
 	return v == "off" || v == "0" || v == "false"
 }
 
-// CodexBin finds the codex executable: $MODELPLAN_CODEX, PATH, then the usual install places
-// (hooks run with a short PATH). Empty when there is none. The Codex app's bundled copy is never
-// used: ModelPlan does not run programs inside another app's bundle (owner build-6 #14).
+// CodexBin finds the codex executable (codexbin.go, owner decision D487): $MODELPLAN_CODEX or
+// $CODEX_CLI_PATH; else the CLI the ChatGPT or Codex desktop app carries; else the newest of every
+// codex on PATH and in the usual install places (hooks run with a short PATH). Empty when there is none.
 func CodexBin(home string) string {
-	if p := os.Getenv("MODELPLAN_CODEX"); p != "" {
-		return p
-	}
-	exe := "codex"
-	if runtime.GOOS == "windows" {
-		exe = "codex.exe"
-	}
-	return toolcli.Find(home, exe)
+	p, _ := codexChoice(context.Background(), codexMemoLoad(""), home)
+	return p
 }
 
 // AccountRefresh is the outcome of an explicit refresh. It covers Codex only: no other source
@@ -340,6 +455,29 @@ type AccountRefresh struct {
 // RefreshAccountNow runs RefreshCodexAccount and says what came of it: that call returns nil
 // both when it is too soon to ask and when it caches a failure.
 func RefreshAccountNow(ctx context.Context, cache, codex string, now time.Time) *AccountRefresh {
+	return refreshAccountNow(ctx, cache, func(context.Context) string { return codex }, now)
+}
+
+// RefreshAccountNowDiscover is RefreshAccountNow with the Codex CLI found only once the read is
+// admitted and due (review macrevb-1316-3): a refresh that is off, too soon or not permitted starts
+// no program, not even `codex --version`.
+func RefreshAccountNowDiscover(ctx context.Context, cache, home string, now time.Time) *AccountRefresh {
+	return refreshAccountNow(ctx, cache, codexDiscover(cache, home), now)
+}
+
+// RefreshCodexAccountDiscover is RefreshCodexAccount with the same late discovery.
+func RefreshCodexAccountDiscover(ctx context.Context, cache, home string, now time.Time) error {
+	return refreshCodexAccount(ctx, cache, codexDiscover(cache, home), now)
+}
+
+func codexDiscover(cache, home string) func(context.Context) string {
+	return func(ctx context.Context) string {
+		p, _ := codexChoice(ctx, codexMemoLoad(cache), home)
+		return p
+	}
+}
+
+func refreshAccountNow(ctx context.Context, cache string, resolve func(context.Context) string, now time.Time) *AccountRefresh {
 	r := &AccountRefresh{Source: "codex"}
 	failure := func() string {
 		if s := loadAccount(cache); s != nil && s.Status != "ok" {
@@ -347,12 +485,13 @@ func RefreshAccountNow(ctx context.Context, cache, codex string, now time.Time) 
 		}
 		return ""
 	}
-	if next, err := codexRefreshNext(cache); err == nil && now.Before(next) {
+	ctx = WithManualRefresh(ctx)
+	if next, err := codexRefreshNextFor(cache, now, true); err == nil && now.Before(next) {
 		at := next.UTC()
 		r.Status, r.NextAt, r.Reason = "too_soon", &at, failure()
 		return r
 	}
-	if err := RefreshCodexAccount(ctx, cache, codex, now); err != nil {
+	if err := refreshCodexAccount(ctx, cache, resolve, now); err != nil {
 		r.Status, r.Reason = "failed", err.Error()
 		return r
 	}
@@ -368,6 +507,13 @@ func RefreshAccountNow(ctx context.Context, cache, codex string, now time.Time) 
 // (or the failure, so a missing login is not retried for half an hour once firstReadRetries are
 // spent). One refresh at a time.
 func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time) error {
+	return refreshCodexAccount(ctx, cache, func(context.Context) string { return codex }, now)
+}
+
+// refreshCodexAccount resolves the Codex CLI (resolve) only after the off switch, the consent
+// admission, the lock, the budget and the fence have all let the read go ahead.
+func refreshCodexAccount(ctx context.Context, cache string, resolve func(context.Context) string, now time.Time) error {
+	codex := ""
 	if cache == "" {
 		return errors.New("reader budget unavailable")
 	}
@@ -386,7 +532,11 @@ func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time
 	// A finished reading must survive a brief hold on the consent lock, and a timed-out read
 	// must still be recorded, so this bounded wait does not follow the read's context.
 	previous := (*accountSnap)(nil)
+	// shortcut: a refresh the user asked for reads before the back-off ends (one minute after a
+	// transient failure); its own result then sets the next automatic read.
+	shortcut := false
 	commit := func(s *accountSnap) error {
+		s.CLI = codexCLIInfo(ctx, cache, codex)
 		s.Admission = state.CaptureStamp(consent.ScopeCodexRuntimeUsage)
 		s.Failures = nextFailures(previous, s, now)
 		wait := AccountEvery
@@ -400,7 +550,11 @@ func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time
 			wait = accountFailureWait(s)
 			s.Good = retainGood(previous, now)
 		}
-		if err := reserveReaderAttempt(cache, "codex", now.Add(wait)); err != nil {
+		book := reserveReaderAttempt
+		if shortcut {
+			book = setReaderAttempt
+		}
+		if err := book(cache, "codex", now.Add(wait)); err != nil {
 			return err
 		}
 		return consent.PublishContext(context.Background(), state.Fence(), func() error { return save(cache, s) })
@@ -419,7 +573,10 @@ func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time
 		return err
 	}
 	if now.Before(next) {
-		return nil
+		if _, due := CodexManualNext(cache, now); !IsManualRefresh(ctx) || !due {
+			return nil
+		}
+		shortcut = true
 	}
 	previous = loadCurrentAccount(cache, state)
 	if previous == nil && loadAccount(cache) != nil {
@@ -435,15 +592,29 @@ func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time
 	if err := reserveReaderAttempt(cache, "codex", now.Add(reserve)); err != nil {
 		return err
 	}
-	if codex == "" {
-		return commit(&accountSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Status: "error", Error: "codex not found", ErrorCode: "not_found"})
-	}
 	if !consent.CurrentFence(state.Fence()) {
 		return errors.New("consent changed; refresh stopped")
+	}
+	// Review macrevb-1316-3: discovery, the app-server and a fallback each start a program, and
+	// the consent writer does not wait for the reader lock. Every start re-checks the admission
+	// (the consent store's fence) first, so nothing starts after a revocation is saved.
+	ctx = withCodexLaunchGate(ctx, func() bool { return consent.CurrentFence(state.Fence()) })
+	if codex = resolve(ctx); codexLaunchRefused(ctx) != nil {
+		return errCodexLaunchRevoked
+	} else if codex == "" {
+		return commit(&accountSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Status: "error", Error: "codex not found", ErrorCode: "not_found"})
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	resp, err := askCodex(ctx, codex)
+	if err != nil && errors.As(err, new(codexProtocolError)) {
+		if alt, altResp := codexFallbackRead(ctx, cache, codex); altResp != nil {
+			codex, resp, err = alt, altResp, nil
+		}
+	}
+	if errors.Is(err, errCodexLaunchRevoked) || err != nil && codexLaunchRefused(ctx) != nil {
+		return errCodexLaunchRevoked // consent changed mid-read: nothing is recorded
+	}
 	if err != nil {
 		// Runtime and process errors may contain credentials, paths or identities.
 		// Discard their text before either returning the failure or caching it.
@@ -453,7 +624,7 @@ func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time
 		}
 		// D232: with another model provider (Bedrock or custom) Codex has no ChatGPT plan
 		// limits to report; say so instead of a generic service error. Read-only config check.
-		if reason == "rpc_error" && codexUsesCustomProvider(CodexHome()) {
+		if (reason == "rpc_error" || reason == "not_signed_in") && codexUsesCustomProvider(CodexHome()) {
 			reason = "codex_custom_provider"
 		}
 		code := reason
@@ -544,6 +715,9 @@ type rlResponse struct {
 }
 
 func askCodex(ctx context.Context, codex string) (*rlResponse, error) {
+	if err := codexLaunchRefused(ctx); err != nil {
+		return nil, err
+	}
 	cmd, err := toolcli.CommandContext(ctx, codex, "app-server")
 	if err != nil {
 		return nil, err
@@ -585,6 +759,7 @@ func askCodex(ctx context.Context, codex string) (*rlResponse, error) {
 				ID     *int            `json:"id"`
 				Result json.RawMessage `json:"result"`
 				Error  *struct {
+					Code    int    `json:"code"`
 					Message string `json:"message"`
 				} `json:"error"`
 			}
@@ -593,7 +768,17 @@ func askCodex(ctx context.Context, codex string) (*rlResponse, error) {
 			}
 			if m.Error != nil {
 				rpcMessage = m.Error.Message
-				return nil, codeError("rpc_error", "rpc_error")
+				code := codexRPCErrorCode(m.Error.Message)
+				err := codeError(code, code)
+				// D487 addendum: only a failure of the protocol itself (an unknown method or params,
+				// an answer this CLI cannot decode) may be this CLI build, and another installed one
+				// is tried once (codexFallbackRead). A provider outage or a sign-in failure is the
+				// account's, whichever CLI asks (review macrevb-1316-2).
+				unknown := m.Error.Code == -32601 || m.Error.Code == -32602 || strings.Contains(strings.ToLower(m.Error.Message), "method not found")
+				if code == "schema_changed" || unknown && code == "rpc_error" {
+					err = codexProtocolError{err}
+				}
+				return nil, err
 			}
 			return m.Result, nil
 		}
@@ -628,7 +813,9 @@ func askCodex(ctx context.Context, codex string) (*rlResponse, error) {
 		}
 		r.RateLimitsByLimitID = map[string]*rlSnapshot{"codex": snap}
 	} else if err := json.Unmarshal(raw, &r); err != nil {
-		return nil, err
+		// An answer whose fields this reader cannot decode: the CLI speaks another protocol
+		// version (review macrevb-1316-2), so it is schema_changed and another CLI may be tried.
+		return nil, codexProtocolError{codeError("schema_changed", "schema_changed")}
 	}
 	if IdentityOff() {
 		return &r, nil

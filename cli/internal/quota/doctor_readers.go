@@ -7,6 +7,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/toolcli"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -33,6 +34,9 @@ type ReaderDiagnostic struct {
 	Cause string `json:"cause,omitempty"`
 	// Failures: Codex's recent failures, oldest first (fixed codes and times only).
 	Failures []DiagnosticFailure `json:"failures,omitempty"`
+	// CodexCLI: the Codex CLI the newest read ran, "<source> <version>": source is override, app (the
+	// desktop app's own CLI), homebrew, npm or path. Never a path (codexbin.go). Codex only.
+	CodexCLI string `json:"codexCli,omitempty"`
 }
 
 // DiagnosticFailure is one entry of the Codex failure ring.
@@ -185,8 +189,27 @@ func codexDiagnostic(p Paths, policy consent.State, detected bool, now time.Time
 			row.Failures = append(row.Failures, DiagnosticFailure{Code: ReaderErrorCode(f.Code), At: f.At.UTC().Format(time.RFC3339), StreakSeconds: f.StreakSeconds})
 		}
 		row.State = codexAccountState(s, now)
+		row.CodexCLI = codexCLIDiagnostic(s.CLI)
 	}
 	return row
+}
+
+var codexCLIDiagnosticPattern = regexp.MustCompile(`^(override|app|homebrew|npm|path)( [0-9]{1,6}\.[0-9]{1,6}\.[0-9]{1,6}(-[0-9A-Za-z.]{1,32})?)?$`)
+
+// codexCLIDiagnostic re-checks the cached CLI note before printing it: "<source> [version]" only.
+// No path ever reaches doctor (review macrevb-1316-1).
+func codexCLIDiagnostic(c *codexCLI) string {
+	if c == nil || c.Source == "" {
+		return ""
+	}
+	out := c.Source
+	if c.Version != "" {
+		out += " " + c.Version
+	}
+	if !codexCLIDiagnosticPattern.MatchString(out) {
+		return ""
+	}
+	return out
 }
 
 // ReaderDiagnostics uses only production admission, presence metadata and

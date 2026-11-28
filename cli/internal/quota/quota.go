@@ -182,7 +182,10 @@ func creditsFrom(has, unlimited bool, balance json.RawMessage, at time.Time) *Cr
 	if !has && !unlimited {
 		return nil
 	}
-	c := &Credits{Unlimited: unlimited, ObservedAt: at.UTC()}
+	// Codex's usage credits are credits (owner bad case 2026-11-28): without the unit the card's
+	// reserve row repeated its own label ("储备 储备 1,865"). CodexBar a26ca57b5
+	// Sources/CodexBarCore/UsageFetcher.swift:1508-1512 shows the balance as credits.
+	c := &Credits{Unlimited: unlimited, Unit: "credits", ObservedAt: at.UTC()}
 	raw := strings.Trim(strings.TrimSpace(string(balance)), `"`)
 	if v, err := strconv.ParseFloat(raw, 64); err == nil && v >= 0 && v < 1e12 {
 		c.Balance = &v

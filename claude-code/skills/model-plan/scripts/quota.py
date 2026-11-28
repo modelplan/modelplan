@@ -363,7 +363,7 @@ def credits_from(c, ts):
     has, unlimited = c.get("has_credits") is True, c.get("unlimited") is True
     if not has and not unlimited:
         return None
-    out = {"observedAt": ts}
+    out = {"unit": "credits", "observedAt": ts}  # Codex usage credits are credits, as in the Go reader
     if unlimited:
         out["unlimited"] = True
     bal = c.get("balance")

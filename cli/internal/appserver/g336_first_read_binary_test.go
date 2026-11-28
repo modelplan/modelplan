@@ -29,7 +29,8 @@ func TestG336FirstCodexReadRecoversSoonAfterAFailedStart(t *testing.T) {
 		t.Fatal(err)
 	}
 	marker := filepath.Join(home, "first-start-failed")
-	script := fmt.Sprintf("#!/bin/sh\nif [ ! -e %q ]; then : > %q; exit 1; fi\nexec %q \"$@\"\n", marker, marker, runtimeHost)
+	// The version question (the reader compares installed codex versions) must not use up the failing first start.
+	script := fmt.Sprintf("#!/bin/sh\n[ \"$1\" = --version ] && exec %q --version\nif [ ! -e %q ]; then : > %q; exit 1; fi\nexec %q \"$@\"\n", runtimeHost, marker, marker, runtimeHost)
 	if err := os.WriteFile(filepath.Join(binDir, "codex"), []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}

@@ -95,6 +95,9 @@ extension ReaderCauseTable {
         case "runtime_missing":
             return .init(reason: .init("Node.js is required", "需要运行环境"),
                          action: .init("Install Node.js", "安装运行环境"), target: .installNode)
+        case "schema_changed" where (tool ?? "").lowercased() == "codex":
+            // Owner bad case 2026-11-28: the row's button opens the install page to update the Codex CLI.
+            return .init(reason: codexOutdated.reason, action: codexOutdated.action, target: .installTool)
         case "parse_error", "schema_changed":
             return .init(reason: .init("The saved reading could not be parsed", "无法解析保存的读数"),
                          action: .init("Open Settings", "打开设置"), target: .openSettings)

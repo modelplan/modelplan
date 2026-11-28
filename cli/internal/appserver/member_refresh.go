@@ -90,7 +90,12 @@ func (s *RefreshScheduler) RequestMember(ctx context.Context, member wire.Refres
 	if !plan.Admitted || plan.PolicyPending {
 		return refused, stamp, nil
 	}
-	if plan.At.After(now) {
+	// Owner bad case 2026-11-28: one minute after a transient Codex failure the user may ask again.
+	manualDue := false
+	if scope == consent.ScopeCodexRuntimeUsage {
+		_, manualDue = quota.CodexManualNext(paths.Cache, now)
+	}
+	if plan.At.After(now) && !manualDue {
 		at := plan.At
 		reason := wire.MemberRefreshReason(quota.MemberBudgetReason(paths, scope, at))
 		return deferredMember(reason, &at), stamp, nil
@@ -111,7 +116,7 @@ func (s *RefreshScheduler) RequestMember(ctx context.Context, member wire.Refres
 		}
 		return deferredMember(wire.MemberRefreshBudget, nil), stamp, nil
 	}
-	if until := s.autoNext[key]; until.After(now) {
+	if until := s.autoNext[key]; until.After(now) && !manualDue {
 		at := until.UTC()
 		reason := s.autoReason[key]
 		if reason == "" {

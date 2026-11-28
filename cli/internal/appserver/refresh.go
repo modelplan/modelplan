@@ -503,7 +503,14 @@ func (s *RefreshScheduler) run(job refreshJob) {
 	if err != nil || !plan.Admitted || !plan.BudgetKnown || plan.PolicyPending {
 		return
 	}
-	if plan.At.After(s.now()) {
+	// A member refresh is one the user asked for: after a transient Codex failure it may read
+	// one minute later instead of waiting out the back-off (owner bad case 2026-11-28).
+	manual := job.member != nil
+	manualDue := false
+	if manual && job.scope == consent.ScopeCodexRuntimeUsage {
+		_, manualDue = quota.CodexManualNext(paths.Cache, s.now())
+	}
+	if plan.At.After(s.now()) && !manualDue {
 		job.at = plan.At
 		s.mu.Lock()
 		s.pending[job.key] = plan.At
@@ -555,6 +562,9 @@ func (s *RefreshScheduler) run(job refreshJob) {
 	}
 	ctx, cancel := context.WithTimeout(s.ctx, 30*time.Second)
 	defer cancel()
+	if manual {
+		ctx = quota.WithManualRefresh(ctx)
+	}
 	started := s.now()
 	attempted = true
 	err = s.config.Run(ctx, paths, job.scope, started)

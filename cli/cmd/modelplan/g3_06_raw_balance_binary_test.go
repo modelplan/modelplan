@@ -54,7 +54,8 @@ func TestV07RealCLIQuotaRetainsRawSyntheticBalance(t *testing.T) {
 		for _, account := range report.Accounts {
 			if account.Source == "codex" && account.Credits != nil && account.Credits.Balance != nil {
 				found = true
-				if *account.Credits.Balance != balance || account.Credits.Unit != "" || account.Credits.Currency != "" {
+				// Codex usage credits are credits (owner bad case 2026-11-28); still no currency.
+				if *account.Credits.Balance != balance || account.Credits.Unit != "credits" || account.Credits.Currency != "" {
 					t.Fatalf("source %.12g became %+v", balance, account.Credits)
 				}
 			}
