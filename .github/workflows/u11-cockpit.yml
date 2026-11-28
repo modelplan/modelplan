@@ -132,8 +132,10 @@ jobs:
   # subject on this one runner with the same Playwright/WebKit and pixel-diffs them (desktop/tests/cockpit/visual-diff.mjs).
   # pull_request: the subject is the PR merge ref and the base its first parent, the main tip the ref was built on, so
   # the diff shows this PR's change only. merge_group: the group commit against merge_group.base_sha.
-  # The job fails only when a render or the diff breaks; modelplan-gates decides from its annotations
-  # (scripts/merge-gates/visual.mjs) against the live `Visual-change:` line and VISUAL-ACCEPT comments.
+  # Once main's merge gate judges the reports (main's rules.mjs carries VISUAL_DIFF_MARKER), the job fails only when a
+  # render or the diff breaks and modelplan-gates decides from its annotations (scripts/merge-gates/visual.mjs) against the
+  # live `Visual-change:` line and VISUAL-ACCEPT comments. Until then (or when main's rules.mjs is unreadable) the job is
+  # strict and fails on any changed pixel, as the retired baselines did, so no mixed-revision group skips both rules.
   visual:
     needs: queue-scope
     if: ${{ !cancelled() && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
@@ -189,6 +191,8 @@ jobs:
       - name: Diff base and subject
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
+          # Read-only: main's scripts/merge-gates/rules.mjs, for the D489 rollout marker (strict mode until main judges reports).
+          GITHUB_TOKEN: ${{ github.token }}
           BASE: ${{ steps.base.outputs.base }}
           SUBJECT: ${{ steps.base.outputs.subject }}
           HEAD_SHA: ${{ steps.base.outputs.head }}

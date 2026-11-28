@@ -12,7 +12,7 @@ import { readFileSync, appendFileSync } from "node:fs";
 import { client } from "./github.mjs";
 import * as G from "./git.mjs";
 import { HOSTED_WORKFLOWS } from "./hosted.mjs";
-import { VISUAL_JOB, visualRun } from "./visual.mjs";
+import { VISUAL_JOB, parseVisualRecord, visualRun } from "./visual.mjs";
 import { ABSENT_TITLE, MAP_PATH, RECORD_TITLE, parseMap } from "./gui-map.mjs";
 import { CONTEXT, GUI_COVER_TITLE, GUI_DEFER_JOB, parseCoverRecord, PR_GUI_TITLE, prGuiRunScope, DESKTOP_WORKFLOW, FAILURE, dataSyncRunId, parseFallbackUntil, parseGlmTiers, cancelledRunSuperseded, description, prRunScope, evaluateGroup, evaluatePr, queueRunScope, feed, isTrain, parseDesignConf, supersededPrs, TIER_TABLE, tiersFrom, trainMembers } from "./rules.mjs";
 
@@ -159,15 +159,28 @@ async function readGuiCover(groupSha, jobs) {
 
 // D489: the visual job of the latest green U11 cockpit run in scope and its annotations (visual.mjs reads the records).
 // A run that is not green returns only the run (ciState decides it); an unreadable job list or annotation list leaves
-// the annotations unset, which fails the visual check.
-async function readVisual(runs, scope) {
+// the annotations unset, which fails the visual check. With pr = true it also reads the proof bindPr checks: the parents
+// of the report's subject commit, from GitHub, and whether the report's base is on main, with git. Anything unreadable
+// leaves the proof unset, which fails.
+async function readVisual(runs, scope, { pr = false } = {}) {
   const run = visualRun(runs, scope);
   if (!run || run.status !== "completed" || run.conclusion !== "success") return { run };
   try {
     const jobs = await gh.all(`/actions/runs/${run.id}/jobs?filter=latest`, "jobs", 500);
     const job = jobs.find((j) => j.name === VISUAL_JOB) ?? null;
     const annotations = job?.conclusion === "success" ? await gh.all(`/check-runs/${job.id}/annotations`, null, 100) : undefined;
-    return { run, job, annotations };
+    const out = { run, job, annotations };
+    const record = pr && annotations ? parseVisualRecord(annotations) : null;
+    if (record?.ok) {
+      try {
+        out.subjectParents = ((await gh.get(`/commits/${record.meta.subject}`)).parents ?? []).map((x) => x.sha);
+        G.git(cwd, ["fetch", "-q", "--no-tags", "--filter=blob:none", "origin", `+refs/heads/main:${MAIN}`]);
+        mainFresh = true;
+        out.baseOnMain = G.ensure(cwd, record.meta.base) && G.isAncestor(cwd, record.meta.base, MAIN);
+      } catch (e) { log({ run: run.id, visualProof: `unreadable: ${String(e).slice(0, 120)}` }); }
+      log({ run: run.id, visualSubject: record.meta.subject, parents: out.subjectParents, base: record.meta.base, baseOnMain: out.baseOnMain });
+    }
+    return out;
   } catch (e) {
     log({ run: run.id, visual: `unreadable: ${String(e).slice(0, 120)}` });
     return { run, job: { conclusion: "success" }, annotations: undefined };
@@ -188,7 +201,7 @@ async function prResult(number) {
   await readJobs(runs.filter((r) => !(r.status === "completed" && ["success", "skipped", "neutral"].includes(r.conclusion))));
   await readPrGuiJobs(pr, runs);
   const maps = await guiMaps(pr, files);
-  const visual = await readVisual(runs, prRunScope(pr));
+  const visual = await readVisual(runs, prRunScope(pr), { pr: true });
   // REVIEW_GLM_TIERS (repository variable, default empty): the tiers the (ghglm) workflow lane may decide.
   // GLM-out fallback window (repository variable GLM_FALLBACK_UNTIL, the GLM reset time); unset = closed.
   const now = Date.now();
@@ -223,7 +236,7 @@ async function evaluateGroupAndPost(groupSha) {
     if (pulls.length !== 1) return post(groupSha, { state: FAILURE, why: `no single open PR has head ${p[1].slice(0, 8)}` });
     const { result } = await prResult(pulls[0].number);
     if (result.head !== p[1]) return post(groupSha, { state: FAILURE, why: `#${pulls[0].number} head moved` });
-    steps.unshift({ pr: pulls[0].number, prResult: result, mergeProof });
+    steps.unshift({ pr: pulls[0].number, prResult: result, mergeProof, commit: c, base: p[0] });
     c = p[0];
   }
   if (!G.isAncestor(cwd, c, MAIN)) return post(groupSha, { state: FAILURE, why: "group does not start on main within 10 PRs" });

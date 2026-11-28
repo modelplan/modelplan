@@ -153,7 +153,23 @@ export function diffImage(head, { width, height, mask }, found) {
 const esc = (s) => String(s).replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A');
 const readJson = (path) => (existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : null);
 
-export function run({ baseDir, headDir, outDir, areasPath, baseSha, subjectSha, headSha, body = null, log = console.log, summary = null }) {
+// D489 rollout (macrev2-1320-1): until main's merge gate judges these reports, i.e. while main's rules.mjs lacks
+// MARKER_LINE, the job itself keeps the retired baselines' rule and fails on any changed pixel (strict). Otherwise a
+// merge group with this change and an undeclared visual change would pass: the old gate ignores the report.
+export const MARKER_LINE = 'export const VISUAL_DIFF_MARKER = "D489-v1";';
+export const RULES_PATH = 'scripts/merge-gates/rules.mjs';
+export const mainJudgesReports = (rulesText) => typeof rulesText === 'string' && rulesText.split('\n').some((l) => l.replace(/\r$/, '') === MARKER_LINE);
+// main's rules.mjs through the contents API; null when unreadable (which means strict).
+export async function readMainRules({ token, repo, fetchImpl = fetch } = {}) {
+  if (!token || !repo) return null;
+  try {
+    const r = await fetchImpl(`https://api.github.com/repos/${repo}/contents/${RULES_PATH}?ref=main`, { headers: { accept: 'application/vnd.github+json', authorization: `Bearer ${token}`, 'user-agent': 'modelplan-visual-diff' } });
+    if (!r.ok) return null;
+    return Buffer.from(String((await r.json())?.content ?? ''), 'base64').toString('utf8');
+  } catch { return null; }
+}
+
+export function run({ baseDir, headDir, outDir, areasPath, baseSha, subjectSha, headSha, body = null, log = console.log, summary = null, strict = true }) {
   const map = JSON.parse(readFileSync(areasPath, 'utf8'));
   mkdirSync(outDir, { recursive: true });
   const meta = { v: 1, base: baseSha, subject: subjectSha, head: headSha ?? subjectSha, areas: Object.fromEntries(Object.entries(map.areas).map(([n, a]) => [n, a.aliases ?? []])) };
@@ -175,34 +191,43 @@ export function run({ baseDir, headDir, outDir, areasPath, baseSha, subjectSha, 
   const declared = parseVisualChange(body ?? '');
   const verdict = judgeVisual(parseVisualRecord(notes), { declared: declared.areas, present: declared.present });
   report.preview = { declared, verdict };
-  writeFileSync(join(outDir, 'report.json'), JSON.stringify(report, null, 1));
   const lines = ['## Full-cockpit visual diff (D489)', '', `base \`${baseSha}\` vs subject \`${subjectSha}\`${headSha && headSha !== subjectSha ? ` (PR head \`${headSha}\`)` : ''}`, '',
     '| scene | changed px | boxes (x,y w×h px → areas) |', '|---|---|---|',
     ...SCENES.map((s) => { const r = report.scenes[s]; return `| ${s} | ${r.pixels} | ${r.boxes.map((b) => `${b[0]},${b[1]} ${b[2]}×${b[3]} ${b[4]} → ${Object.entries(b[5]).map(([k, n]) => `${k || 'no area'}:${n}`).join(' ')}`).join('<br>') || '—'} |`; }),
     '', `Declared now: ${declared.present ? (declared.areas.join(', ') || 'none') : 'no Visual-change line'}`, '',
     `**Gate preview: ${verdict.state === 'success' ? 'PASS' : 'FAIL'}** — ${verdict.why}`, '',
     'modelplan-gates decides from the live PR body (`Visual-change: <area>[, <area>]`) and a trusted `VISUAL-ACCEPT @ <head sha>` comment. Diff images: the run artifact.', ''];
+  const changed = SCENES.reduce((n, s) => n + report.scenes[s].pixels, 0), failed = strict && changed > 0;
+  report.strict = strict;
+  if (strict) lines.push(`**Strict mode** (main's merge gate does not judge D489 reports yet): ${failed ? `FAIL, ${changed} changed px; any change fails until D489 is on main` : 'no change, pass'}.`, '');
+  writeFileSync(join(outDir, 'report.json'), JSON.stringify(report, null, 1));
   if (summary) appendFileSync(summary, lines.join('\n'));
-  if (verdict.state !== 'success') log(`::warning title=D489 visual change outside declared areas::${esc(verdict.why)}`);
-  return { report, verdict, notes };
+  if (failed) log(`::error title=D489 strict visual check::${esc(`${changed} changed px; main's merge gate cannot judge Visual-change yet, so any change fails: ${verdict.why}`)}`);
+  else if (verdict.state !== 'success') log(`::warning title=D489 visual change outside declared areas::${esc(verdict.why)}`);
+  return { report, verdict, notes, failed };
 }
 
+// Every distinct measured box per area over the four scenes (one per selector match), to update the map's rects.
 export function printAreas(dir) {
   const out = {};
-  for (const scene of SCENES) for (const [name, rects] of Object.entries(readJson(join(dir, `${scene}.areas.json`)) ?? {})) for (const [x, y, w, h] of rects) {
-    const o = out[name] ?? [x, y, x + w, y + h];
-    out[name] = [Math.min(o[0], x), Math.min(o[1], y), Math.max(o[2], x + w), Math.max(o[3], y + h)];
+  for (const scene of SCENES) for (const [name, rects] of Object.entries(readJson(join(dir, `${scene}.areas.json`)) ?? {})) {
+    const seen = (out[name] ??= []);
+    for (const r of rects) if (!seen.some((q) => q.join() === r.join())) seen.push(r);
   }
-  return Object.fromEntries(Object.entries(out).map(([n, [x0, y0, x1, y1]]) => [n, [x0, y0, x1 - x0, y1 - y0]]));
+  return out;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const argv = process.argv.slice(2), flag = (name) => { const i = argv.indexOf(name); return i < 0 ? null : argv[i + 1]; };
   if (flag('--print-areas')) console.log(JSON.stringify(printAreas(flag('--print-areas'))));
   else {
-    const bodyFile = flag('--body-file');
-    run({ baseDir: flag('--base'), headDir: flag('--head'), outDir: flag('--out'), areasPath: flag('--areas') ?? fileURLToPath(new URL('./visual-areas.json', import.meta.url)),
+    const bodyFile = flag('--body-file'), rulesFile = flag('--main-rules-file');
+    const rules = rulesFile ? (existsSync(rulesFile) ? readFileSync(rulesFile, 'utf8') : null) : await readMainRules({ token: process.env.GITHUB_TOKEN, repo: process.env.GITHUB_REPOSITORY });
+    const strict = !mainJudgesReports(rules);
+    console.log(strict ? `strict: main's ${RULES_PATH} ${rules === null ? 'unreadable' : 'lacks the D489 marker'}; any changed pixel fails` : 'main judges D489 reports: the gate decides');
+    const { failed } = run({ baseDir: flag('--base'), headDir: flag('--head'), outDir: flag('--out'), areasPath: flag('--areas') ?? fileURLToPath(new URL('./visual-areas.json', import.meta.url)),
       baseSha: flag('--base-sha'), subjectSha: flag('--subject-sha'), headSha: flag('--head-sha') || null,
-      body: bodyFile && existsSync(bodyFile) ? readFileSync(bodyFile, 'utf8') : null, summary: process.env.GITHUB_STEP_SUMMARY || null });
+      body: bodyFile && existsSync(bodyFile) ? readFileSync(bodyFile, 'utf8') : null, summary: process.env.GITHUB_STEP_SUMMARY || null, strict });
+    if (failed) process.exitCode = 1;
   }
 }

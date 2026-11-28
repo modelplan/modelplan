@@ -10,7 +10,7 @@
 // description's "info:" part); device evidence moved to the build gate. There is no stale-base check (owner 2026-11-07): a PR need not contain the latest main, because the queue's own CI on
 // the group commit (QUEUE_WORKFLOWS) tests "PR + latest main".
 
-import { parseVisualChange, visualAccepted, visualState } from "./visual.mjs";
+import { bindGroup, bindPr, parseVisualChange, visualAccepted, visualState } from "./visual.mjs";
 import referenceMap from "./reference-map.json" with { type: "json" };
 import reviewRouting from "./review-routing.json" with { type: "json" };
 import { bareNames, mappedClasses, parseAbsent, parseRecord, setHash } from "./gui-map.mjs";
@@ -853,7 +853,7 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, pro
   // VISUAL-ACCEPT at this head (visual.mjs). extra.visual feeds the merge-group check.
   const declared = parseVisualChange(pr.body);
   extra.visual = { declared: declared.areas, present: declared.present, accepted: visualAccepted(items, head) };
-  const vis = visualState(visual, extra.visual);
+  const vis = visualState(visual, bindPr(head, extra.visual, visual ?? {}));
   if (vis?.state === FAILURE) return res(FAILURE, say(vis.why), extra);
   if (vis && extra.visual.accepted && vis.outside.length) notes.push("VISUAL-ACCEPT");
   const guiClasses = dataSync ? [] : requiredGuiClasses(paths, guiMaps, { truncated: files.length >= FILE_LIST_LIMIT });
@@ -934,6 +934,9 @@ export function guiLegState(jobs, { cover = null, groupSha = null, runId = null,
 // group may only skip its GUI leg once main can verify the cover). Keep the line exactly; change the value only together
 // with gui-defer.mjs COVER_MARKER.
 export const GUI_COVER_MARKER = "D488-v1";
+// D489 rollout: the visual job (desktop/tests/cockpit/visual-diff.mjs) stays strict, failing on any changed pixel like the
+// retired baselines, until main's rules.mjs carries this exact line, i.e. until this evaluator judges its reports.
+export const VISUAL_DIFF_MARKER = "D489-v1";
 export const GUI_DEFER_JOB = "gui-defer";
 export const GUI_COVERED_STEP = "GUI covered by a later group";
 export const GUI_COVER_TITLE = "D488 GUI covered by";
@@ -1066,8 +1069,8 @@ export function evaluateGroup({ steps, queueRuns, queueStatuses = [], queueCheck
   if (ci.state !== SUCCESS) return { state: ci.state, why: `group ${ci.why}` };
   // D489: the group commit's visual diff against the queue base may change only the areas its PRs declare (union), unless
   // one of them carries a trusted VISUAL-ACCEPT at its head.
-  const vs = steps.map((s) => s.prResult.visual ?? { declared: [], present: false, accepted: false });
-  const vis = visualState(visual, { declared: [...new Set(vs.flatMap((v) => v.declared))], present: vs.some((v) => v.present), accepted: vs.some((v) => v.accepted) });
+  // The report must name this group commit and one of its bases (visual.mjs bindGroup); steps carry commit and base.
+  const vis = visualState(visual, bindGroup(groupSha, steps.map((s) => ({ base: s.base, decl: s.prResult.visual }))));
   if (vis?.state === FAILURE) return { state: FAILURE, why: `group ${vis.why}` };
   return { state: SUCCESS, why: `group of ${steps.length}: gates pass` };
 }

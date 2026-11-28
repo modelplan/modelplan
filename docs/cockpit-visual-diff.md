@@ -31,8 +31,14 @@ cockpit tests, official visuals, fonts, app-cli schema, source policy) and in me
      scene), each under GitHub's 4096-character limit. When a scene has too many boxes, the smallest fold into one
      box. Their per-area counts stay exact, so the decision does not change.
 
-The job fails only when a render or the diff itself breaks. Whether the change is allowed is decided in
-`modelplan-gates`.
+Once main's merge gate judges these reports, the job fails only when a render or the diff itself breaks, and
+`modelplan-gates` decides whether the change is allowed.
+
+**Rollout guard (strict mode).** The job reads main's `scripts/merge-gates/rules.mjs` through the contents API. Until
+that file carries the exact line `export const VISUAL_DIFF_MARKER = "D489-v1";`, or when it cannot be read, the job is
+strict: any changed pixel fails the job, as the retired baselines did. This closes the mixed-revision gap: a merge group
+with this change and an undeclared visual change, judged by a main that still runs the old evaluator (which ignores the
+report), fails on the job itself.
 
 ## The rule (modelplan-gates)
 
@@ -52,6 +58,13 @@ run for the head:
 - Merge group: the group commit's diff against the queue base may change only the union of its PRs' declared areas,
   unless one of them has a VISUAL-ACCEPT at its head.
 - A PR run made before D489 landed has no visual job and is not judged at PR level; its merge group's run has the job.
+- The report must belong to the comparison the gate resolves itself, or the gate fails closed:
+  - PR: the run is the U11 cockpit run of the PR head, and the report names that head. The gate reads the report
+    subject's parents from GitHub; they must be `[report base, PR head]`. The gate checks with git that the report base
+    is on main.
+  - Merge group: the run is the group commit's, and the report's subject and head are the group commit. Its base must
+    be the first parent of one of the group's queue merges: the queue base, or a lower group's commit this group was
+    built on. Only the PRs merged above that base contribute declarations and accepts.
 
 The job runs the PR's own code, like today's WebKit job. A PR that changes the diff script, the scene spec or the
 workflow is reviewed as such.
@@ -63,13 +76,15 @@ workflow is reviewed as such.
 (big-screen), `tape`, `base` (bells, flames) and `hull` (frame, side walls, boosters, seams). Together the areas cover
 the whole scene (a unit test checks this).
 
-At diff time an area is its committed rects plus the live box of each of its CSS selectors, measured in both the base
-and the head render (`<scene>.areas.json`). An area that moves or grows in the PR is still matched.
+At diff time an area is its committed rects plus the live box of every match of its CSS selectors, measured in both
+the base and the head render (`<scene>.areas.json`). Each match keeps its own box: the two side boosters are two hull
+boxes, never one box spanning the deck. The capture spec fails if a measured box of one area reaches the centre of
+another area's box. An area that moves or grows in the PR is still matched.
 
 How the rects were derived: render the scenes with
 `COCKPIT_VISUAL_OUT=<dir> npx playwright test --config ../tests/cockpit/playwright.config.mjs visual-scenes.spec.mjs`
-from `desktop/cockpit`, then run `node desktop/tests/cockpit/visual-diff.mjs --print-areas <dir>` to print the union of
-each area's selector boxes over the four scenes. Round those boxes out to the frame and to the seams between sections.
+from `desktop/cockpit`, then run `node desktop/tests/cockpit/visual-diff.mjs --print-areas <dir>` to print every distinct
+measured box per area over the four scenes. Round those boxes out to the frame and to the seams between sections.
 The `hull` rects are the frame and seams themselves.
 
 To add or split an area, edit the map in its own small PR. Areas and aliases must be unique, rects must lie inside the
@@ -87,8 +102,10 @@ Do the same in a worktree of the base, with its `desktop/cockpit/node_modules` l
 
 ```
 node desktop/tests/cockpit/visual-diff.mjs --base /tmp/v/base --head /tmp/v/head --out /tmp/v/diff \
-  --base-sha <base> --subject-sha <head> --body-file <PR body>
+  --base-sha <base> --subject-sha <head> --body-file <PR body> [--main-rules-file <rules.mjs>]
 ```
+
+Without `GITHUB_TOKEN` or `--main-rules-file` the local run is strict.
 
 ## Baselines kept
 

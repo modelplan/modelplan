@@ -46,14 +46,12 @@ async function stableShot(page) {
   }
   throw new Error('cockpit screenshot did not settle in 6 captures');
 }
-// Each area's selectors, measured on the rendered page: the union box of every visible match, in CSS px.
+// Each area's selectors, measured on the rendered page: one box per visible match, in CSS px. Matches are never joined:
+// the two side boosters joined would span the whole deck (macrev2-1320-2).
 function measure(page,areas) {
-  return page.evaluate(areas=>Object.fromEntries(Object.entries(areas).map(([name,area])=>[name,(area.selectors??[]).flatMap(selector=>{
-    const boxes=[...document.querySelectorAll(selector)].map(e=>e.getBoundingClientRect()).filter(r=>r.width>0&&r.height>0);
-    if(!boxes.length)return [];
-    const x0=Math.min(...boxes.map(r=>r.left)),y0=Math.min(...boxes.map(r=>r.top)),x1=Math.max(...boxes.map(r=>r.right)),y1=Math.max(...boxes.map(r=>r.bottom));
-    return [[Math.floor(x0),Math.floor(y0),Math.ceil(x1)-Math.floor(x0),Math.ceil(y1)-Math.floor(y0)]];
-  })])),areas);
+  return page.evaluate(areas=>Object.fromEntries(Object.entries(areas).map(([name,area])=>[name,(area.selectors??[]).flatMap(selector=>
+    [...document.querySelectorAll(selector)].map(e=>e.getBoundingClientRect()).filter(r=>r.width>0&&r.height>0)
+      .map(r=>[Math.floor(r.left),Math.floor(r.top),Math.ceil(r.right)-Math.floor(r.left),Math.ceil(r.bottom)-Math.floor(r.top)]))])),areas);
 }
 
 for(const scene of SCENES){
@@ -71,6 +69,11 @@ for(const scene of SCENES){
     await mkdir(out,{recursive:true});
     const areas=JSON.parse(await readFile(areasPath,'utf8')).areas;
     await writeFile(join(out,`${scene}.png`),await stableShot(page));
-    await writeFile(join(out,`${scene}.areas.json`),JSON.stringify(await measure(page,areas)));
+    const measured=await measure(page,areas);
+    // A measured box never reaches the centre of another area's box (macrev2-1320-2: joined boosters spanned the MFD).
+    const inside=([x,y,w,h],[cx,cy])=>cx>=x&&cx<x+w&&cy>=y&&cy<y+h;
+    for(const [a,boxesA] of Object.entries(measured))for(const [b,boxesB] of Object.entries(measured))if(a!==b)
+      for(const r of boxesA)for(const q of boxesB)expect(inside(r,[q[0]+q[2]/2,q[1]+q[3]/2]),`${a} ${r} covers the centre of ${b} ${q}`).toBe(false);
+    await writeFile(join(out,`${scene}.areas.json`),JSON.stringify(measured));
   });
 }

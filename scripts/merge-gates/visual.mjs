@@ -115,15 +115,53 @@ export function visualRun(runs, scope = () => true) {
     && !(r.status === "completed" && r.conclusion === "action_required")).sort((a, b) => b.id - a.id)[0] ?? null;
 }
 
-// The gate's visual state. visual: { run, job, annotations } as evaluate.mjs read it (job = the run's `visual` job).
+// The gate's visual state. visual: { run, job, annotations, ...proof } as evaluate.mjs read it (job = the run's `visual`
+// job). bind(meta, run) ties the report to the comparison the gate resolved itself (bindPr / bindGroup) and returns
+// { problem } or the declaration to judge against: { declared, present, accepted }.
 // null when nothing is required: no U11 cockpit run at all (the change touches no cockpit path), a run still going or
 // not green (ciState already holds or fails it), a visual job skipped by queue-scope (a merge group whose tree is a PR
 // head's tree), or a run without a visual job (a PR run made before D489 landed; its merge group's run has the job).
-// A green visual job without a readable record fails.
-export function visualState(visual, { declared = [], present = false, accepted = false } = {}) {
+// A green visual job without a readable record, or with a record bound to another comparison, fails.
+export function visualState(visual, bind) {
   const run = visual?.run;
   if (!run || run.status !== "completed" || run.conclusion !== "success") return null;
   if (!visual.job || visual.job.conclusion === "skipped") return null;
-  if (visual.job.conclusion !== "success") return { state: "failure", why: `visual job ${visual.job.conclusion}`, outside: [] };
-  return judgeVisual(parseVisualRecord(visual.annotations), { declared, present, accepted });
+  const fail = (why) => ({ state: "failure", why, outside: [] });
+  if (visual.job.conclusion !== "success") return fail(`visual job ${visual.job.conclusion}`);
+  const record = parseVisualRecord(visual.annotations);
+  if (!record.ok) return fail(record.why);
+  const b = bind(record.meta, run);
+  if (!b || b.problem) return fail(`visual report not bound to this comparison: ${b?.problem ?? "no binding"}`);
+  return judgeVisual(record, b);
+}
+
+const short = (sha) => String(sha ?? "none").slice(0, 8);
+// A PR: the run is the U11 cockpit run of the PR head, the report names that head, its subject is a merge commit whose
+// parents (read by the gate from GitHub, not from the report) are [report base, PR head], and that base is on main
+// (checked by the gate with git). proof: { subjectParents, baseOnMain }.
+export function bindPr(head, decl, proof = {}) {
+  return (meta, run) => {
+    if (run.head_sha !== head) return { problem: `run ${run.id} is for ${short(run.head_sha)}, not the head ${short(head)}` };
+    if (meta.head !== head) return { problem: `report head ${short(meta.head)} is not the PR head ${short(head)}` };
+    const p = proof.subjectParents;
+    if (!Array.isArray(p) || p.length !== 2 || p[0] !== meta.base || p[1] !== head)
+      return { problem: `report subject ${short(meta.subject)} is not the merge of base ${short(meta.base)} and the head (parents ${Array.isArray(p) ? p.map(short).join(",") : "unreadable"})` };
+    if (proof.baseOnMain !== true) return { problem: `report base ${short(meta.base)} is not on main` };
+    return decl;
+  };
+}
+
+// A merge group: the run is the group commit's, the report's subject and head are the group commit, and its base is the
+// first parent of one of the group's queue merge commits (steps, bottom first, each { commit, base, decl }): the queue
+// base, or a lower group's commit this group was built on. Only the PRs merged above that base can have changed pixels,
+// so their declarations (union) and accepts count.
+export function bindGroup(groupSha, steps) {
+  return (meta, run) => {
+    if (!groupSha || run.head_sha !== groupSha) return { problem: `run ${run.id} is for ${short(run.head_sha)}, not the group ${short(groupSha)}` };
+    if (meta.subject !== groupSha || meta.head !== groupSha) return { problem: `report subject ${short(meta.subject)} is not the group commit ${short(groupSha)}` };
+    const i = steps.findIndex((s) => s.base === meta.base);
+    if (i < 0) return { problem: `report base ${short(meta.base)} is not a base of this group` };
+    const vs = steps.slice(i).map((s) => s.decl ?? { declared: [], present: false, accepted: false });
+    return { declared: [...new Set(vs.flatMap((v) => v.declared))], present: vs.some((v) => v.present), accepted: vs.some((v) => v.accepted) };
+  };
 }
