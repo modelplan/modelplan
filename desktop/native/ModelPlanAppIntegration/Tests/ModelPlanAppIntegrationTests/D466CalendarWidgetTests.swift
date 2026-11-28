@@ -274,7 +274,7 @@ final class D466CalendarWidgetTests: XCTestCase {
         XCTAssertEqual(en.title(event, now: now), "Confirmed · Today 00:29")
         XCTAssertEqual(zh.bankedConfirmedDetail(event, now: now), "今天 00:29 发放，你多了 1 次重置，已在储备里")
         XCTAssertEqual(en.bankedConfirmedDetail(event, now: now), "Issued today 00:29: +1 reset, now in Reserve")
-        XCTAssertFalse(event.restartedReading(in: try restartedAccount(after: event)), "a banked reset is never a window reset")
+        XCTAssertFalse(event.restartedReading(in: try restartedAccount(after: event), at: now), "a banked reset is never a window reset")
     }
 
     private func restartedAccount(after event: EngineResetEvent) throws -> RowsAccount {
@@ -285,9 +285,10 @@ final class D466CalendarWidgetTests: XCTestCase {
         var raw = try XCTUnwrap(((projection["rows"] as? [[String: Any]])?.first?["accounts"] as? [[String: Any]])?.first)
         var window = try XCTUnwrap((raw["windows"] as? [[String: Any]])?.first)
         let confirmed = event.confirmedAt ?? event.publishedAt, iso = ISO8601DateFormatter()
-        window.removeValue(forKey: "modelScope"); window["current"] = true; window["durationSeconds"] = 18000
+        window.removeValue(forKey: "modelScope"); window["current"] = true; window["durationSeconds"] = 604800
+        // A weekly window that began after the confirmation: what would retire a direct reset (macrev2-1289-4).
         window["observedAt"] = iso.string(from: confirmed.addingTimeInterval(120))
-        window["resetsAt"] = iso.string(from: confirmed.addingTimeInterval(60 + 18000))
+        window["resetsAt"] = iso.string(from: confirmed.addingTimeInterval(60 + 604800))
         raw["valueState"] = "current"; raw["windows"] = [window]
         return try WireDecoder.decode(RowsAccount.self, from: JSONSerialization.data(withJSONObject: raw))
     }

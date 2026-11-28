@@ -1,0 +1,23 @@
+{
+  "rule": "DOCK-3.7-03 / C19 (D474, macrev2-1289-4): a confirmed direct reset retires on a current reading only when a current window longer than 5 h (18000 s), whose reset is still ahead, began at or after the confirmation, within 60 s of clock skew. A 5-hour window never proves it. A banked reset (reset_credit) never retires this way. The widget (EngineResetEvent.restartedReading) and the cockpit (news-clock.ts newsRetired) read this same file.",
+  "confirmedAt": "2026-11-27T00:29:00Z",
+  "now": "2026-11-27T00:49:00Z",
+  "cases": [
+    {"name": "a 5-hour cycle began 30 s before the confirmation, the weekly cycle a day earlier", "kind": "direct_reset",
+     "windows": [{"durationSeconds": 18000, "cycleStartOffsetSeconds": -30}, {"durationSeconds": 604800, "cycleStartOffsetSeconds": -86400}], "retired": false},
+    {"name": "only the 5-hour window began after the confirmation", "kind": "direct_reset",
+     "windows": [{"durationSeconds": 18000, "cycleStartOffsetSeconds": 60}, {"durationSeconds": 604800, "cycleStartOffsetSeconds": -86400}], "retired": false},
+    {"name": "the weekly cycle restarted 30 s before the confirmation (clock skew)", "kind": "direct_reset",
+     "windows": [{"durationSeconds": 18000, "cycleStartOffsetSeconds": -30}, {"durationSeconds": 604800, "cycleStartOffsetSeconds": -30}], "retired": true},
+    {"name": "the weekly cycle began exactly 60 s before the confirmation", "kind": "direct_reset",
+     "windows": [{"durationSeconds": 604800, "cycleStartOffsetSeconds": -60}], "retired": true},
+    {"name": "the weekly cycle began 61 s before the confirmation", "kind": "direct_reset",
+     "windows": [{"durationSeconds": 604800, "cycleStartOffsetSeconds": -61}], "retired": false},
+    {"name": "the weekly cycle began 4 min before the confirmation (the previous cycle)", "kind": "direct_reset",
+     "windows": [{"durationSeconds": 604800, "cycleStartOffsetSeconds": -240}], "retired": false},
+    {"name": "a 6-hour window began 10 min after the confirmation", "kind": "direct_reset",
+     "windows": [{"durationSeconds": 21600, "cycleStartOffsetSeconds": 600}], "retired": true},
+    {"name": "a banked reset with the weekly cycle restarted", "kind": "reset_credit",
+     "windows": [{"durationSeconds": 18000, "cycleStartOffsetSeconds": -30}, {"durationSeconds": 604800, "cycleStartOffsetSeconds": -30}], "retired": false}
+  ]
+}

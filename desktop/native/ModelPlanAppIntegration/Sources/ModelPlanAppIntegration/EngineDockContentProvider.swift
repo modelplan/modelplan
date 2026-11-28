@@ -171,7 +171,7 @@ public enum EngineDeadlineFacts {
         let confirmedIDs = Set(events.filter { $0.status == "confirmed" }.compactMap(\.confirms))
         return events.filter { event in
             guard event.status != "announced" || !confirmedIDs.contains(event.id) else { return false }
-            if event.status == "confirmed", !event.isResetCredit, event.restartedReading(in: account) { return false }
+            if event.status == "confirmed", !event.isResetCredit, event.restartedReading(in: account, at: now) { return false }
             let anchor = event.status == "confirmed" ? (event.confirmedAt ?? event.publishedAt) : event.publishedAt
             return clock.isLive(DockNewsClock.key(eventID: event.id, status: event.status), anchor: anchor, at: now)
         }.max { $0.publishedAt < $1.publishedAt }
@@ -281,7 +281,7 @@ public enum EngineDeadlineFacts {
                     reset.kind=event.isResetCredit ? .resetCredit : .directReset
                     // A local reading that restarted after the confirmation is an observation, not proof of the
                     // public event (same predicate as the notification).
-                    reset.restartedReading = event.restartedReading(in: member.account)
+                    reset.restartedReading = event.restartedReading(in: member.account, at: context.now)
                     // The clock, not the 3 h default, bounds the dot (D466); 24 h stays the hard cap.
                     reset.confirmedDotUntil = confirmedAt.addingTimeInterval(DockResetSignal.confirmedDotHardCap)
                     signal.reset=reset

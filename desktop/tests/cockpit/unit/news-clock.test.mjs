@@ -157,3 +157,20 @@ test('macrevb-1290-7 a cycle that began before the confirmation is not the direc
   assert.equal(newsRetired(x.e,x.data,T0+20*MIN),retired,`cycle start ${(start-T0)/1000}s from the confirmation`);
  }
 });
+// macrev2-1289-4 (#1289 round 4) acceptance: the cockpit reads the same fixture as the widget
+// (D166ResetCreditTests.testSharedRestartFixtureGivesTheCockpitDecision), so the same readings give the same decision.
+const {readFileSync}=await import('node:fs');
+const shared=JSON.parse(readFileSync(new URL('../../shared/direct-reset-restart.json',import.meta.url),'utf8'));
+test('macrev2-1289-4 the shared restart fixture: only a longer-than-5h window restarted within 60 s retires a direct reset',()=>{
+ const confirmed=Date.parse(shared.confirmedAt),now=Date.parse(shared.now);
+ assert.ok(shared.cases.length>=8);
+ for(const c of shared.cases){
+  const data=capture(),row=data.projection.rows[0],a=row.accounts[0];
+  a.valueState='current';
+  a.windows=c.windows.map((w,i)=>({...a.windows[0],id:'w'+i,role:w.durationSeconds<=18000?'session':'weekly',durationSeconds:w.durationSeconds,
+   current:true,remainingPercent:100,observedAt:iso(now),validUntil:iso(now+10*H),resetsAt:iso(confirmed+(w.cycleStartOffsetSeconds+w.durationSeconds)*1000)}));
+  data.subscriptions=[{subscriptionRef:a.subscriptionRef,accounts:[{tool:row.id,account:structuredClone(a)}]}];
+  const e={id:'shared',status:'confirmed',kind:c.kind,rowId:row.id,publishedAt:iso(confirmed-MIN),confirmedAt:iso(confirmed),expiresAt:iso(confirmed+24*H),provider:'x',source:'official',version:1};
+  assert.equal(newsRetired(e,data,now),c.retired,c.name);
+ }
+});

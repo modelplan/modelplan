@@ -451,13 +451,28 @@ actor S4RowsClient: EngineClient {
         let originalProjection=captured["projection"] as! [String:Any]
         let originalRow=(originalProjection["rows"] as! [[String:Any]])[0]
         let originalAccount=(originalRow["accounts"] as! [[String:Any]])[0]
-        var restartedWindow=(originalAccount["windows"] as! [[String:Any]])[0]
-        restartedWindow.removeValue(forKey:"modelScope");restartedWindow["current"]=true
-        restartedWindow["observedAt"]=formatter.string(from:confirmationClock);restartedWindow["resetsAt"]=formatter.string(from:confirmationClock.addingTimeInterval(3600))
-        var eventRows=projection["rows"] as! [[String:Any]], eventAccounts=eventRows[0]["accounts"] as! [[String:Any]]
-        eventAccounts[0]["valueState"]="current";eventAccounts[0]["windows"]=[restartedWindow]
-        eventRows[0]["accounts"]=eventAccounts;projection["rows"]=eventRows;data["projection"]=projection
-        let restarted=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:data))
+        // macrev2-1289-4 (round 4), the shared rule (desktop/tests/shared/direct-reset-restart.json): only a window longer
+        // than 5 h whose cycle began within 60 s of the confirmation proves the reset. A 5-hour cycle restarting around the
+        // confirmation while the weekly cycle began a day earlier keeps the notice; then the weekly cycle restarts.
+        let template=(originalAccount["windows"] as! [[String:Any]])[0]
+        func window(_ id:String,_ role:String,duration:Int,cycleStart:TimeInterval) -> [String:Any] {
+            var w=template;w.removeValue(forKey:"modelScope");w["id"]=id;w["role"]=role;w["current"]=true;w["durationSeconds"]=duration
+            w["observedAt"]=formatter.string(from:confirmationClock)
+            w["resetsAt"]=formatter.string(from:confirmationClock.addingTimeInterval(cycleStart+TimeInterval(duration)))
+            return w
+        }
+        func reading(weeklyCycleStart:TimeInterval) throws -> WireRowsSnapshot {
+            var eventRows=projection["rows"] as! [[String:Any]], eventAccounts=eventRows[0]["accounts"] as! [[String:Any]]
+            eventAccounts[0]["valueState"]="current"
+            eventAccounts[0]["windows"]=[window("five","session",duration:18000,cycleStart:-30),window("week","weekly",duration:604800,cycleStart:weeklyCycleStart)]
+            eventRows[0]["accounts"]=eventAccounts;projection["rows"]=eventRows;data["projection"]=projection
+            return try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:data))
+        }
+        try await synthetic.replaceRows(reading(weeklyCycleStart:-86400))
+        try await Task.sleep(for:.milliseconds(50))
+        guard let fiveHourOnly=entry.composition.resetSignals.first(where:{$0.id == matching.id}) else { throw Failure(description:"member missing after the 5-hour restart") }
+        try require(fiveHourOnly.reset?.status == .confirmed && DockNoticeProjection.selected(for:fiveHourOnly,at:confirmationClock) != nil,"a 5-hour cycle restarting never clears the confirmed notice")
+        let restarted=try reading(weeklyCycleStart:0)
         try await synthetic.replaceRows(restarted)
         // DOCK-3.7-03 / C19 (D474, macrev2-1289-4): once the current reading shows the window restarted after the
         // confirmation, the confirmed direct reset is no longer news on any surface: the signal carries no reset (so no
