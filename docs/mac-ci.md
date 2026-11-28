@@ -188,6 +188,12 @@ group, and `native-headless` hosted like every other event (D198; D246 reverted)
 queue whenever the group changes a desktop path, even when its tree equals the PR head (D169,
 below); the five Linux workflows have their own `queue-scope` job and no Mac job.
 
+`u11-cockpit`'s `visual` job (D489, [cockpit-visual-diff.md](cockpit-visual-diff.md)) renders the four full-cockpit
+scenes for the base and the subject on one runner and diffs them; there are no committed full-* baselines. On a PR the
+base is the merge ref's first parent, in the queue `merge_group.base_sha`. `modelplan-gates` fails a head whose changed
+pixels fall outside the areas on the PR body's `Visual-change:` line (in a group: the union over its PRs), unless a
+trusted `VISUAL-ACCEPT @ <head sha>` comment accepts that head.
+
 ### GUI leg for the group tail only (D488)
 
 The queue builds up to four groups at once (HEADGREEN), and each group commit contains every

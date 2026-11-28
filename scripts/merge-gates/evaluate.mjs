@@ -12,8 +12,9 @@ import { readFileSync, appendFileSync } from "node:fs";
 import { client } from "./github.mjs";
 import * as G from "./git.mjs";
 import { HOSTED_WORKFLOWS } from "./hosted.mjs";
+import { VISUAL_JOB, visualRun } from "./visual.mjs";
 import { ABSENT_TITLE, MAP_PATH, RECORD_TITLE, parseMap } from "./gui-map.mjs";
-import { CONTEXT, GUI_COVER_TITLE, GUI_DEFER_JOB, parseCoverRecord, PR_GUI_TITLE, prGuiRunScope, DESKTOP_WORKFLOW, FAILURE, dataSyncRunId, parseFallbackUntil, parseGlmTiers, cancelledRunSuperseded, description, evaluateGroup, evaluatePr, queueRunScope, feed, isTrain, parseDesignConf, supersededPrs, TIER_TABLE, tiersFrom, trainMembers } from "./rules.mjs";
+import { CONTEXT, GUI_COVER_TITLE, GUI_DEFER_JOB, parseCoverRecord, PR_GUI_TITLE, prGuiRunScope, DESKTOP_WORKFLOW, FAILURE, dataSyncRunId, parseFallbackUntil, parseGlmTiers, cancelledRunSuperseded, description, prRunScope, evaluateGroup, evaluatePr, queueRunScope, feed, isTrain, parseDesignConf, supersededPrs, TIER_TABLE, tiersFrom, trainMembers } from "./rules.mjs";
 
 const env = process.env;
 const argv = process.argv.slice(2);
@@ -156,6 +157,32 @@ async function readGuiCover(groupSha, jobs) {
   } catch (e) { log({ group: groupSha, guiCover: `unreadable: ${String(e).slice(0, 120)}` }); return null; }
 }
 
+// D489: the visual job of the latest green U11 cockpit run in scope and its annotations (visual.mjs reads the records).
+// A run that is not green returns only the run (ciState decides it); an unreadable job list or annotation list leaves
+// the annotations unset, which fails the visual check. For a PR it also reads the base the report must name: the first
+// parent of the PR's current merge ref (R11 ruling); unreadable leaves it unset, which keeps the PR pending.
+async function readVisual(runs, scope, pr = null) {
+  const run = visualRun(runs, scope);
+  if (!run || run.status !== "completed" || run.conclusion !== "success") return { run };
+  try {
+    const jobs = await gh.all(`/actions/runs/${run.id}/jobs?filter=latest`, "jobs", 500);
+    const job = jobs.find((j) => j.name === VISUAL_JOB) ?? null;
+    const annotations = job?.conclusion === "success" ? await gh.all(`/check-runs/${job.id}/annotations`, null, 100) : undefined;
+    const out = { run, job, annotations };
+    if (pr && job?.conclusion === "success") {
+      try {
+        const parents = pr.merge_commit_sha ? ((await gh.get(`/commits/${pr.merge_commit_sha}`)).parents ?? []).map((x) => x.sha) : [];
+        out.expectedBase = parents.length === 2 && parents[1] === pr.head.sha ? parents[0] : null;
+      } catch (e) { log({ run: run.id, visualBase: `unreadable: ${String(e).slice(0, 120)}` }); }
+      log({ run: run.id, mergeRef: pr.merge_commit_sha, expectedBase: out.expectedBase ?? null });
+    }
+    return out;
+  } catch (e) {
+    log({ run: run.id, visual: `unreadable: ${String(e).slice(0, 120)}` });
+    return { run, job: { conclusion: "success" }, annotations: undefined };
+  }
+}
+
 async function prResult(number) {
   const pr = await gh.get(`/pulls/${number}`);
   const head = pr.head.sha;
@@ -170,11 +197,12 @@ async function prResult(number) {
   await readJobs(runs.filter((r) => !(r.status === "completed" && ["success", "skipped", "neutral"].includes(r.conclusion))));
   await readPrGuiJobs(pr, runs);
   const maps = await guiMaps(pr, files);
+  const visual = await readVisual(runs, prRunScope(pr), pr);
   // REVIEW_GLM_TIERS (repository variable, default empty): the tiers the (ghglm) workflow lane may decide.
   // GLM-out fallback window (repository variable GLM_FALLBACK_UNTIL, the GLM reset time); unset = closed.
   const now = Date.now();
   const glmFallbackUntil = parseFallbackUntil(env.GLM_FALLBACK_UNTIL || "", now);
-  const result = evaluatePr({ pr, items: feed(comments, reviews), files, runs, statuses: combined.statuses ?? [], verifiedEdge, proveMainMerges, conf, members, tiers, sync: await readDataSync(pr), glmFallbackUntil, now, glmTiers: parseGlmTiers(env.REVIEW_GLM_TIERS), guiMaps: maps });
+  const result = evaluatePr({ pr, items: feed(comments, reviews), files, runs, statuses: combined.statuses ?? [], verifiedEdge, proveMainMerges, conf, members, tiers, sync: await readDataSync(pr), glmFallbackUntil, now, glmTiers: parseGlmTiers(env.REVIEW_GLM_TIERS), guiMaps: maps, visual });
   return { pr, result };
 }
 
@@ -218,7 +246,8 @@ async function evaluateGroupAndPost(groupSha) {
   if (desktop) desktop.jobs = desktopJobs;
   await readJobs(queueRuns.filter(queueRunScope(repo)).filter((r) => r !== desktop));
   const guiCover = desktopJobs ? await readGuiCover(groupSha, desktopJobs) : null;
-  const result = evaluateGroup({ steps, queueRuns, queueStatuses: combined.statuses ?? [], queueCheckRuns, desktopJobs, guiCover, groupSha, desktopRunId: desktop?.id ?? null, repo });
+  const visual = await readVisual(queueRuns, queueRunScope(repo));
+  const result = evaluateGroup({ steps, queueRuns, queueStatuses: combined.statuses ?? [], queueCheckRuns, desktopJobs, guiCover, groupSha, desktopRunId: desktop?.id ?? null, repo, visual });
   await post(groupSha, { group: steps.map((s) => s.pr), ...result });
 }
 

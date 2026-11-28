@@ -2,7 +2,6 @@
 import { test,expect } from '../../../cockpit/node_modules/@playwright/test/index.mjs';
 import { appearance,commands,pageId,sample,currentSample,shell,excludePortholeFlicker } from '../fixture.mjs';
 test.beforeEach(async({page})=>excludePortholeFlicker(page));
-import {renderVisualDeck,visualFixture} from '../visual-fixture.mjs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { writeFile,mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
@@ -165,14 +164,5 @@ test('fixed keyboard-reachable actions have current context; reduced motion has 
   await page.evaluate(()=>window.postMessage({type:'plugin/install',url:'https://example.invalid'},'*'));
   expect(await page.evaluate(()=>window.__events.filter(e=>e.type==='action').length)).toBe(2);
 });
-for(const profile of ['full'])for(const theme of ['day','night'])for(const locale of ['en','zh-CN']){
-  test(`visual ${profile} ${theme} ${locale}`,async({page})=>{
-    await page.setViewportSize({width:636,height:951});await page.emulateMedia({reducedMotion:'reduce'});
-    await page.clock.setFixedTime(new Date('2026-11-03T12:00:00Z'));
-
-    const {send}=await open(page,{theme,locale,profile}),fixture=visualFixture();await display(page,send,fixture.data);await renderVisualDeck(page,fixture,locale);
-    await page.evaluate(()=>document.fonts.ready);
-    expect(await infiniteAnimations(page)).toEqual([]);
-    await expect(page).toHaveScreenshot(`${profile}-${theme}-${locale}.png`,{animations:'disabled',maxDiffPixels:0});
-  });
-}
+// D489: the four full-* scenes moved to visual-scenes.spec.mjs; CI diffs the PR's base and head renders of them
+// (desktop/tests/cockpit/visual-diff.mjs) instead of comparing against committed baseline images.
