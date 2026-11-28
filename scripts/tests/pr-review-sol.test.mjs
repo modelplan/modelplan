@@ -24,10 +24,11 @@ const pr = (over = {}) => ({
   base: { ref: "main", repo: { full_name: "modelplan/modelplan" } },
   ...over,
 });
-// t1 is an IMPORTANT tier-1 head (D395: a timing path), so the tests below keep the GPT-only rules; t1n is a NORMAL one.
-const t1 = [{ filename: "cli/internal/advise/lock_unix.go" }];
+// t1 is an IMPORTANT tier-1 head (D482: a token path), so the tests below keep the GPT-only rules; t1n is a NORMAL one.
+// t2 is an IMPORTANT tier-2 head (the Swift client seam and a credentials path; D482: tier 2 alone is NORMAL).
+const t1 = [{ filename: "cli/internal/setup/oauth_flow.go" }];
 const t1n = [{ filename: "cli/main.go" }];
-const t2 = [{ filename: "clients/swift/Wire.swift" }];
+const t2 = [{ filename: "clients/swift/KeychainStore.swift" }];
 const native = [{ filename: "desktop/native/ModelPlanApp/App.swift" }];
 const green = { ci: true, compile: true };
 const decide = ({ files = t1, comments = [], lane = S.SOL_LANE, checks = green, ...rest } = {}) =>
@@ -43,8 +44,10 @@ test("decide: open, ready, trusted same-repository tier 1 and 2 heads only; the 
   assert.deepEqual(decide({ files: t2, glmTiers: [1] }).providers, ["openai", "glm"], "REVIEW_GLM_TIERS=1: tier 2 is GPT-counted, GLM advisory only");
   assert.deepEqual(S.decideSol({ pr: pr(), files: t2, items: [], lane: S.SOL_LANE, triggerSha: H, checks: green, glmTiers: [1, 2] }).providers, ["openai", "glm"], "REVIEW_GLM_TIERS=1,2");
   assert.deepEqual(decide({ comments: [comment("REVIEWER: ghsol")] }).providers, ["openai", "glm"], "assigned ghsol: only GPT counts (GLM is the advisory fallback)");
-  assert.deepEqual(decide({ comments: [comment("REVIEWER: ghglm")], glmTiers: [1] }).providers, ["openai", "glm"], "D396-1: a workflow assignment is the provider pair");
-  assert.equal(decide({ files: t2, comments: [comment("REVIEWER: ghglm")] }).why, "the assigned reviewer (ghglm) cannot review tier 2", "an invalid assignment spends no tokens");
+  assert.deepEqual(decide({ files: t1n, comments: [comment("REVIEWER: ghglm")], glmTiers: [1] }).providers, ["openai", "glm"], "D396-1: a workflow assignment is the provider pair");
+  assert.deepEqual(decide({ comments: [comment("REVIEWER: ghglm")], glmTiers: [1, 2] }).providers, ["openai", "glm"], "D482: on an IMPORTANT PR a ghglm assignment is the pair's Sol side (GLM advisory)");
+  assert.equal(decide({ files: t2, comments: [comment("REVIEWER: macrevc")] }).why, "the assigned reviewer (macrevc) cannot review tier 2", "an invalid assignment spends no tokens");
+  assert.equal(decide({ files: t2, comments: [comment("REVIEWER: ghglm")] }).review, true, "D482: REVIEWER: ghglm on an IMPORTANT PR is the workflow pair, so ghsol reviews");
   assert.equal(decide({ pr: { draft: true } }).why, "draft");
   assert.equal(decide({ pr: { state: "closed" } }).why, "PR is closed");
   const outside = "not a trusted same-repository PR (the owner's dispatch reviews it, advisory)";
@@ -489,17 +492,20 @@ test("tier gating: (ghglm) counts on the REVIEW_GLM_TIERS tiers (default none); 
   assert.ok(!R.SOL_LANES.includes("(ghglm)") && R.REVIEW_LANES.includes("(ghglm)") && !R.REVIEW_LANES.includes("(ghglmshadow)"));
   const conf = { include: [], exclude: [], pinonly: [] };
   const gate = (files, cs, glmTiers = [1]) => R.evaluatePr({ glmTiers,  pr: pr(), items: R.feed(cs), files, runs: [{ path: ".github/workflows/ci.yml", status: "completed", conclusion: "success", head_sha: H, head_repository: { full_name: "modelplan/modelplan" }, head_branch: "feature/x", event: "pull_request", pull_requests: [{ number: 7 }] }], statuses: [], verifiedEdge: () => false, conf });
-  assert.equal(gate(t1, [comment(v("merge", H, "ghglm"))]).state, R.SUCCESS, "tier 1: a GLM fallback merge passes");
-  assert.equal(gate(t1, [comment(v("block", H, "ghglm")), comment(v("merge", H, "macrevb"))]).state, R.FAILURE, "tier 1: a GLM fallback block stops it");
+  // D482: on an IMPORTANT PR (t1, t2) GLM never decides, whatever REVIEW_GLM_TIERS lists; on a NORMAL one (t1n) it always does.
+  assert.equal(gate(t1, [comment(v("merge", H, "ghglm"))]).state, R.PENDING, "D482: important tier 1: a GLM merge never passes");
+  assert.equal(gate(t1, [comment(v("block", H, "ghglm")), comment(v("merge", H, "macrevb"))]).state, R.SUCCESS, "D482: important tier 1: a GLM block is advice");
+  assert.equal(gate(t1n, [comment(v("merge", H, "ghglm"))], []).state, R.SUCCESS, "normal tier 1: a GLM merge passes");
+  assert.equal(gate(t1n, [comment(v("block", H, "ghglm")), comment(v("merge", H, "macrevb"))], []).state, R.FAILURE, "normal tier 1: a GLM block stops it");
   assert.equal(gate(t2, [comment(v("merge", H, "ghglm"))]).state, R.PENDING, "tier 2 never merges on a GLM verdict");
   assert.equal(gate(t2, [comment(v("block", H, "ghglm")), comment(v("merge", H, "macrevb"))]).state, R.SUCCESS, "tier 2: a GLM block is advice");
-  assert.equal(gate(t1, [comment("REVIEWER: ghglm"), comment(v("merge", H, "ghglm"))]).state, R.SUCCESS, "tier 1: a valid sticky reviewer");
+  assert.equal(gate(t1, [comment("REVIEWER: ghglm"), comment(v("merge", H, "ghglm"))]).state, R.PENDING, "D482: an assignment never lets GLM decide an important PR");
   assert.equal(gate(t2, [comment("REVIEWER: ghglm"), comment(v("merge", H, "ghglm"))]).state, R.PENDING, "tier 2: an invalid sticky reviewer");
   assert.equal(gate(t1, [comment(v("merge", H, "ghglmshadow"))]).state, R.PENDING, "the shadow GLM lane never counts");
-  // REVIEW_GLM_TIERS=1,2: GLM and GPT are equal on both tiers.
-  assert.equal(gate(t2, [comment(v("merge", H, "ghglm"))], [1, 2]).state, R.SUCCESS, "tier 2 with REVIEW_GLM_TIERS=1,2");
-  assert.equal(gate(t2, [comment(v("block", H, "ghglm")), comment(v("merge", H, "macrevb"))], [1, 2]).state, R.FAILURE);
-  assert.equal(gate(t2, [comment("REVIEWER: ghglm"), comment(v("merge", H, "ghglm"))], [1, 2]).state, R.SUCCESS);
+  // REVIEW_GLM_TIERS=1,2 (D469): still no GLM decision on an IMPORTANT PR (D482).
+  assert.equal(gate(t2, [comment(v("merge", H, "ghglm"))], [1, 2]).state, R.PENDING, "D482: important tier 2 with REVIEW_GLM_TIERS=1,2");
+  assert.equal(gate(t2, [comment(v("block", H, "ghglm")), comment(v("merge", H, "macrevb"))], [1, 2]).state, R.SUCCESS);
+  assert.equal(gate(t2, [comment("REVIEWER: ghglm"), comment(v("merge", H, "ghglm"))], [1, 2]).state, R.PENDING);
   // REVIEW_GLM_TIERS=none: GLM decides nothing.
   assert.equal(gate(t1, [comment(v("merge", H, "ghglm"))], []).state, R.PENDING);
   assert.equal(gate(t1, [comment(v("block", H, "ghglm")), comment(v("merge", H, "macrevb"))], []).state, R.SUCCESS);
@@ -511,9 +517,10 @@ test("tier gating: (ghglm) counts on the REVIEW_GLM_TIERS tiers (default none); 
   assert.deepEqual(R.eligibleLanes(2, [2]), [...R.SOL_LANES, "(ghglm)"]);
   assert.deepEqual(R.eligibleLanes(1, []), [...R.SOL_LANES, ...R.TERRA_LANES]);
   // A fallback verdict settles the head for the run's own lane; counting mode also sees it as a counting verdict.
-  assert.equal(decide({ lane: S.SOL_SHADOW_LANE, comments: [comment(v("merge", H, "ghglmshadow"))], glmTiers: [1] }).why, "this lane already reviewed this head");
-  assert.equal(decide({ comments: [comment(v("merge", H, "ghglm"))], glmTiers: [1] }).why, "this lane already reviewed this head");
-  assert.match(S.postProblem({ pr: pr(), items: R.feed([comment(v("merge", H, "ghglm"))]), head: H, lane: "ghsol", glmTiers: [1] }), /already has a verdict/);
+  assert.equal(decide({ files: t1n, lane: S.SOL_SHADOW_LANE, comments: [comment(v("merge", H, "ghglmshadow"))], glmTiers: [1] }).why, "this lane already reviewed this head");
+  assert.equal(decide({ files: t1n, comments: [comment(v("merge", H, "ghglm"))], glmTiers: [1] }).why, "this lane already reviewed this head");
+  assert.match(S.postProblem({ pr: pr(), items: R.feed([comment(v("merge", H, "ghglm"))]), head: H, lane: "ghsol", files: t1n, glmTiers: [1] }), /already has a verdict/);
+  assert.equal(decide({ comments: [comment(v("merge", H, "ghglm"))], glmTiers: [1] }).review, true, "D482: on an important head the GLM verdict settles nothing; GPT reviews");
   // The GLM verdict comment. Its title names the model that answered, never a version typed by hand.
   const answer = S.parseAnswer(`ok\nRecord: ${H}\nx -> ok\nVERDICT: merge`, H);
   const glmComment = (model) => S.renderSolComment({ answer, head: H, lane: "ghglm", mode: "full", base: BASE, tier: 1, meta: { model } });
@@ -655,7 +662,8 @@ test("SOL-8: a (ghglm) verdict on a tier it may no longer decide neither settles
   const ds = S.decideSol({ pr: pr(), files: t2, items: R.feed([comment(v("merge", H, "ghglmshadow"))]), lane: S.SOL_SHADOW_LANE, triggerSha: H, checks: green, glmTiers: [1] });
   assert.equal(ds.review, true, ds.why);
   assert.equal(S.postProblem({ pr: pr(), items: R.feed([glmAtHead]), head: H, lane: "ghsol", tier: 2, glmTiers: [1] }), null);
-  assert.match(S.postProblem({ pr: pr(), items: R.feed([glmAtHead]), head: H, lane: "ghsol", tier: 2, glmTiers: [1, 2] }), /already has a verdict/, "still settled while eligible");
+  assert.equal(S.postProblem({ pr: pr(), items: R.feed([glmAtHead]), head: H, lane: "ghsol", tier: 2, glmTiers: [1, 2] }), null, "D482: no file list is IMPORTANT, where GLM never settles a head");
+  assert.match(S.postProblem({ pr: pr(), items: R.feed([glmAtHead]), head: H, lane: "ghsol", tier: 2, files: [{ filename: "cli/internal/quota/x.go" }], glmTiers: [] }), /already has a verdict/, "a NORMAL tier-2 head is settled by GLM");
   // A Sol approval at the old head carries over a proven main merge; the stale-tier GLM verdict does not stop it.
   const conf = { include: [], exclude: [], pinonly: [] };
   const ci = [{ path: ".github/workflows/ci.yml", status: "completed", conclusion: "success", head_sha: H, head_repository: { full_name: "modelplan/modelplan" }, head_branch: "feature/x", event: "pull_request", pull_requests: [{ number: 7 }] }];
@@ -666,7 +674,7 @@ test("SOL-8: a (ghglm) verdict on a tier it may no longer decide neither settles
   const after = gate([sol, glmLater], [1]);
   assert.equal(after.state, R.SUCCESS, after.why);
   assert.equal(after.autoCarried, OLD);
-  assert.equal(gate([sol, glmLater], [1, 2]).autoCarried, undefined, "while eligible it is a review of this head and nothing carries");
+  assert.equal(gate([sol, glmLater], [1, 2]).autoCarried, OLD, "D482: on an IMPORTANT PR GLM is never eligible, so the Sol approval carries");
 });
 
 test("SOL-9: the wait event is exactly 'tier-2 review waiting: GPT quota out', once per head across shadow and count", () => {
@@ -769,7 +777,8 @@ test("post: a late assignment, a late counting verdict and a forced duplicate be
   assert.equal(post([]), null);
   assert.match(post([comment("REVIEWER: macrevd")]), /assigned reviewer is \(macrevd\)/);
   // D396-1: REVIEWER: ghsol / ghglm assigns the workflow pair, so either provider posts where it may decide
-  assert.equal(post([comment("REVIEWER: ghglm")]), null, "assigned to the other provider of the pair");
+  assert.equal(post([comment("REVIEWER: ghglm")], { files: t1n }), null, "assigned to the other provider of the pair (normal PR: nothing pins)");
+  assert.equal(post([comment("REVIEWER: ghglm")]), null, "D482: on an important PR a ghglm assignment is the pair's Sol side");
   assert.equal(post([comment("REVIEWER: ghsol")], { posted: "ghglm" }), null, "a GLM fallback post with ghsol assigned");
   assert.equal(post([comment("REVIEWER: ghsol")], { posted: "ghglm", glmTiers: [] }), null, "IMPORTANT, tier not listed: the advisory GLM post is admitted whatever is assigned (macrev2-1254)");
   assert.equal(post([comment("REVIEWER: ghsol")]), null);
@@ -777,7 +786,8 @@ test("post: a late assignment, a late counting verdict and a forced duplicate be
   assert.match(post([comment(`VERDICT: merge @ ${H}`)]), /counting verdict already exists/);
   assert.equal(post([comment(v("merge", H, "macrevc"))], { force: true }), null, "force lifts only the other-lane check");
   assert.match(post([comment(v("merge", H, "ghsol"))], { force: true }), /already has a verdict/);
-  assert.match(post([comment(v("merge", H, "ghglm"))], { force: true }), /already has a verdict/, "the provider lane counts too");
+  assert.match(post([comment(v("merge", H, "ghglm"))], { force: true, files: t1n }), /already has a verdict/, "the provider lane counts too (normal PR)");
+  assert.equal(post([comment(v("merge", H, "ghglm"))], { force: true }), null, "D482: on an important PR the GLM verdict is advice and settles nothing");
   assert.equal(post([], { posted: "ghglm", tier: 2 }), null, "advisory GLM post where it may not decide (macrev2-1254)");
   // Shadow: only its own lanes dedupe; assignments and counting verdicts do not stop it.
   const sh = (cs, over = {}) => S.postProblem({ pr: pr(), items: items(cs), head: H, lane: "ghsolshadow", posted: "ghsolshadow", tier: 1, ...over });
@@ -859,18 +869,18 @@ test("review:gpt: a labelled PR gets gpt-first under schedule mode; an unlabelle
 test("review:gpt: a GLM verdict at the head does not settle a labelled PR; a GPT one does", () => {
   const glmTiers = [1, 2];
   const glm = [comment(v("merge", H, "ghglm"))];
-  assert.equal(decide({ comments: glm, glmTiers }).review, false, "no label: the GLM verdict settles the head");
+  assert.equal(decide({ files: t1n, comments: glm, glmTiers }).review, false, "no label, normal: the GLM verdict settles the head");
   assert.equal(decide({ comments: glm, glmTiers, pr: labelled }).review, true, "label: GPT still reviews");
   assert.equal(decide({ comments: glm, glmTiers, pr: labelled, lane: S.SOL_SHADOW_LANE }).review, true);
   assert.equal(decide({ comments: [...glm, comment(v("merge", H, "ghsol"))], glmTiers, pr: labelled }).review, false, "the GPT lane reviews a head once");
   // the post-time re-check agrees
   const base = { head: H, lane: S.SOL_LANE, posted: S.SOL_LANE, tier: 1, files: t1, glmTiers };
   assert.equal(S.postProblem({ pr: pr(labelled), items: R.feed(glm), ...base }), null);
-  assert.match(S.postProblem({ pr: pr(), items: R.feed(glm), ...base }), /already|exists/);
+  assert.match(S.postProblem({ pr: pr(), items: R.feed(glm), ...base, files: t1n }), /already|exists/);
   // an old REVIEWER: ghglm assignment no longer pins a labelled PR: ghsol reviews it (an unlabelled one stays pinned)
   const pinned = decide({ pr: labelled, glmTiers, comments: [comment("REVIEWER: ghglm")] });
   assert.deepEqual([pinned.review, pinned.gpt, pinned.providers[0]], [true, true, "openai"]);
-  assert.equal(decide({ glmTiers, comments: [comment("REVIEWER: ghglm")] }).providers.includes("openai"), true, "D396-1: the pair, not one provider");
+  assert.equal(decide({ files: t1n, glmTiers, comments: [comment("REVIEWER: ghglm")] }).providers.includes("openai"), true, "D396-1: the pair, not one provider");
 });
 
 test("review:gpt: GPT quota out -> GLM answers and the provider line says so; GPT answering adds nothing", async () => {
@@ -1044,7 +1054,9 @@ test("D396-1: ghsol seeded on head A; at head B the GLM quota-fallback verdict i
       assert.equal(r.provider, "glm");
       assert.equal(S.postProblem({ pr: pr({ head: { ...pr().head, sha: H2 } }), items: R.feed(seeded), head: H2, lane: S.SOL_LANE, posted: S.postLane(S.SOL_LANE, "glm"), tier: 1, files, glmTiers }), null);
       const gate = R.evaluatePr({ pr: pr({ head: { ...pr().head, sha: H2 } }), items: R.feed([...seeded, comment(v("merge", H2, "ghglm"))]), files: files.map((f) => ({ ...f })), runs: [{ name: "ci", path: ".github/workflows/ci.yml", head_sha: H2, event: "pull_request", status: "completed", conclusion: "success", created_at: at(), repository: { full_name: "modelplan/modelplan" }, head_repository: { full_name: "modelplan/modelplan" } }], statuses: [], verifiedEdge: () => false, conf: { include: [], exclude: [], pinonly: [] }, glmTiers });
-      assert.doesNotMatch(gate.why, /needs VERDICT/, `${files[0].filename} at ${when.toISOString()}: ${gate.why}`);
+      // D482: the GLM fallback verdict lands the NORMAL PR; the IMPORTANT one still needs a Sol verdict, REVIEW_GLM_TIERS or not
+      if (files === t1) assert.match(gate.why, /needs VERDICT/, `${files[0].filename} at ${when.toISOString()}: ${gate.why}`);
+      else assert.doesNotMatch(gate.why, /needs VERDICT/, `${files[0].filename} at ${when.toISOString()}: ${gate.why}`);
     }
   }
 });
@@ -1177,7 +1189,8 @@ test("macrev2-1254 r2: GPT-quota fallback + GLM merge on IMPORTANT counts only w
     assert.notEqual(ev(items, [2]).state, R.SUCCESS, "other tier listed: never counts");
     assert.equal(R.eligibleLanes(1, [2], R.IMPORTANT).includes("(ghglm)"), false);
   }
-  assert.equal(R.eligibleLanes(1, [1], R.IMPORTANT).includes("(ghglm)"), true, "D366 window: the listed tier counts");
+  assert.equal(R.eligibleLanes(1, [1], R.IMPORTANT).includes("(ghglm)"), false, "D482: no REVIEW_GLM_TIERS window on an IMPORTANT PR");
+  assert.equal(R.eligibleLanes(1, [1]).includes("(ghglm)"), true, "a caller without a class keeps the listed tier");
   // the advisory post is admitted with the tier not listed, whatever is assigned, and once per head
   for (const glmTiers of [[], [2]]) {
     const base = { head: H, lane: S.SOL_LANE, posted: S.GLM_LANE, tier: 1, files: t1, glmTiers };

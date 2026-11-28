@@ -5,7 +5,7 @@
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { client } from "../merge-gates/github.mjs";
-import { feed, isShadowLane, parseGlmTiers, pathTier, prPaths, tierOverride, TRUSTED } from "../merge-gates/rules.mjs";
+import { feed, isShadowLane, ledgerPr, parseGlmTiers, prPaths, prTier, tierOverride, TRUSTED } from "../merge-gates/rules.mjs";
 import { secretHits } from "./brief.mjs";
 import { postWhy, agreement, parseAnswer, postLane, postProblem, noVerdictNoted, oversizeNoted, glmAdvisory, prClass, waitNoted, renderNoVerdictNote, renderOversizeNote, renderScopeNote, renderSolComment, renderWaitNote, scopeNoted, SCOPE_CHANGED } from "./sol.mjs";
 
@@ -41,7 +41,7 @@ const files = await gh.all(`/pulls/${n}/files`);
 const prAfter = await gh.get(`/pulls/${n}`);
 const check = { items, head, lane: env.LANE, posted: waiting || oversize ? null : lane, force: env.FORCE === "true", tier: Number(env.TIER), files, glmTiers: parseGlmTiers(env.REVIEW_GLM_TIERS) };
 const late = postProblem({ pr, ...check }) ?? postProblem({ pr: prAfter, ...check });
-const tierNow = tierOverride(items) ?? pathTier(prPaths(files));   // fresh, as postProblem used it
+const tierNow = prTier(prPaths(files), tierOverride(items), ledgerPr(pr));   // fresh, as postProblem used it
 if (late?.startsWith(SCOPE_CHANGED)) {
   // The prepared scope no longer fits the trusted tier: post a non-counting notice once, never a verdict.
   if (!scopeNoted(items, head)) {
@@ -97,7 +97,7 @@ if (secretHits(body)) fail("the comment looks like it contains a credential");
 await gh.post(`/issues/${n}/comments`, { body });
 // macrev2-1254: a GLM answer where GLM may not decide is advice; the head still waits for a Sol/GPT verdict, so raise the
 // waiting event once (the same coordinator event as when every provider is out).
-if (provider === "glm" && lane === "ghglm" && glmAdvisory(prClass(pr, files, tierNow), tierNow, parseGlmTiers(env.REVIEW_GLM_TIERS)) && !waitNoted(items, head)) {
+if (provider === "glm" && lane === "ghglm" && glmAdvisory(prClass(pr, files, items), tierNow, parseGlmTiers(env.REVIEW_GLM_TIERS)) && !waitNoted(items, head)) {
   const note = renderWaitNote({ head, lane: env.LANE, tier: tierNow, who: ["openai"], why: read(join(dir, "why")).trim() || "GPT quota out; GLM answered as advice", runUrl: env.RUN_URL });
   await gh.post(`/issues/${n}/comments`, { body: note });
 }
