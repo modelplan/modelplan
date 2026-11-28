@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { importedPaths, selectChecks, withSnapshot } from "../preflight.mjs";
+import { WEBKIT_CAP, importedPaths, relatedWebkitSpecs, selectChecks, withSnapshot } from "../preflight.mjs";
 
 const names = (c) => c.map((x) => x.name);
 const A = "desktop/tests/cockpit/unit/host-strings.test.mjs";
@@ -89,6 +89,73 @@ test("a deleted Go package is skipped; surviving importers of it are checked", (
   assert.deepEqual(c.find((x) => x.name.startsWith("go vet")).args, ["vet", "./internal/dep", "./internal/other", "./internal/user"]);
   const only = selectChecks({ changed: ["cli/internal/old/a.go"], goAvailable: true, goExistingDirs: new Set(), goImporters: {} });
   assert.equal(only.find((x) => x.name === "go").kind, "note");
+});
+
+test("skill source or packaged copy changes run the skill copy check; other changes do not", () => {
+  for (const f of ["skills/model-plan/SKILL.md", "claude-code/skills/model-plan/reference.md", "codex/skills/setup/SKILL.md", "scripts/package-skill.mjs"]) {
+    const c = selectChecks({ changed: [f] }).find((x) => x.name === "skill copies");
+    assert.deepEqual(c.args, ["scripts/package-skill.mjs", "--check"], f);
+  }
+  assert.ok(!names(selectChecks({ changed: ["codex/src/a.ts", "README.md"] })).includes("skill copies"));
+});
+
+const B = "desktop/tests/cockpit/browser/";
+const specs = {
+  [`${B}c-hud.spec.mjs`]: "import {shortLabel} from '../../../cockpit/study/rocket-r1/short-label.js';",
+  [`${B}c-forecast.spec.mjs`]: "await page.locator('.x'); // styles in cockpit.css",
+  [`${B}c-other.spec.mjs`]: "import '../../../cockpit/.tmp/compiled/src/members.js';",
+  [`${B}calendar-plugin.spec.mjs`]: "nothing",
+};
+const webkitArgs = (c) => c.filter((x) => x.name === "webkit spec").map((x) => x.args.at(-1));
+
+test("cockpit changes run the related WebKit specs one file at a time after an official build", () => {
+  const c = selectChecks({ changed: ["desktop/cockpit/study/rocket-r1/short-label.js", "desktop/cockpit/web/cockpit.css", "desktop/cockpit/src/calendar-plugin.ts"], browserSpecs: specs });
+  assert.deepEqual(webkitArgs(c), ["browser/c-hud\\.spec\\.mjs$", "browser/c-forecast\\.spec\\.mjs$", "browser/calendar-plugin\\.spec\\.mjs$"]);
+  assert.ok(c.findIndex((x) => x.name === "cockpit official build") < c.findIndex((x) => x.name === "webkit spec"));
+  assert.ok(c.filter((x) => x.name === "webkit spec").every((x) => x.cwd === "desktop/cockpit" && x.args.length === 5));
+  assert.ok(!names(selectChecks({ changed: ["README.md"], browserSpecs: specs })).includes("webkit spec"));
+});
+
+test("a changed browser spec always runs and ranks first; unrelated specs are left out", () => {
+  const c = selectChecks({ changed: [`${B}c-other.spec.mjs`], browserSpecs: specs });
+  assert.deepEqual(webkitArgs(c), ["browser/c-other\\.spec\\.mjs$"]);
+  assert.deepEqual(relatedWebkitSpecs(["desktop/cockpit/web/cockpit.css", `${B}c-hud.spec.mjs`], specs).map((r) => [r.spec.slice(B.length), r.score]), [["c-hud.spec.mjs", 3], ["c-forecast.spec.mjs", 1]]);
+});
+
+test("more than the cap: the best are run, the rest are named as CI will run (never silent)", () => {
+  const many = Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`${B}s${String(i).padStart(2, "0")}.spec.mjs`, "uses cockpit.css"]));
+  many[`${B}zz.spec.mjs`] = "import '../../../cockpit/web/cockpit.css';";
+  const c = selectChecks({ changed: ["desktop/cockpit/web/cockpit.css"], browserSpecs: many });
+  assert.equal(webkitArgs(c).length, WEBKIT_CAP);
+  assert.equal(webkitArgs(c)[0], "browser/zz\\.spec\\.mjs$"); // direct import ranks first
+  const note = c.find((x) => x.name === "webkit" && x.kind === "note");
+  assert.match(note.note, /^CI will run 5 more related spec\(s\)/);
+});
+
+test("without Playwright WebKit the specs are a recorded SKIP, not a silent pass", () => {
+  const c = selectChecks({ changed: ["desktop/cockpit/web/cockpit.css"], browserSpecs: specs, webkitAvailable: false });
+  const n = c.find((x) => x.name === "webkit");
+  assert.equal(n.skipped, true);
+  assert.match(n.note, /not installed/);
+  assert.ok(!names(c).includes("webkit spec") && !names(c).includes("cockpit official build"));
+  assert.equal(selectChecks({ changed: ["desktop/cockpit/web/zzz-none.css"], browserSpecs: specs, webkitAvailable: false }).find((x) => x.name === "webkit").skipped, undefined);
+});
+
+test("Swift, GUI map or merge-gate changes run the GUI map test and every script test that reads the map", () => {
+  const scriptTests = {
+    "scripts/tests/gui-test-map.test.mjs": "x",
+    "scripts/tests/merge-gates.test.mjs": "reads gui-test-map.json",
+    "scripts/tests/other.test.mjs": "nothing",
+  };
+  const want = ["--test", "scripts/tests/gui-test-map.test.mjs", "scripts/tests/merge-gates.test.mjs"];
+  for (const f of ["desktop/native/Sources/A/b.swift", "desktop/native/tools/ci/gui-test-map.json"]) {
+    assert.deepEqual(selectChecks({ changed: [f], scriptTests }).find((x) => x.name === "GUI map tests").args, want, f);
+  }
+  assert.ok(!names(selectChecks({ changed: ["desktop/native/README.md", "desktop/native/tools/ci/other.json"], scriptTests })).includes("GUI map tests"));
+  // scripts/merge-gates/** already selects merge-gates.test.mjs by name; it is not run twice.
+  const g = selectChecks({ changed: ["scripts/merge-gates/rules.mjs"], scriptTests: { ...scriptTests, "scripts/tests/merge-gates.test.mjs": "reads gui-test-map.json and rules.mjs" } });
+  assert.deepEqual(g.find((x) => x.name === "script tests for changed files").args, ["--test", "scripts/tests/merge-gates.test.mjs"]);
+  assert.deepEqual(g.find((x) => x.name === "GUI map tests").args, ["--test", "scripts/tests/gui-test-map.test.mjs"]);
 });
 
 function tmpRepo() {
