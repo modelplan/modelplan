@@ -184,7 +184,7 @@ func Cases() ([]Case, error) {
 		in.Report.Accounts[2].Windows[0].ResetsAt = ptr(Now.Add(-time.Minute))
 		in.Report.Accounts[2].Windows[0].RemainingPercent = nil
 		in.Report.Accounts[2].Windows[0].Pace = "reset_passed"
-		in.Perf.Ledger.Live[0].LastAt = Now.Add(-10 * time.Minute)
+		in.Perf.Ledger.Live[0].LastAt = Now.Add(-25 * time.Hour) // past the idle-session horizon
 	})
 	add("F03-recording-off", "recording off with empty local history", "data", 1, 0, func(in *snapshot.Input, d *digest.Digest) {
 		in.Recording = false

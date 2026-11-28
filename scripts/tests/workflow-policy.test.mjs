@@ -4,7 +4,7 @@ import test from "node:test";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { ALLOWED_ROUTES, GUI_LEND_GUARD, MAC_COMPILE_IF, MAC_COMPILE_PATH, MAC_COMPILE_ROUTE, MAC_COMPILE_TRIGGER_PATH, NONGUI_JOBS, RUNNER_SMOKE_IF, RUNNER_SMOKE_PATH, RUNNER_SMOKE_ROUTE, runnerSmokeProblems, TRUSTED_MAC_ROUTE, draftGuardProblems, guiGuardProblems, isWorkflowFile, macCompileProblems, macCompileTriggerProblems, macConcurrencyProblems, macPathGateProblems, nonPrFilterProblems, parseWorkflowYaml, prCancelProblems, runnerSmokeNameLeakProblems, workflowProblems } from "../workflow-policy.mjs";
+import { ALLOWED_ROUTES, GUI_LEND_GUARD, MAC_COMPILE_HOSTED_IF, MAC_COMPILE_IF, MAC_COMPILE_PATH, MAC_COMPILE_ROUTE, MAC_COMPILE_TRIGGER_PATH, NONGUI_JOBS, RUNNER_SMOKE_IF, RUNNER_SMOKE_PATH, RUNNER_SMOKE_ROUTE, runnerSmokeProblems, TRUSTED_MAC_ROUTE, draftGuardProblems, guiGuardProblems, isWorkflowFile, macCompileProblems, macCompileTriggerProblems, macConcurrencyProblems, macPathGateProblems, nonPrFilterProblems, parseWorkflowYaml, prCancelProblems, runnerSmokeNameLeakProblems, workflowProblems } from "../workflow-policy.mjs";
 import { spawnSync } from "node:child_process";
 
 // PyYAML is optional locally and on hosted images; repo-checks installs it and sets MODELPLAN_REQUIRE_YAML=1, where an
@@ -309,11 +309,11 @@ test("D94: non-GUI jobs refuse GUI runners unless gui-2 is lent; the V1 host is 
 test("desktop.yml pr=<N> dispatch builds refs/pull/<N>/merge in every job it owns (D112)", () => {
   const text = fs.readFileSync(new URL("../../.github/workflows/desktop.yml", import.meta.url), "utf8");
   assert.match(text, /^      pr:\n        description: .*\n        type: string\n        default: ""$/m, "workflow_dispatch input pr");
-  assert.match(text, /^run-name: "\$\{\{ inputs\.pr && format\('desktop PR #\{0\} merged with main', inputs\.pr\) \|\| '' \}\}"$/m,
-    "the coordinator finds a pr dispatch by its title; other runs keep GitHub's default title");
+  assert.match(text, /^run-name: "\$\{\{ inputs\.pr && inputs\.sha && format\('desktop PR GUI #\{0\} @ \{1\}', inputs\.pr, inputs\.sha\) \|\| inputs\.pr && format\('desktop PR #\{0\} merged with main', inputs\.pr\) \|\| '' \}\}"$/m,
+    "the coordinator finds a pr dispatch by its title (D481: a PR GUI run by 'desktop PR GUI #<n> @ <sha>'); other runs keep GitHub's default title");
   const job = (name) => new RegExp(`^  ${name}:\\n((?:(?:    .*)?\\n)+)`, "m").exec(text)?.[1] ?? "";
   const resolver = job("pr-ref");
-  assert.match(resolver, /if: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.pr != '' /);
+  assert.match(resolver, /if: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.pr != '' && inputs\.sha == '' /, "a PR GUI run (D481) resolves no merge");
   assert.match(resolver, /refs\/pull\/\$PR\/merge/);
   assert.match(resolver, /\.base\.ref <<<"\$j"\)" = main/, "a PR whose base is not main must be rejected");
   {
@@ -390,9 +390,9 @@ test("D169/D246 reverted: the owner Macs admit the merge queue for the GUI tasks
   assert.equal(TRUSTED_MAC_ROUTE.split(extra).length, 2, "exactly one merge_group/schedule clause");
   // merge_group: only the queue clause; native-headless is hosted in the queue.
   assert.equal(TRUSTED_MAC_ROUTE.split("merge_group").length, 2);
-  assert.equal(TRUSTED_MAC_ROUTE.split("'schedule'").length, 2);
-  // It sits inside the owner identity gate, next to the push/dispatch clause.
-  const owner = "(github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request'";
+  assert.equal(TRUSTED_MAC_ROUTE.split("'schedule'").length, 3, "the schedule-on-main bypass of the actor gate and the GUI-task clause");
+  // It sits behind the owner identity gate (or the schedule-on-main bypass), next to the push/dispatch clause.
+  const owner = "|| (github.repository == 'modelplan/modelplan' && github.event_name == 'schedule' && github.ref == 'refs/heads/main' && github.workflow_ref == 'modelplan/modelplan/.github/workflows/desktop.yml@refs/heads/main' && github.event.schedule == '23 9 * * *' && (inputs.task == 'native' || inputs.task == 'native-owner-gui'))) && (((github.event_name == 'pull_request'";
   const second = TRUSTED_MAC_ROUTE.lastIndexOf(owner);
   assert.ok(second > 0 && TRUSTED_MAC_ROUTE.indexOf(extra) > second);
 });
@@ -403,10 +403,12 @@ test("D169: desktop.yml starts GUI legs only on dispatch, in the merge queue and
   assert.match(text, /^  schedule:\n    - cron: "[0-9]+ [0-9]+ \* \* \*"\n/m, "a nightly schedule");
   assert.doesNotMatch(text, /gui-ci/, "no label starts a GUI leg on pull_request");
   const scope = job("gui-scope");
-  assert.match(scope, /if: \$\{\{ !cancelled\(\) && !inputs\.mac_ci_probe && \(\(github\.event_name == 'workflow_dispatch' && inputs\.gui\) \|\| \(github\.event_name == 'merge_group' && needs\.queue-scope\.outputs\.gui == 'true'\) \|\| github\.event_name == 'schedule'\) \}\}/);
+  assert.match(scope, /if: \$\{\{ !cancelled\(\) && !inputs\.mac_ci_probe && !inputs\.perf && \(\(github\.event_name == 'workflow_dispatch' && \(inputs\.gui \|\| inputs\.sha != ''\)\) \|\| \(github\.event_name == 'merge_group' && needs\.queue-scope\.outputs\.gui == 'true'\) \|\| github\.event_name == 'schedule'\) \}\}/);
   for (const name of ["native", "native-hosted", "native-owner-gui"]) {
     const body = job(name);
-    assert.match(body, /needs: gui-scope\n/, name);
+    assert.match(body, /needs: \[gui-scope, gui-defer\]\n/, name);
+    // D488: in the merge queue a GUI leg runs only when gui-defer said this run owns it (the tail, or any doubt).
+    assert.ok(body.includes(" && (github.event_name != 'merge_group' || (needs.gui-defer.result == 'success' && needs.gui-defer.outputs.own == 'true')) && "), name);
     assert.match(body, /if: \$\{\{ !cancelled\(\) && github\.event_name != 'pull_request' && .*needs\.gui-scope\.result == 'success' && needs\.gui-scope\.outputs\.run == 'true'/, name);
     assert.match(body, /\n      gui_classes: \$\{\{ needs\.gui-scope\.outputs\.classes \}\}\n/, name);
   }
@@ -477,6 +479,80 @@ test("D169: desktop.yml starts GUI legs only on dispatch, in the merge queue and
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+// D481 (owner 2026-11-27): a PR whose paths map to GUI classes needs an exact-head PR GUI run of those classes before
+// modelplan-gates passes. The run is a desktop dispatch of the PR's own head branch with pr=<n> and sha=<head>.
+test("D481: a pr+sha dispatch is the PR GUI leg: exact head on its own branch, mapped classes only, nothing else runs", () => {
+  const text = fs.readFileSync(new URL("../../.github/workflows/desktop.yml", import.meta.url), "utf8");
+  const job = (name) => new RegExp(`^  ${name}:\\n((?:(?:    .*)?\\n)+)`, "m").exec(text)?.[1] ?? "";
+  assert.match(text, /^      sha:\n        description: .*\n        type: string\n        default: ""$/m, "workflow_dispatch input sha");
+  // Only gui-scope and the GUI legs run: pr-ref resolves no merge, so every job that needs it skips; native-headless skips.
+  for (const name of ["app", "shell", "native-partition", "cockpit-pins", "cockpit-spi-tests", "app-smoke"])
+    assert.match(job(name), /\(!inputs\.pr \|\| needs\.pr-ref\.result == 'success'\)/, name);
+  assert.match(job("native-headless"), /if: \$\{\{ !cancelled\(\) && !inputs\.mac_ci_probe && !inputs\.perf && !inputs\.sha && /);
+  for (const name of ["native", "native-hosted", "native-owner-gui"])
+    assert.match(job(name), /\n      gui_classes: \$\{\{ needs\.gui-scope\.outputs\.classes \}\}\n/, name);
+  const scope = job("gui-scope");
+  assert.match(scope, /\n      pull-requests: read\n/);
+  assert.match(scope, /\n          PR: \$\{\{ inputs\.pr \}\}\n          PR_SHA: \$\{\{ inputs\.sha \}\}\n          GUI_MAP: desktop\/native\/tools\/ci\/gui-test-map\.json\n/);
+  const sh = /run: \|\n((?:          .*\n|\n)+)/.exec(scope)[1].replace(/^          /gm, "");
+  assert.doesNotMatch(sh, /\$\{\{/, "no expression is interpolated into the script");
+  const dir = fs.mkdtempSync("/tmp/d481-scope-");
+  const head = "a".repeat(40), other = "b".repeat(40);
+  // gh: the PR (or $PRJSON) and its file rows ($FILES, already in the --jq shape); git: fetch, cat-file and show of main's map.
+  fs.writeFileSync(`${dir}/gh`, '#!/bin/bash\ncase "$*" in\n *pulls/*/files*) printf "%s" "$FILES";;\n *pulls/*) printf "%s" "$PRJSON";;\n *) exit 1;;\nesac\n', { mode: 0o755 });
+  fs.writeFileSync(`${dir}/git`, '#!/bin/bash\ncase "$1" in fetch) [ -z "${NO_FETCH:-}" ];; cat-file) [ -n "${MAIN_MAP:-}" ];; show) cat "$MAIN_MAP";; *) exit 1;; esac\n', { mode: 0o755 });
+  const prJson = (over = {}) => JSON.stringify({ state: "open", draft: false, base: { ref: "main" }, head: { sha: head, ref: "claude/x", repo: { full_name: "o/r" } }, ...over });
+  const rows = (...names) => names.map((n) => JSON.stringify({ filename: n, previous_filename: null })).join("\n") + "\n";
+  const go = (env = {}) => {
+    const out = `${dir}/out`; fs.writeFileSync(out, "");
+    const r = spawnSync("bash", ["-c", sh], { cwd: new URL("../..", import.meta.url).pathname, env: { PATH: `${dir}:${process.env.PATH}`, RUNNER_TEMP: dir,
+      GITHUB_OUTPUT: out, GITHUB_STEP_SUMMARY: `${dir}/summary`, GITHUB_SHA: head, REPO: "o/r", GH_TOKEN: "x", GUI_FULL: "false",
+      EVENT: "workflow_dispatch", REF: "refs/heads/claude/x", PR: "9", PR_SHA: head, GUI_MAP: "desktop/native/tools/ci/gui-test-map.json",
+      PRJSON: prJson(), FILES: rows("desktop/native/ModelPlanDock/Native/DockInstrumentRenderer.swift"), ...env } });
+    return { status: r.status, out: fs.readFileSync(out, "utf8").trim().split("\n").join(" "), err: r.stderr.toString() + r.stdout.toString() };
+  };
+  try {
+    const ring = go();
+    assert.equal(ring.status, 0, `exit ${ring.status}: ${ring.err}`);
+    assert.match(ring.out, /^run=true classes=[A-Za-z0-9_,]*\bD65ZeroQuotaTests\b/, "#1208's ring renderer runs D65ZeroQuotaTests");
+    assert.doesNotMatch(ring.out, /full/, "never the full share");
+    // macrev2-1310-1: the selected set is recorded for the gate as a notice annotation, exactly as gui-map.mjs reads it.
+    const rec = /^::notice title=D481 PR GUI classes::(.+)$/m.exec(ring.err)?.[1] ?? "";
+    assert.match(rec, /^app-integration:[A-Za-z0-9_]+(,[a-z-]+:[A-Za-z0-9_]+)*$/);
+    assert.ok(rec.split(",").includes("app-integration:D65ZeroQuotaTests"));
+    assert.match(ring.err, /^::notice title=D481 PR GUI absent classes::none$/m, "every selected class is declared at this head");
+    assert.match(go({ FILES: rows("docs/mac-ci.md") }).err, /^::notice title=D481 PR GUI classes::none$/m, "no class: recorded as none");
+    assert.equal(go({ FILES: rows("docs/mac-ci.md", "cli/main.go") }).out, "run=false classes=none", "no mapped class: nothing runs");
+    // main's map is unioned in; classes of a whole-run package only (settings) still run the leg, narrowed to none.
+    fs.writeFileSync(`${dir}/main-map.json`, JSON.stringify({ schemaVersion: 1, packages: { "app-integration": "x", settings: "y" },
+      areas: [{ area: "cli", paths: ["cli/**"], classes: { settings: ["SettingsB5GridTests"] } }] }));
+    assert.equal(go({ FILES: rows("cli/main.go"), MAIN_MAP: `${dir}/main-map.json` }).out, "run=true classes=none");
+    fs.writeFileSync(`${dir}/bad-map.json`, "{}");
+    // Every mismatch fails the run (no output, nonzero): the gate then sees a failed PR GUI run, never a pass.
+    for (const [why, env] of [
+      ["the branch moved", { GITHUB_SHA: other }],
+      ["the PR moved", { PRJSON: prJson({ head: { sha: other, ref: "claude/x", repo: { full_name: "o/r" } } }) }],
+      ["another branch", { PRJSON: prJson({ head: { sha: head, ref: "claude/y", repo: { full_name: "o/r" } } }) }],
+      ["a fork", { PRJSON: prJson({ head: { sha: head, ref: "claude/x", repo: { full_name: "fork/r" } } }) }],
+      ["a draft", { PRJSON: prJson({ draft: true }) }],
+      ["closed", { PRJSON: prJson({ state: "closed" }) }],
+      ["not on main", { PRJSON: prJson({ base: { ref: "release" } }) }],
+      ["main dispatch", { REF: "refs/heads/main" }],
+      ["release dispatch", { REF: "refs/heads/release/v1" }],
+      ["tag dispatch", { REF: "refs/tags/v1" }],
+      ["short sha", { PR_SHA: "abc", GITHUB_SHA: "abc" }],
+      ["bad pr", { PR: "9;id" }],
+      ["main unreadable", { NO_FETCH: "1" }],
+      ["invalid main map", { MAIN_MAP: `${dir}/bad-map.json` }],
+      ["unreadable PR", { PRJSON: "" }],
+    ]) {
+      const r = go(env);
+      assert.notEqual(r.status, 0, why);
+      assert.equal(r.out, "", `${why}: no outputs`);
+    }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("the compile runner is confined to mac-compile.yml, started only through workflow_run/dispatch (main's definition)", () => {
   const text = fs.readFileSync(new URL("../../.github/workflows/mac-compile.yml", import.meta.url), "utf8");
   assert.deepEqual(workflowProblems(text, MAC_COMPILE_PATH), []);
@@ -503,7 +579,170 @@ test("the compile runner is confined to mac-compile.yml, started only through wo
     assert.ok(text.includes(from), from);
     assert.ok(workflowProblems(text.replace(from, to), MAC_COMPILE_PATH).length > 0, `accepted: ${from} -> ${to}`);
   }
-  assert.ok(macCompileProblems(text.replace("    if: ${{ needs.plan.outputs.run == 'true' && github.repository", "    if: ${{ true || github.repository")).length > 0);
+  assert.ok(macCompileProblems(text.replace("    if: ${{ needs.plan.outputs.run == 'true' && needs.plan.outputs.pool == 'owner' && github.repository", "    if: ${{ true || github.repository")).length > 0);
+});
+
+// D486 (owner 2026-11-28): the hosted overflow pool of mac-compile.yml.
+test("D486: compile-hosted runs the owner job's steps on macos-15 with no seed, gated like the owner job, one status job for both", () => {
+  const text = fs.readFileSync(new URL("../../.github/workflows/mac-compile.yml", import.meta.url), "utf8");
+  const job = (name) => new RegExp(`^  ${name}:\\n((?:(?:    .*)?\\n)+)`, "m").exec(text)?.[1] ?? "";
+  const owner = job("compile"), hosted = job("compile-hosted");
+  assert.ok(owner.includes("    " + MAC_COMPILE_IF + "\n") && hosted.includes("    " + MAC_COMPILE_HOSTED_IF + "\n"));
+  assert.equal(MAC_COMPILE_HOSTED_IF, MAC_COMPILE_IF.replace("pool == 'owner'", "pool == 'hosted'"), "same gate, other pool");
+  assert.match(owner, /\n    runs-on: \[self-hosted, macOS, ARM64, modelplan-compile\]\n(?:    #.*\n)*    timeout-minutes: 70\n/, "owner cap 70, above the 49.5-minute #1289 compile");
+  assert.match(hosted, /\n    runs-on: macos-15\n(?:    #.*\n)*    timeout-minutes: 75\n/, "hosted cold build cap 75");
+  // The steps are the owner job's, except that the hosted one reads no seed and writes none.
+  const steps = (j) => j.slice(j.indexOf("    steps:\n")).split("\n").filter((l) => !/^\s*#/.test(l));
+  const diff = (a, b) => a.filter((l, i) => l !== b[i]);
+  const o = steps(owner), h = steps(hosted);
+  assert.equal(o.length, h.length);
+  assert.deepEqual(diff(o, h).map((l) => l.trim()), ["SEED_WRITE: ${{ needs.plan.outputs.seed == 'true' && '1' || '0' }}", "export SEED_ROOT=$HOME/mac-compile-seed/${RUNNER_NAME:-runner}"]);
+  assert.deepEqual(diff(h, o).map((l) => l.trim()), ['SEED_WRITE: "0"', "export SEED_ROOT="]);
+  assert.doesNotMatch(hosted, /mac-compile-seed|secrets\.|write/);
+  // The pool input, validated in the plan job; a seed is owner-only; workflow_run is always owner.
+  assert.match(text, /\n      pool:\n        description: .*\n        type: choice\n        options: \[owner, hosted\]\n        default: owner\n/);
+  assert.match(text, /\n          POOL: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.pool \|\| 'owner' \}\}\n/);
+  // A hosted run has its own concurrency group, so it never cancels the owner run it overflows.
+  assert.match(text, /group: mac-compile-.*inputs\.pool == 'hosted' && format\('\{0\}-hosted', inputs\.pr\) \|\| inputs\.pr/);
+  // The run title does not depend on the pool (the gate and pr-review-sol.yml bind either run alike).
+  assert.doesNotMatch(/^run-name: .*$/m.exec(text)[0], /pool/);
+  const report = job("report");
+  assert.match(report, /^    needs: \[plan, compile, compile-hosted\]\n    if: \$\{\{ !cancelled\(\) && /);
+  assert.match(report, /RESULT: \$\{\{ needs\.plan\.outputs\.pool == 'hosted' && needs\.compile-hosted\.result \|\| needs\.compile\.result \}\}/);
+  // mutations the policy refuses
+  for (const [from, to] of [
+    ["    runs-on: macos-15\n", "    runs-on: [self-hosted, macOS, ARM64, modelplan-compile]\n"],     // hosted job onto the owner Macs
+    ["    runs-on: macos-15\n", "    runs-on: macos-latest\n"],
+    ["needs.plan.outputs.pool == 'hosted' && github.repository", "github.repository"],              // hosted job on every run
+    ["needs.plan.outputs.pool == 'owner' && github.repository", "github.repository"],               // owner job on hosted runs too
+    ["  compile-hosted:\n", "  compile-hosted2:\n"],
+  ]) {
+    assert.ok(text.includes(from), from);
+    assert.ok(workflowProblems(text.replace(from, to), MAC_COMPILE_PATH).length > 0, `accepted: ${from} -> ${to}`);
+  }
+});
+
+// The report step with a stub gh (D486, macrev2-1234-1). The stub serves the head's combined status from $STATUS
+// (shared by every report process, as GitHub's is), the mac-compile run list from $RUNS, applies the -q filter with jq,
+// and logs each post. A status read takes its snapshot at once and, when $HOLD is set, answers only once $HOLD exists:
+// that is the window in which the other pool posts.
+const REPORT_GH = `#!/bin/bash
+shift; url=$1; shift; q=.; st=; tu=
+while [ $# -gt 0 ]; do case $1 in -q) q=$2; shift 2;; -f) case $2 in state=*) st=\${2#state=};; target_url=*) tu=\${2#target_url=};; esac; shift 2;; *) shift;; esac; done
+case $url in
+  */commits/*/status) [ -z "\${READ_FAIL:-}" ] || exit 1; snap=$(cat "$STATUS" 2>/dev/null || echo '{"statuses":[]}'); : > "$STATUS.read.$POOL"
+    if [ -n "\${HOLD:-}" ]; then while [ ! -e "$HOLD" ]; do sleep 0.02; done; fi; jq -r "$q" <<<"$snap";;
+  */actions/workflows/*/runs*) [ -z "\${RUNS_FAIL:-}" ] || exit 1; jq -r "$q" "$RUNS";;
+  */statuses/*) printf '{"statuses":[{"context":"mac-compile","state":"%s","target_url":"%s"}]}' "$st" "$tu" > "$STATUS"; echo "$POOL $st" >> "$STATUS.log";;
+  *) exit 1;;
+esac
+`;
+function reportHarness() {
+  const text = fs.readFileSync(new URL("../../.github/workflows/mac-compile.yml", import.meta.url), "utf8");
+  const sh = /^  report:\n(?:    .*\n)*?        run: \|\n((?:          .*\n|\n)+)/m.exec(text)[1].replace(/^          /gm, "");
+  assert.doesNotMatch(sh, /\$\{\{/, "no expression is interpolated into the script");
+  const dir = fs.mkdtempSync("/tmp/d486-report-");
+  fs.writeFileSync(`${dir}/gh`, REPORT_GH, { mode: 0o755 });
+  const sha = "d".repeat(40);
+  // run ids: owner 101, hosted 202, both for PR #9 at sha
+  const runs = (owner, hosted) => fs.writeFileSync(`${dir}/runs.json`, JSON.stringify({ workflow_runs: [
+    { id: 101, display_title: `mac-compile ${sha}`, ...owner }, { id: 202, display_title: `mac-compile PR #9 @ ${sha}`, ...hosted },
+    { id: 303, display_title: `mac-compile ${"e".repeat(40)}`, status: "in_progress", conclusion: null }] }));
+  const env = (pool, result, extra = {}) => ({ PATH: `${dir}:${process.env.PATH}`, REPO: "o/r", SHA: sha, PR: "9", RUN_ID: pool === "owner" ? "101" : "202",
+    URL: `run-${pool}`, POOL: pool, RESULT: result, STATUS: `${dir}/status.json`, RUNS: `${dir}/runs.json`, ...extra });
+  const reset = () => { for (const f of fs.readdirSync(dir)) if (f.startsWith("status")) fs.rmSync(`${dir}/${f}`); };
+  const final = () => fs.existsSync(`${dir}/status.json`) ? JSON.parse(fs.readFileSync(`${dir}/status.json`, "utf8")).statuses[0] : null;
+  const posts = () => fs.existsSync(`${dir}/status.json.log`) ? fs.readFileSync(`${dir}/status.json.log`, "utf8").trim().split("\n") : [];
+  return { sh, dir, runs, env, reset, final, posts };
+}
+
+test("D486: report posts every success; a failure only with no success and no other unfinished or passed run for the head", () => {
+  const h = reportHarness();
+  const go = (pool, result, { cur, owner = { status: "completed", conclusion: "failure" }, hosted = { status: "completed", conclusion: "failure" }, ...extra } = {}) => {
+    h.reset(); h.runs(owner, hosted);
+    if (cur) fs.writeFileSync(`${h.dir}/status.json`, JSON.stringify({ statuses: [{ context: "mac-compile", state: cur, target_url: "earlier" }] }));
+    const r = spawnSync("bash", ["-c", h.sh], { env: h.env(pool, result, extra) });
+    assert.equal(r.status, 0, r.stderr.toString());
+    return h.posts()[0]?.split(" ")[1] ?? "none";
+  };
+  try {
+    assert.equal(go("hosted", "success"), "success");
+    assert.equal(go("hosted", "failure"), "failure", "the other run finished with a failure: post");
+    assert.equal(go("owner", "cancelled"), "failure", "a job past its time cap (70/75 minutes) is a failure");
+    assert.equal(go("hosted", "skipped"), "success");
+    assert.equal(go("hosted", "success", { cur: "success" }), "success", "success always posts");
+    assert.equal(go("hosted", "success", { cur: "failure" }), "success", "a success replaces the other pool's failure");
+    assert.equal(go("hosted", "failure", { cur: "success" }), "none", "the other pool's success stays");
+    assert.equal(go("hosted", "failure", { cur: "failure" }), "failure");
+    assert.equal(go("hosted", "failure", { owner: { status: "queued", conclusion: null } }), "none", "the owner run still decides");
+    assert.equal(go("hosted", "failure", { owner: { status: "in_progress", conclusion: null } }), "none");
+    assert.equal(go("owner", "failure", { hosted: { status: "completed", conclusion: "success" } }), "none", "the other run passed");
+    assert.equal(go("owner", "failure", { hosted: { status: "completed", conclusion: "cancelled" } }), "failure");
+    assert.equal(go("owner", "failure", { owner: { status: "in_progress", conclusion: null } }), "failure", "its own run (still running) does not count");
+    assert.equal(go("hosted", "failure", { READ_FAIL: "1" }), "failure", "a failed status read posts the failure");
+    assert.equal(go("hosted", "failure", { RUNS_FAIL: "1" }), "failure", "a failed run list posts the failure");
+  } finally { fs.rmSync(h.dir, { recursive: true, force: true }); }
+});
+
+// macrev2-1234-1 acceptance: both report steps read the empty status before either writes, in both write orders; once the
+// success has posted, the status stays success and points to the successful run.
+test("D486: concurrent reports of the two pools never leave a failure over the other pool's success", async () => {
+  const h = reportHarness();
+  const { spawn } = await import("node:child_process");
+  const run = (pool, result, extra = {}) => new Promise((ok) => {
+    const c = spawn("bash", ["-c", h.sh], { env: h.env(pool, result, extra) });
+    let err = ""; c.stderr.on("data", (d) => (err += d)); c.on("close", (code) => ok({ code, err }));
+  });
+  const until = async (f) => { for (let i = 0; i < 500 && !fs.existsSync(f); i++) await new Promise((ok) => setTimeout(ok, 10)); assert.ok(fs.existsSync(f), f); };
+  const unfinished = { status: "in_progress", conclusion: null };
+  try {
+    for (const [ok, bad] of [["hosted", "owner"], ["owner", "hosted"]]) {
+      // order 1: the failing pool reads the empty status, the passing pool posts, then the failing pool goes on
+      h.reset(); h.runs(unfinished, unfinished);
+      const hold = `${h.dir}/status.hold`;
+      const failing = run(bad, "failure", { HOLD: hold });
+      await until(`${h.dir}/status.json.read.${bad}`);
+      const passing = await run(ok, "success");
+      assert.equal(passing.code, 0, passing.err);
+      fs.writeFileSync(hold, "");
+      assert.equal((await failing).code, 0);
+      assert.deepEqual(h.final(), { context: "mac-compile", state: "success", target_url: `run-${ok}` }, `order 1, ${ok} passes: ${h.posts()}`);
+      // order 2: the failing pool runs its whole report first, then the passing pool posts
+      h.reset(); h.runs(unfinished, unfinished);
+      assert.equal((await run(bad, "failure")).code, 0);
+      assert.equal((await run(ok, "success")).code, 0);
+      assert.deepEqual(h.final(), { context: "mac-compile", state: "success", target_url: `run-${ok}` }, `order 2, ${ok} passes: ${h.posts()}`);
+      assert.deepEqual(h.posts(), [`${ok} success`], "the failure posted nothing");
+    }
+    // both pools fail: the later report sees the earlier run finished and posts the failure
+    h.reset(); h.runs({ status: "completed", conclusion: "failure" }, unfinished);
+    assert.equal((await run("hosted", "failure")).code, 0);
+    assert.equal(h.final().state, "failure");
+  } finally { fs.rmSync(h.dir, { recursive: true, force: true }); }
+});
+
+// The plan step's pool handling, run with stub gh/jq inputs.
+test("D486: the plan job accepts pool owner or hosted only, and builds a seed on the owner pool only", () => {
+  const text = fs.readFileSync(new URL("../../.github/workflows/mac-compile.yml", import.meta.url), "utf8");
+  const sh = /      - id: pr\n(?:        .*\n)*?        run: \|\n((?:          .*\n|\n)+?)      # main's plan script/.exec(text)[1].replace(/^          /gm, "");
+  const dir = fs.mkdtempSync("/tmp/d486-plan-");
+  const sha = "c".repeat(40);
+  fs.writeFileSync(`${dir}/gh`, `#!/bin/bash\ncase "$*" in *commits/main*) echo ${sha};; *pulls/*) printf '%s' '{"state":"open","base":{"ref":"main"},"head":{"sha":"${sha}","repo":{"full_name":"o/r"}},"user":{"id":11829005},"draft":false}';; esac\n`, { mode: 0o755 });
+  const go = (env) => {
+    const out = `${dir}/out`; fs.writeFileSync(out, "");
+    const r = spawnSync("bash", ["-c", sh], { env: { PATH: `${dir}:${process.env.PATH}`, GITHUB_OUTPUT: out, REPO: "o/r", EVENT: "workflow_dispatch", PR: "9", SEED: "false", SHA_INPUT: "", POOL: "owner", ...env } });
+    return { status: r.status, out: fs.readFileSync(out, "utf8") };
+  };
+  try {
+    assert.match(go({}).out, /^pool=owner$/m);
+    assert.match(go({ POOL: "hosted" }).out, /^pool=hosted$/m);
+    assert.match(go({ POOL: "" }).out, /^pool=owner$/m, "workflow_run passes owner; empty is owner");
+    assert.notEqual(go({ POOL: "elsewhere" }).status, 0);
+    assert.match(go({ SEED: "true", PR: "" }).out, /^seed=true$/m);
+    const hostedSeed = go({ SEED: "true", PR: "", POOL: "hosted" });
+    assert.notEqual(hostedSeed.status, 0, "no hosted seed");
+    assert.doesNotMatch(hostedSeed.out, /seed=true/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
 test("the smoke label is confined to runner-smoke.yml: dispatch-only, owner on main, read-only, 40 minutes", () => {
@@ -838,4 +1077,62 @@ test("the merge-queue native-headless leg is hosted and a hosted merge-queue run
   assert.match(guard, /Xcode 26\\\.6\$/);
   assert.match(guard, /17F113/);
   assert.doesNotMatch(TRUSTED_MAC_ROUTE, /native-headless'\) && github\.event_name == 'merge_group'/);
+});
+
+test("the nightly schedule reaches the GUI Mac without the actor gate only from desktop.yml on main with the nightly cron, for the GUI tasks (D169, D193)", () => {
+  // A scheduled run's actor is whoever last changed the cron (the merge-queue bot), so the owner-actor gate would
+  // send the nightly to hosted macOS. github.workflow_ref is the caller's identity, github.event.schedule the cron.
+  const bypass = "(github.repository == 'modelplan/modelplan' && github.event_name == 'schedule' && github.ref == 'refs/heads/main' && github.workflow_ref == 'modelplan/modelplan/.github/workflows/desktop.yml@refs/heads/main' && github.event.schedule == '23 9 * * *' && (inputs.task == 'native' || inputs.task == 'native-owner-gui'))";
+  const ownerGate = "(github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear')";
+  const gui = TRUSTED_MAC_ROUTE.split("|| (inputs.os == 'ubuntu-latest'")[0].split("&& (inputs.task != 'native-headless'")[1];
+  assert.ok(gui.includes(`(${ownerGate} || ${bypass}) && (((github.event_name == 'pull_request'`), "owner gate OR the narrow nightly bypass, then the event list");
+  assert.equal(TRUSTED_MAC_ROUTE.split(bypass).length - 1, 1, "one bypass only");
+  assert.ok(gui.includes("((inputs.task == 'native' || inputs.task == 'native-owner-gui') && github.event_name == 'schedule' && github.ref == 'refs/heads/main')"));
+  assert.equal(gui.split("github.event_name == 'schedule'").length - 1, 2, "schedule appears in the bypass and the GUI-task clause only");
+  // The cron the route names is exactly the one desktop.yml declares, and desktop.yml declares only that one.
+  const desktop = fs.readFileSync(new URL("../../.github/workflows/desktop.yml", import.meta.url), "utf8");
+  assert.deepEqual([...desktop.matchAll(/^\s+- cron: "([^"]+)"/gm)].map((m) => m[1]), ["23 9 * * *"]);
+  assert.equal(workflows().filter(([, t]) => /^\s+- cron:/m.test(t) && /trusted-mac\.yml@/.test(t)).length, 1, "desktop.yml is the only scheduled caller of trusted-mac.yml");
+  // Evaluate the bypass for synthetic events: only the nightly passes.
+  const base = { repo: "modelplan/modelplan", event: "schedule", ref: "refs/heads/main", wf: "modelplan/modelplan/.github/workflows/desktop.yml@refs/heads/main", cron: "23 9 * * *", task: "native" };
+  const pass = (e) => e.repo === "modelplan/modelplan" && e.event === "schedule" && e.ref === "refs/heads/main" && e.wf === "modelplan/modelplan/.github/workflows/desktop.yml@refs/heads/main" && e.cron === "23 9 * * *" && (e.task === "native" || e.task === "native-owner-gui");
+  assert.ok(pass(base) && pass({ ...base, task: "native-owner-gui" }));
+  for (const bad of [{ cron: "0 3 * * *" }, { wf: "modelplan/modelplan/.github/workflows/other.yml@refs/heads/main" }, { wf: "modelplan/modelplan/.github/workflows/desktop.yml@refs/heads/x" }, { event: "workflow_dispatch" }, { event: "push" }, { event: "pull_request" }, { repo: "fork/modelplan" }, { ref: "refs/heads/x" }, { task: "native-headless" }, { task: "probe" }, { task: "u11-native" }]) assert.ok(!pass({ ...base, ...bad }), JSON.stringify(bad));
+  for (const part of ["github.event_name == 'schedule'", "github.workflow_ref == 'modelplan/modelplan/.github/workflows/desktop.yml@refs/heads/main'", "github.event.schedule == '23 9 * * *'", "github.ref == 'refs/heads/main'", "github.repository == 'modelplan/modelplan'", "inputs.task == 'native-owner-gui'"]) assert.ok(bypass.includes(part), part);
+});
+
+// D488 (owner 2026-11-28): merge-queue GUI legs only for the group tail. gui-defer runs only in merge_group runs whose
+// GUI share is needed, before the GUI jobs; its covered step is the one rules.mjs guiLegState reads; the pinned
+// trusted-mac.yml is untouched.
+test("D488: desktop.yml gui-defer gates the queue's GUI legs and declares the covered step", async () => {
+  const text = fs.readFileSync(new URL("../../.github/workflows/desktop.yml", import.meta.url), "utf8");
+  const job = (name) => new RegExp(`^  ${name}:\\n((?:(?:    .*)?\\n)+)`, "m").exec(text)?.[1] ?? "";
+  const R = await import("../merge-gates/rules.mjs");
+  const defer = job(R.GUI_DEFER_JOB);
+  assert.ok(defer, "gui-defer job");
+  assert.match(defer, /^    needs: gui-scope\n    if: \$\{\{ !cancelled\(\) && github\.event_name == 'merge_group' && needs\.gui-scope\.result == 'success' && needs\.gui-scope\.outputs\.run == 'true' \}\}\n    runs-on: ubuntu-latest\n/m);
+  // Under the merge queue's 90 min check timeout and the gate's 85 min group wait; the script's own deadline is 70 min.
+  const timeout = Number(/\n    timeout-minutes: (\d+)\n/.exec(defer)?.[1]);
+  assert.ok(timeout > 70 && timeout < 85, String(timeout));
+  assert.match(defer, /\n    outputs:\n      own: \$\{\{ steps\.defer\.outputs\.own \}\}\n/);
+  assert.match(defer, /\n      - id: defer\n        env:\n          GITHUB_TOKEN: \$\{\{ github\.token \}\}\n        run: node scripts\/merge-gates\/gui-defer\.mjs\n/);
+  const step = new RegExp(`\\n      - name: ${R.GUI_COVERED_STEP}\\n        if: \\$\\{\\{ steps\\.defer\\.outputs\\.own == 'false' \\}\\}\\n        run: (.*)\\n`).exec(defer);
+  assert.ok(step, "the covered step rules.mjs guiLegState relies on, gated on own == 'false'");
+  assert.ok(!/: /.test(step[1]) && !/ #/.test(step[1]), "plain YAML scalar");
+  assert.doesNotMatch(defer, /secrets\./, "only the run's own token");
+  assert.ok(text.indexOf("\n  gui-defer:") > text.indexOf("\n  gui-scope:") && text.indexOf("\n  gui-defer:") < text.indexOf("\n  native:"));
+  // The pinned reusable workflow is still the only GUI route and keeps its pin.
+  const pins = new Set([...text.matchAll(/uses: modelplan\/modelplan\/\.github\/workflows\/trusted-mac\.yml@([0-9a-f]{40})/g)].map((m) => m[1]));
+  assert.deepEqual([...pins], ["f8b0dbc4795720ef51dcb86638c6156305ebbaa9"]);
+  // Evaluate the GUI jobs' `if` for the queue's cases with a tiny evaluator over the expression's own terms.
+  const cond = /\n    if: \$\{\{ (.*) \}\}\n/.exec(job("native"))[1];
+  const queueTerm = "(github.event_name != 'merge_group' || (needs.gui-defer.result == 'success' && needs.gui-defer.outputs.own == 'true'))";
+  assert.ok(cond.includes(queueTerm));
+  const evalTerm = (event, result, own) => event !== "merge_group" || (result === "success" && own === "true");
+  assert.equal(evalTerm("merge_group", "success", "true"), true, "tail or doubt: own GUI leg");
+  assert.equal(evalTerm("merge_group", "success", "false"), false, "covered: no GUI leg");
+  assert.equal(evalTerm("merge_group", "failure", ""), false, "defer failed: no GUI leg (the gate fails the group)");
+  assert.equal(evalTerm("merge_group", "skipped", ""), false);
+  assert.equal(evalTerm("workflow_dispatch", "skipped", ""), true, "dispatch, PR GUI leg (D481) and nightly unchanged");
+  assert.equal(evalTerm("schedule", "skipped", ""), true);
 });

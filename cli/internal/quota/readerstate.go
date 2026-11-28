@@ -746,8 +746,8 @@ func readerGatesNext(cache, provider string, next time.Time, attempt bool) (time
 		if status != "" || json.Unmarshal(b, &gate) != nil || gate.SchemaVersion != 1 {
 			return time.Time{}, false
 		}
-		if gate.NextAttemptAt.After(next) {
-			next = gate.NextAttemptAt
+		if at := antigravityClamp(cache, provider, gate.NextAttemptAt); at.After(next) {
+			next = at
 		}
 	}
 	return next, true

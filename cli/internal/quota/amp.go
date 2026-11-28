@@ -73,12 +73,16 @@ func runAmpUsage(ctx context.Context, bin string) ([]byte, error) {
 	if !ok || artifact == nil || ampExecPath() == "" {
 		return nil, errors.New("verified Amp execution unavailable")
 	}
-	cmd := exec.CommandContext(ctx, ampExecPath(), "usage", "--no-color")
-	cmd.Args[0] = bin
+	if toolcli.InsideOtherApp(bin) {
+		return nil, toolcli.ErrInsideAppBundle
+	}
+	var cmd *exec.Cmd
 	var err error
 	// Read the verified descriptor, never a replacement at the installed path.
 	if toolcli.EnvNode(io.NewSectionReader(artifact, 0, 4096)) {
 		cmd, err = toolcli.NodeCommandContext(ctx, ampExecPath(), bin, "usage", "--no-color")
+	} else if cmd, err = toolcli.Command(ctx, ampExecPath(), "usage", "--no-color"); err == nil {
+		cmd.Args[0] = bin
 	}
 	if err != nil {
 		return nil, err
@@ -86,11 +90,10 @@ func runAmpUsage(ctx context.Context, bin string) ([]byte, error) {
 	cmd.ExtraFiles = []*os.File{artifact}
 	cmd.Stdin = nil
 	cmd.Stderr = io.Discard
-	cmd.WaitDelay = time.Second
 	cmd.Env = append(os.Environ(), "AMP_SKIP_UPDATE_CHECK=1", "NO_COLOR=1", "TERM=dumb", "LANG=C", "LC_ALL=C")
 	var out bytes.Buffer
 	cmd.Stdout = &limited{w: &out, n: 64 << 10}
-	err = cmd.Run()
+	err = toolcli.Run(cmd)
 	if err != nil {
 		return out.Bytes(), err
 	}

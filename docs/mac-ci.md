@@ -160,6 +160,19 @@ per section, printed against the budgets in the step summary, uploaded as the `w
 and fails only when fewer than 10 samples (60 idle seconds) were taken. A run on the GUI Mac needs a new `trusted-mac.yml`
 task (its GUI leg compiles without the test SPI) and so a new pin and runner-group entry, as above.
 
+## Nightly GUI run (D169, D193)
+
+The scheduled GUI run on `main` goes to the GUI Macs (`modelplan-mac-gui`) like the merge queue, not to hosted
+`macos-latest`: on a hosted Mac the full suite hit the 70 minute job limit three nights running, while it takes 13 to
+33 minutes on ours. A scheduled run's actor is whoever last changed the cron (the merge-queue bot), so the owner-actor
+gate of the route cannot hold for it. The route therefore admits, as an alternative to the owner gate, only a
+`schedule` event on `refs/heads/main` whose `github.workflow_ref` is
+`modelplan/modelplan/.github/workflows/desktop.yml@refs/heads/main`, whose `github.event.schedule` is the nightly
+cron `23 9 * * *`, for the `native` and `native-owner-gui` tasks. The GUI VMs' local admission check (workflow-source
+and account checks before a job starts, not in this repository) must carry the same exception, validated from the
+workflow ref and schedule field rather than the actor, before the runner group allows the pinned reference. There is no hosted fallback: if no GUI Mac is
+online, the nightly waits in the queue.
+
 ## Merge queue
 
 A PR does not have to merge `main` before it lands. The queue builds "PR + latest
@@ -174,6 +187,45 @@ pinned `trusted-mac.yml` routes only the GUI tasks of a `merge_group` run to the
 group, and `native-headless` hosted like every other event (D198; D246 reverted). The full GUI leg runs in the
 queue whenever the group changes a desktop path, even when its tree equals the PR head (D169,
 below); the five Linux workflows have their own `queue-scope` job and no Mac job.
+
+### GUI leg for the group tail only (D488)
+
+The queue builds up to four groups at once (HEADGREEN), and each group commit contains every
+group before it. Every group used to start its own GUI leg on the one GUI Mac, so the tail,
+whose result is the one that merges the batch, waited about 20 minutes behind each earlier
+entry. On 2026-11-28 one batch at 09:32Z took five GUI runs when one was needed.
+
+In a `merge_group` run that needs the GUI share, `desktop.yml`'s `gui-defer` job
+(`scripts/merge-gates/gui-defer.mjs`, hosted ubuntu) runs before the GUI jobs and reads the
+merge queue (GraphQL `mergeQueue` entries: position, state, head commit, PR):
+
+- `merge-gates.yml` judges every group with `main`'s evaluator. Before `main`'s
+  `scripts/merge-gates/rules.mjs` carries the line `export const GUI_COVER_MARKER = "D488-v1";`
+  (for example during this change's own rollout, or after a revert), or when that file cannot
+  be read, the job outputs `own=true` at once and the GUI leg runs as before. It checks the
+  marker again before it uses a cover.
+- If this entry is the tail of the building window (no later entry is awaiting checks,
+  mergeable or locked), it outputs `own=true` after a 90-second settle, and the GUI leg runs
+  in this run as before. Any doubt has the same result: a branch that is not a queue branch,
+  or the queue unreadable three polls in a row.
+- Otherwise it polls every 60 seconds. If a later `merge_group` desktop run whose commit
+  contains this group commit (compare API: ahead, nothing behind) has a green GUI leg, it
+  outputs `own=false`, records `run=<id> sha=<head>` as a `D488 GUI covered by` notice and runs
+  its `GUI covered by a later group` step. If the later entries leave the queue and this
+  entry becomes the tail, it outputs `own=true` and runs its own GUI leg.
+- If there is no cover after 70 minutes and the entry is still not the tail, or the entry
+  leaves the queue without a cover, the job fails. The GUI jobs are then skipped, and the
+  group fails.
+
+`modelplan-gates` (`rules.mjs` `guiLegState` / `guiCoverState`) does not trust the claim. It
+accepts skipped GUI jobs only after it re-reads the recorded run and checks four things: it is
+a `desktop.yml` `merge_group` run of this repository on a queue branch, it is not this group's
+run, its commit contains this group commit (`git merge-base --is-ancestor` in `evaluate.mjs`),
+and its `gui-scope` and GUI leg both succeeded. A "GUI share not needed" declaration never
+covers another group. Invariant: no merge_group entry passes the GUI leg unless a passing GUI
+run exists whose tree contains its head, either its own run or a verified later group head.
+`trusted-mac.yml` and its pin are unchanged. The PR-stage GUI leg (D481) and the nightly and
+dispatch rules (D169) are not affected.
 
 ## Affected GUI tests on PRs, full suite in the queue and nightly (D169)
 
@@ -205,8 +257,9 @@ test files the PR touches (at most 8, otherwise build-tests only). The full suit
 headless legs, not of the compile check.
 
 A selection is a speed-up for the PR round, not the merge gate. The merge queue runs the full GUI
-leg on the group commit, and `desktop` must pass there before anything reaches `main`; the
-coordinator's gate still requires a successful GUI leg at the PR head. A `schedule` run at 09:23
+leg on the group commit, and `desktop` must pass there before anything reaches `main`. Before a PR
+may enter the queue, `modelplan-gates` requires a green PR GUI run of the mapped classes at its exact
+head when its paths map to any (D481, below). A `schedule` run at 09:23
 UTC runs the full GUI leg on `main` (and nothing else); it is skipped when a nightly at the same `main`
 commit already passed or is still queued or running. `trusted-mac.yml` admits `merge_group` (queue branches of `main`) and
 `schedule` (`main`) runs to the owner's Macs for the GUI tasks only, under the same owner gate.
@@ -225,6 +278,101 @@ each Mac job on a scope output (`desktop.yml` `pr-scope`, `ci.yml` and `repo-che
 job a PR does not trigger needs no stub: `merge-gates` counts only runs that exist (plus the `ci` anchor) and a skipped
 job is green. `trusted-mac.yml` stays untouched; the filters live in its callers. Concurrency cancels only
 `pull_request` runs of the same PR (`workflow-policy.test.mjs` enforces both rules).
+
+## PR GUI leg before the merge queue (D481)
+
+Owner decision D481 item 2 (2026-11-27). #1208 changed the ring geometry, passed every PR check, and broke
+`D65ZeroQuotaTests` on `main` through the queue's full GUI leg, which then failed every later group. A PR that touches
+code a GUI test class exercises must now pass those classes at its exact head before `modelplan-gates` lets it into the
+queue. The queue's full GUI leg and the nightly stay as they are.
+
+- **Map.** `desktop/native/tools/ci/gui-test-map.json` lists areas: path globs (`**`, `*`, `?`, `{a,b}`) and the GUI test
+  classes that exercise them, per package (`app-integration`, `settings`). It was seeded from the code (for each source
+  file, the GUI classes whose tests name its declarations, unioned per area; the settings area is curated) and covers
+  the ring and Dock presentation, the third-party Dock resources, cards, placement and drag, the widget window, the menu-bar
+  status item and Settings. Each entry-point file (the status-item application `EngineDockMenuApplication.swift`, the
+  normal entry, the rows console, the menu bar, the application factories, the static Dock preview host and the Settings
+  hosts) has its own `entry-*` area with every class whose tests name its declarations. Every source file a non-curated
+  area names must cover at least what `gui_test_selection.py` finds for it; the Settings area is marked `"curated": true`.
+  Conditionally compiled classes are never mapped (R11): a mapped class must be declared outside every `#if` block
+  (any condition, nesting and `#elseif`/`#else` included), the map test fails otherwise, and the seeding rule skips them.
+  Journeys behind a compile flag (for example `DockStripRealServerTests` under `MODELPLAN_DOCK_REAL_STRIP_JOURNEY`) stay
+  covered where their flag is enabled (their own dispatch or the queue leg); the PR-stage gate does not claim them. `scripts/tests/gui-test-map.test.mjs` (repo checks) keeps it valid: every class is declared
+  in its package, `app-integration` classes are on the GUI share (not headless), and every glob, and every brace
+  alternative, matches a tracked file. Add an area, or classes, when a GUI test starts covering new code. A map change
+  is reviewed like the gate itself (`scripts/merge-gates/gui-map.mjs` is the shared selector).
+- **Run.** The coordinator dispatches `desktop.yml` on the PR's own head branch with `pr=<n>` and `sha=<head>`, after
+  `mac-compile` passed at that head, never for a draft:
+
+  ```
+  gh workflow run desktop.yml -R modelplan/modelplan --ref <headRefName> -f pr=<n> -f sha=<headRefOid>
+  ```
+
+  The run is titled `desktop PR GUI #<n> @ <sha>`. `gui-scope` fails unless the branch is exactly at `sha`, the PR is
+  open, ready, from this repository, targets `main` and has that head and branch. It reads the PR's files from the API
+  (renames count with their old path; a list of 3000 files or more selects every mapped class), selects the classes
+  with the head's map and `main`'s map unioned, and passes the `app-integration` ones to the pinned `trusted-mac.yml`
+  as `gui_classes` (`none` when only `settings` classes are mapped: that package runs whole in every GUI leg). No mapped
+  class: `run=false` and nothing runs. A selected class that the head's test sources do not declare (the map on `main`
+  is newer than the branch) is dropped from the run and recorded as absent. `gui-scope` writes two notice annotations
+  (`gui-map.mjs`; GitHub truncates a message at 4096 characters, so each stays within 3500):
+  `D481 PR GUI classes` holds the classes it ran, as `none`, a sorted `<package>:<Class>,...` list, `all@<sha256>` when
+  that is every class of its maps, or `sha256:<hex>:<count>` for any other list longer than 3500 characters (the hash is
+  sha256, in hex, of the sorted names joined by `,`). `D481 PR GUI absent classes` holds the absent ones (`none`, a
+  list, or `many:<count>`). Only `gui-scope` and the GUI legs (`native`, or `native-hosted` +
+  `native-owner-gui` under `MAC_CI_GUI_POOL=hosted`) run; `pr-ref` resolves no merge, so the Linux jobs, `app-smoke` and
+  `native-headless` skip. `trusted-mac.yml` is unchanged: a branch dispatch by the owner account is already admitted to
+  the GUI Macs and is the only run that narrows the share. A PR branch whose `desktop.yml` predates this has no `sha`
+  input (the dispatch is rejected): merge `main` into it first.
+- **Gate.** `scripts/merge-gates/rules.mjs` `prGuiState`: for a ready PR whose changed paths map to at least one class
+  under `main`'s map (plus the head's map when the PR changes it), the newest `desktop` dispatch run titled
+  `desktop PR GUI #<n> @ <head>`, at that head on the PR's branch in this repository and dispatched by the owner account,
+  must have succeeded with `gui-scope` green, a GUI leg that ran green, and records that cover every class required now.
+  The gate selects with the same union as the run (`main`'s map plus the head's). A required class recorded as absent is
+  PENDING `merge main first: class <X> does not exist at this head`. A plain list must contain every required class; an
+  `all@` hash must equal the hash of the gate's full set; a `sha256:` hash and count must equal those of the required set
+  itself. A smaller, missing or different record (for example the map changed on `main` after the run) is PENDING
+  `re-run needed: …`: dispatch again at the same head. The newest bound run decides whatever its state, and
+  `merge-gates.yml` re-evaluates when a PR GUI run is requested as well as when it completes, so a newer queued run turns
+  an earlier green status pending at once. Until one exists the status is
+  `waiting for PR GUI run (classes: …)` (after `mac-compile`); a failed or cancelled newest run, or a green one that ran
+  no GUI leg (its selection disagreed with the gate's), fails it. A PR GUI run never counts as the PR's own `desktop` run
+  in the CI check, and a `desktop` dispatch run with that title re-evaluates the PR it names (`merge-gates.yml`). PRs
+  with no mapped class are unaffected.
+
+## Mac compile: owner pool first, hosted overflow (D486)
+
+`mac-compile.yml` compiles a native PR head (swift build plus the touched packages' test classes) and posts the
+commit status `mac-compile` that the merge gate and `pr-review-sol.yml` read. Its header explains the trust
+boundary; in short, only main's definition runs, the plan job re-reads the PR, only the Mac job runs PR code (read-only
+token, no secrets, no persisted credentials), and a separate hosted job posts the status.
+
+- **Owner pool (default).** The `compile` job runs on the owner's compile Macs (label `modelplan-compile`, runner group
+  admitting only `mac-compile.yml@refs/heads/main`), with the per-runner read-only build seed. Every `workflow_run`
+  (from `mac-compile trigger`) and every dispatch without `pool` uses it. Job cap 70 minutes: above the longest real
+  successful owner compile (#1289, 49 min 31 s on 11-28), so a valid build is never cut off, while a hang (#1220 held
+  the single queue for an hour) still ends.
+- **Hosted pool (`pool=hosted`).** The `compile-hosted` job runs the same steps on GitHub-hosted `macos-15`: a cold
+  build, no seed read or written, cap 75 minutes (a cold `ModelPlanAppIntegration` build alone took 12.7 minutes on the
+  owner Macs; a 3-core hosted VM is about twice as slow, and a hung hosted job blocks no owner runner). Public repository,
+  so free; the account runs about 5 hosted macOS jobs at a time. A seed run is refused on the hosted pool. Hosted runs
+  have their own concurrency group (`mac-compile-<pr>-hosted`), so they never cancel the owner run.
+- **Overflow trigger.** `mac-compile-overflow.yml` follows every requested `mac-compile` run
+  (`scripts/mac-compile/overflow.mjs`). It polls the run's `compile` job every 30 seconds; when the job is still queued on
+  the owner pool more than 5 minutes after it was created, it dispatches `mac-compile.yml` for the same PR and head with
+  `pool=hosted`, using the owner's comment token like the sweep. Once per head: no dispatch when a `compile-hosted`
+  job was ever created for that head (queued, running or finished), when `mac-compile` already passed there, or when
+  the PR moved on. It cancels nothing and gives up after 15 minutes. GUI tests stay on the owner runners.
+- **Which result counts: success wins per head.** Both pools post the same `mac-compile` context, and the run title is
+  the same (`mac-compile PR #N @ <sha>` for a dispatch, `mac-compile <sha>` for a workflow_run), so the gate binds either
+  run to the head. Both pools may compile one head at the same time, so the report job decides at post time:
+  - a success always posts;
+  - a failure posts only when the head has no `mac-compile` success and no other mac-compile run for that head is
+    unfinished (it decides; its report makes the same check) or succeeded (it already posted). A failure therefore never
+    lands after, or races, the other pool's success. If both pools fail at the same moment and each sees the other
+    unfinished, neither posts; the sweep then finds no status and no running run and dispatches a fresh compile;
+  - a cancelled run (a newer head, a manual cancel) posts nothing; a job past its time cap is a failure;
+  - if a read fails, the failure posts (logged), so a real failure is never dropped.
 
 ## Migration
 

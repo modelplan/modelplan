@@ -95,6 +95,10 @@ public struct SubscriptionRowModel: Equatable, Sendable {
             case .notSignedIn:
                 return (SettingsText("Not signed in to \(name). Sign in first.", "尚未登录 \(name)，请先登录。"), true)
             case .unsupportedLogin:
+                // G3-155: ZCode's QR-code sign-in is readable behind its own opt-in (D369); "no readable sign-in", never "unsupported".
+                if tool.tool == "zai" {
+                    return (SettingsText("No readable GLM sign-in found in ZCode.", "没有在 ZCode 里找到可读取的 GLM 登录。"), true)
+                }
                 return (SettingsText("This sign-in type cannot be read yet.", "这种登录方式暂不支持读取。"), true)
             }
         }

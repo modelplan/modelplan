@@ -250,6 +250,8 @@ enum SettingsWords {
         sidebar.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
         refresh()
     }
+    /// D376: the plugin choices changed outside this window (a widget "Turn Off <plugin>…"); redraw the Plugins pane.
+    public func refreshCockpitPlugins() { guard cockpitPluginsView != nil else { return }; refresh() }
     public func refreshEnvironment() { editor.update(environment: environmentProvider()) }
     /// CKP-PLG-54 (D293, D376): the rows of the Plugins pane. They sit after the catalogue rows, so row insertion
     /// indices are unchanged; on the Plugins pane (no catalogue rows) they follow the pane title directly.

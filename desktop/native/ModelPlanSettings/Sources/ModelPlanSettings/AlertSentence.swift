@@ -5,12 +5,19 @@ import Foundation
 /// Quota Widget card footer). The cockpit page builds the same words (`desktop/cockpit/study/rocket-r1/alert-sentence.js`);
 /// `desktop/tests/shared/alert-sentences.json` holds both tables to the same cases, so the lamp, the column wash, the
 /// overview, the alert list, the menu and the widget card can never say it differently.
-/// "Claude 每周 42% · 约1d20h用完", plus "· 2d10h 后重置" when the reset is known (`text`; `short` without it).
+/// D474 §3.2, three forms, each keeping the reset time when it is known:
+/// long (`text`) "Codex 每周 53% · 预估 2d16h 用完 · 4d14h 后重置" (card footer, alert list, lamp tooltip);
+/// `short` "Codex 每周 53% · 预估2d16h · 4d14h后重置" (menu line, 总览); used up "Codex 5小时 已用完 · 3h18 后重置" (all).
+/// A form that does not fit fades the subscription name; the time is never cut.
 public struct AlertSentenceText: Equatable, Sendable {
-    /// The full sentence: with the reset when it is known.
+    /// Which form the sentence is (`tests/shared/alert-sentences.json` `form`).
+    public enum Form: String, Sendable { case quota, usedUp, unreadable, unreadableMany }
+    public let form: Form
+    /// The long form: with the forecast and the reset when they are known.
     public let text: SettingsText
-    /// Without the reset, for a place the full sentence does not fit.
+    /// The short form for single-line places; it still keeps the reset time.
     public let short: SettingsText
+    public init(form: Form = .quota, text: SettingsText, short: SettingsText) { self.form = form; self.text = text; self.short = short }
 }
 
 public enum AlertSentence {
@@ -29,24 +36,31 @@ public enum AlertSentence {
         let head = usedUp
             ? SettingsText("\(subscription.english) \(window.english) used up", "\(subscription.chinese) \(window.chinese) 已用完")
             : SettingsText("\(subscription.english) \(window.english) \(r)%", "\(subscription.chinese) \(window.chinese) \(r)%")
-        var out: SettingsText?
-        if !usedUp, let m = runOutMinutes, m.isFinite { let t = duration(minutes: m); out = SettingsText("out ~\(t)", "约\(t)用完") }
-        var reset: SettingsText?
-        if let m = resetMinutes, m.isFinite, m > 0 { let t = duration(minutes: m); reset = SettingsText("resets in \(t)", "\(t) 后重置") }
-        return .init(text: join([head, out, reset]), short: join([head, out]))
+        var out: SettingsText?, outShort: SettingsText?
+        if !usedUp, let m = runOutMinutes, m.isFinite {
+            let t = duration(minutes: m)
+            out = SettingsText("est. out in \(t)", "预估 \(t) 用完"); outShort = SettingsText("est. \(t)", "预估\(t)")
+        }
+        var reset: SettingsText?, resetShort: SettingsText?
+        if let m = resetMinutes, m.isFinite, m > 0 {
+            let t = duration(minutes: m)
+            reset = SettingsText("resets in \(t)", "\(t) 后重置"); resetShort = SettingsText("resets \(t)", "\(t)后重置")
+        }
+        if usedUp { let s = join([head, reset]); return .init(form: .usedUp, text: s, short: s) }
+        return .init(form: .quota, text: join([head, out, reset]), short: join([head, outShort, resetShort]))
     }
 
     /// A subscription that cannot be read (grey, list-only). `cause` is the reader failure code.
     /// `tool`: the producer row's tool id, for a cause that reads differently per tool (G3-218).
     public static func unreadable(subscription: SettingsText, cause: String?, tool: String? = nil) -> AlertSentenceText {
         let head = SettingsText("\(subscription.english) no reading", "\(subscription.chinese) 读不到")
-        return .init(text: join([head, cause.flatMap { Self.cause($0, tool: tool) }]), short: head)
+        return .init(form: .unreadable, text: join([head, cause.flatMap { Self.cause($0, tool: tool) }]), short: head)
     }
 
     /// Three or more unreadable subscriptions merge into one line (the overview, the menu).
     public static func unreadableMany(_ count: Int) -> AlertSentenceText {
         let s = SettingsText(count == 1 ? "1 subscription has no reading" : "\(count) subscriptions have no reading", "\(count) 个订阅读不到")
-        return .init(text: s, short: s)
+        return .init(form: .unreadableMany, text: s, short: s)
     }
 
     /// The short cause after "no reading"; nil for any other failure code.

@@ -180,6 +180,10 @@ body.reduced #cockpit .dk-fad .fd-ch .fd-ghost.back{transition:opacity .12s line
 /* D453 (owner 11-26): the lever tier's front edge is flush with the bottom of the big screen's frame (.ck-deck::after reaches 2 px below
    the column, D434). With one bank the panel therefore bleeds 2 px past the column; the slots and detents keep the column's length. */
 .dk-fad:not(.paged)::after{bottom:calc(100% - var(--fd-tier-bot) - 2px)}
+/* D455 (owner 11-27, build 6): with several banks the face used to stop at --fd-tier-bot, 21 px above the big screen's bottom, and the bank keys
+   hung below it. The face now runs to the same frame bottom (2 px under the column) and the bank row (aligned with the screen's key row) sits ON it;
+   the slots, detents and travels keep the paged tier length (--fd-tier-bot). */
+.dk-fad.paged::after{bottom:-2px}
 
 /* CKP-FAD-54 step 2: the effort page comes in over 150 ms when a card is clicked (none with reduced motion). */
 @keyframes cd-page-in{from{opacity:0}to{opacity:1}}

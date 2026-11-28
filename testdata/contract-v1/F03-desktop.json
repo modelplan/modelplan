@@ -842,6 +842,6 @@
   ],
   "recording": true,
   "note": "Built on this machine from what the harnesses write locally; never sent anywhere. Public recommendations are in the verified publication, which clients read themselves.",
-  "dataRevision": "sha256:255dc7fd07f302f4d209a27298f8e5b7",
+  "dataRevision": "sha256:8470b5969f527c06f592de04cc766596",
   "validUntil": "2026-10-20T21:05:55Z"
 }

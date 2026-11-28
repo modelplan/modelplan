@@ -86,7 +86,11 @@ the second open (G3-42). `setDisplay` records the display it set and `fits` the 
 Step checks beyond presence: `cardNamed` (the open card carries the name of the ring `clickRing` clicked),
 `collapsed` (the remembered window is gone or less than half its area), `allOnScreen` (every match lies on the
 screen, for the help map), `fits` (inside the visible area between the menu bar and the Dock, for the cockpit at
-1440x900 and 1470x956; hosted modes are 1x and list neither, so 1440x900 is walked at 1600x900, the same height, and 1470x956 is skipped).
+1440x900 and 1470x956; hosted modes are 1x and list neither, so 1440x900 is walked at 1600x900, the same height, and 1470x956 is skipped). `noGaps` scans the step's `window` capture (so the step must name one) for a see-through
+hairline inside the silhouette: the first fully opaque row down to the last row that is 90 % opaque must be opaque across
+at least 80 % of the central 60 % width (`silhouette_gaps.py`; the browser spec `shutter-closed-no-gap` applies the same rule). It reads
+the window's alpha, so it works on the black hosted desktop. The `brightDesktop` action (best effort, `osascript`) also sets a
+light desktop picture before the shutter step so the plain screenshot shows such a gap too.
 
 `seed.json` has one declared ring at 0%, so the widget, the collapsed sliver, the card and the cockpit are all
 photographed with an exhausted subscription. A hidden menu bar icon is not walked here: a hosted display has no

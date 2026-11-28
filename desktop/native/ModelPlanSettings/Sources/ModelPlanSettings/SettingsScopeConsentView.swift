@@ -36,6 +36,10 @@ import ModelPlanWire
     private var observer: UUID?
     private var buttons: [NSButton] = []
     private var wrappingLabels: [NSTextField] = []
+    /// G3-155: the ZCode opt-in checkbox wraps its promise inside the card column; layout() pins its height to
+    /// the wrapped cell height (an NSButton cell does not re-derive its height from a pinned width).
+    private var wrappingButtons: [NSButton] = []
+    private var wrappingButtonHeights: [ObjectIdentifier: NSLayoutConstraint] = [:]
     private var wrappingWidthUpdateScheduled = false
     private var keySection: ReaderKeySection?
     /// D87 slice 6/7: the Subscriptions rows. Nil context keeps the plain per-tool list (first run, direct drives).
@@ -108,13 +112,13 @@ import ModelPlanWire
         buttons = []
         rowsView?.retire(); rowsView = nil
         keySection?.dismiss()
-        wrappingLabels.removeAll()
+        wrappingLabels.removeAll(); wrappingButtons.removeAll(); wrappingButtonHeights.removeAll()
         for view in arrangedSubviews { removeArrangedSubview(view); view.removeFromSuperview() }
     }
     public func suspend() { retirePresentation();controller.clearAcceptedPrivateState() }
     public override func layout() {
         super.layout()
-        guard !wrappingWidthUpdateScheduled, !wrappingLabels.isEmpty else { return }
+        guard !wrappingWidthUpdateScheduled, !(wrappingLabels.isEmpty && wrappingButtons.isEmpty) else { return }
         wrappingWidthUpdateScheduled = true
         // Updating a label's preferred width dirties intrinsic sizing. Let AppKit finish laying out
         // the window before using the resolved widths so the update cannot restart that layout pass.
@@ -127,6 +131,19 @@ import ModelPlanWire
                 let width = floor(label.bounds.width)
                 if width > 0, label.preferredMaxLayoutWidth != width {
                     label.preferredMaxLayoutWidth = width
+                }
+            }
+            // Wrapping checkbox cells settle the same way, in this deferred pass: while the pinned height disagrees with the wrapped
+            // cell height at the current width, move the height constraint (equal → no further invalidation).
+            for button in self.wrappingButtons {
+                let width = button.bounds.width
+                guard width > 0, let cell = button.cell else { continue }
+                let wrapped = cell.cellSize(forBounds: NSRect(x: 0, y: 0, width: width, height: .greatestFiniteMagnitude)).height
+                if let pinned = self.wrappingButtonHeights[ObjectIdentifier(button)] {
+                    if abs(pinned.constant - wrapped) > 0.5 { pinned.constant = wrapped }
+                } else {
+                    let pinned = button.heightAnchor.constraint(equalToConstant: wrapped)
+                    pinned.isActive = true; self.wrappingButtonHeights[ObjectIdentifier(button)] = pinned
                 }
             }
         }
@@ -211,6 +228,7 @@ import ModelPlanWire
         let name = ["gemini": "Gemini", "cursor": "Cursor", "codex": "Codex", "claude": "Claude Code",
                     "zai": "Z.ai", "opencode": "OpenCode", "minimax": "MiniMax", "kimi": "Kimi"][scope.tool]
         let tool = name.map { SettingsText($0, $0) } ?? .init("Other tool", "其他工具")
+        if scope.scope == ZCodeSavedLogin.scope { return Self.zcodeOptInTitle }
         if ScopeConsentController.separateOptInScopes.contains(scope.scope) {
             // D232: the separate refresh choice names the endpoint it reaches.
             return .init(tool.english + " · Renew the Gemini CLI sign-in when it lapses (Google's token endpoint; the new token stays in memory)",
@@ -392,6 +410,25 @@ import ModelPlanWire
                 line(pre.text, id: prefix + "prereq." + id, color: pre.needsAttention ? .systemOrange : .secondaryLabelColor)
             }
         }
+        // G3-155: ZCode's QR-code sign-in is its own choice, off until ticked; the tool's box never allows it.
+        if let optIn = controller.firstRunOptIn(forTool: id) {
+            let optInBox = synchronousButton(Self.zcodeOptInTitle, id: prefix + "optin." + id, enabled: controller.canMutate) { [weak self] in
+                guard let self else { return }
+                self.controller.chooseFirstRunOptIn(optIn.scope, chosen: !self.controller.isFirstRunOptInChosen(optIn.scope))
+            }
+            optInBox.setButtonType(.switch); optInBox.state = controller.isFirstRunOptInChosen(optIn.scope) ? .on : .off
+            // The promise wraps inside the card column like the lines above: one title-wide line drags the
+            // column and the wrapped status line above it never settles its height (the G345 "cut off").
+            optInBox.translatesAutoresizingMaskIntoConstraints = false
+            optInBox.font = .systemFont(ofSize: 12); optInBox.lineBreakMode = .byWordWrapping
+            optInBox.cell?.truncatesLastVisibleLine = false; optInBox.cell?.wraps = true
+            optInBox.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            optInBox.setAccessibilityLabel(Self.zcodeOptInTitle.value(language))
+            // Add the box to the column before pinning it to the column: activating a constraint between views that
+            // share no ancestor raises an NSException (PR #1153 abort in G3153FirstRunDefaultsTests).
+            column.addArrangedSubview(optInBox); wrappingButtons.append(optInBox)
+            optInBox.widthAnchor.constraint(equalTo: column.widthAnchor).isActive = true
+        }
         let right = NSStackView(); right.orientation = .vertical; right.alignment = .trailing; right.spacing = 2
         right.translatesAutoresizingMaskIntoConstraints = false
         right.widthAnchor.constraint(equalToConstant: Self.cardRightWidth).isActive = true
@@ -547,6 +584,10 @@ import ModelPlanWire
     static func hasOpenCodeGoSubscription(_ tool: FirstRunTool) -> Bool { ToolKeyLines.hasOpenCodeGoSubscription(tool) }
     /// G3-105 / #954 / D90: see `ToolKeyLines.keyMissingLine` (nonisolated, so the row model can use it too).
     static func keyMissingLine(_ tool: FirstRunTool, keyEntry: Bool = false) -> SettingsText? { ToolKeyLines.keyMissingLine(tool, keyEntry: keyEntry) }
+    /// G3-155 (D369): ZCode's QR-code / OAuth sign-in, a read of the saved login; off until ticked. The promise is the D369
+    /// one: read-only, on this Mac, nothing uploaded (the account request goes to Z.ai's own usage endpoint with that login).
+    static let zcodeOptInTitle = SettingsText("QR-code sign-in found \u{00B7} tick to read this Mac's saved sign-in to look up quota (read-only, nothing uploaded)",
+                                              "检测到扫码登录 · 勾选后读取本机登录信息查询额度（只读，不上传）")
     static let unreadableLine = SettingsText("ModelPlan can't read this tool's sign-in on this Mac yet.", "暂不支持读取这个工具在本机的登录。")
     private static let noKeychain = SettingsText(" No Keychain prompt.", "不会弹出钥匙串授权。")
     private static let mayAskKeychain = SettingsText(" macOS may ask once for Keychain access; choose \u{201C}Always Allow\u{201D}.",
@@ -618,6 +659,12 @@ import ModelPlanWire
             // Owner 11-22: the pasted-key route still reads the quota (the row's "Paste key…" opens the D90 field).
             return ReaderCauseTable.zcodeUnreadable.reason
         case .unsupportedLogin:
+            // G3-155: ZCode's QR-code sign-in is readable behind its own opt-in (D369); this says only that no readable
+            // sign-in was found, never "unsupported".
+            if tool == "zai" {
+                return .init("No readable GLM sign-in found in ZCode, so nothing is read.",
+                             "没有在 ZCode 里找到可读取的 GLM 登录，因此不读取。")
+            }
             return .init("Signed in with an account ModelPlan cannot read yet, so nothing is read.",
                          "这种账号登录方式暂不支持读取，因此不读取。")
         }
@@ -637,6 +684,7 @@ import ModelPlanWire
         rowsView?.retire(); rowsView = nil
         for view in arrangedSubviews { removeArrangedSubview(view); view.removeFromSuperview() }
         wrappingLabels = []
+        wrappingButtons = []; wrappingButtonHeights = [:]
         if let keySection, controller.rowsRevision != keyStatusRowsRevision {
             keyStatusRowsRevision = controller.rowsRevision; keySection.refreshStatus()
         }
