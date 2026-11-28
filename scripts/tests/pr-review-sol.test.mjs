@@ -457,6 +457,37 @@ test("routing: gpt-first, glm-first and schedule (GPT in the Zhipu peak); the fa
   assert.deepEqual(calls, ["openai"]);
 });
 
+test("D492: a hanging GLM request is bounded, retried once, then the other provider answers (or the head waits); no real 6-minute wait", async () => {
+  const hang = (counter) => (url, init) => { counter.n++; return new Promise((_, no) => init.signal.addEventListener("abort", () => no(init.signal.reason))); };
+  assert.equal(P.REQUEST_TIMEOUT_MS, 360000, "each GLM request waits at most 6 minutes");
+  const c = { n: 0 };
+  const t0 = Date.now();
+  await assert.rejects(P.glmProvider({ key: "k", baseUrl: "https://g/v4", fetchImpl: hang(c), waitMs: 0, timeoutMs: 20 }).review("x"), (e) => e.kind === "timeout" && /GLM timed out twice/.test(e.message));
+  assert.equal(c.n, 2, "one attempt plus exactly one retry, not six");
+  assert.ok(Date.now() - t0 < 5000);
+  // a timeout on the first try, an answer on the retry
+  let n = 0;
+  const flaky = (url, init) => (++n === 1 ? hang({ n: 0 })(url, init) : Promise.resolve({ ok: true, status: 200, json: async () => ({ model: "GLM-5.4", choices: [{ message: { content: "ok" } }], usage: {} }) }));
+  assert.equal((await P.glmProvider({ key: "k", baseUrl: "https://g/v4", fetchImpl: flaky, waitMs: 0, timeoutMs: 20 }).review("x")).text, "ok");
+  // a stalled body counts too
+  const stall = (url, init) => Promise.resolve({ ok: true, status: 200, json: () => new Promise((_, no) => init.signal.addEventListener("abort", () => no(init.signal.reason))) });
+  await assert.rejects(P.glmProvider({ key: "k", baseUrl: "https://g/v4", fetchImpl: stall, waitMs: 0, timeoutMs: 20 }).review("x"), (e) => e.kind === "timeout");
+  // second timeout: the other provider answers
+  const glmHang = () => P.glmProvider({ key: "k", baseUrl: "https://g/v4", fetchImpl: hang({ n: 0 }), waitMs: 0, timeoutMs: 20 });
+  const gptOk = { name: "openai", model: "m", review: async () => ({ text: "gpt", usage: { input: 1, cached: 0, output: 1 } }) };
+  const r = await P.reviewInOrder({ input: "x", order: ["glm", "openai"], build: (nm) => (nm === "glm" ? glmHang() : gptOk) });
+  assert.equal(r.provider, "openai");
+  assert.match(r.why, /GLM timed out twice/);
+  // nothing else can answer (fallback off or not allowed): the existing waiting path, with the reason
+  const w = await P.reviewInOrder({ input: "x", order: ["glm"], build: glmHang });
+  assert.deepEqual([w.provider, w.who], ["waiting", ["glm"]]);
+  assert.match(w.why, /GLM timed out twice/);
+  // an IMPORTANT PR: the fallback answer stays advisory (D432)
+  assert.match(S.renderWaitNote({ head: "a".repeat(40), lane: S.SOL_LANE, tier: 2, who: ["glm"], why: w.why, runUrl: "u" }), /Advisory, no verdict/);
+  // the whole GLM attempt is far below the 20 minutes of the old loop
+  assert.ok(6 * 60000 * 2 + 8000 < 20 * 60000);
+});
+
 test("providers: quota detection (codes, billing limit, sustained 429) and the GLM chat endpoint", async () => {
   const reply = (status, body) => ({ ok: status < 300, status, json: async () => body });
   const seq = (...rs) => { const calls = []; return { calls, f: async (url, init) => { calls.push({ url, init }); return rs.length > 1 ? rs.shift() : rs[0]; } }; };
