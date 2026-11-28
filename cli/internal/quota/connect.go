@@ -494,6 +494,16 @@ func forgetTool(p Paths, tool string, history, identity bool, scopeClass, scope 
 			return err
 		}
 	}
+	// native.json is also rewritten by a manual key save or remove (manualkey.go), which holds only
+	// lockManualKeys: a refresh holds ReaderLock across its network reads, so a key change cannot wait
+	// for it. Filter the cached readings under lockManualKeys too, so a key change that read
+	// native.json before this cleanup cannot write the erased readings back after it. Lock order:
+	// see lockManualKeys.
+	unlockKeys, err := lockManualKeys(p.Cache)
+	if err != nil {
+		return errors.New("readings busy; retry disconnect")
+	}
+	defer unlockKeys()
 	names := []string{"native.json", "codexbar.json"}
 	if history || identity {
 		names = append(names, "cycles.json", "pace.json", "speed.json", "perf.json", "daily-long.json", "imported.json")

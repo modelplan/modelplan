@@ -254,6 +254,8 @@ func manualKeyGenerations(dir string) map[string]uint64 {
 	return out
 }
 
+// It rewrites native.json from a copy read inside the lock; a Forget cleanup filters native.json under the same lock
+// (forgetTool), so an erased reading is never written back. Lock order: see lockManualKeys.
 // invalidateManualKeyReadings runs under lockManualKeys (before persisting GLM, after other providers): it bumps the provider's generation, so any
 // reading in flight or carried by a running refresh is dropped at its publish, and (OpenCode Go) removes the provider's
 // cached reading, read with the previous key and possibly another account's. The request-budget reservation is kept:
