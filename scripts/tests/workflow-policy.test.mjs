@@ -4,7 +4,7 @@ import test from "node:test";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { ALLOWED_ROUTES, GUI_LEND_GUARD, MAC_COMPILE_IF, MAC_COMPILE_PATH, MAC_COMPILE_ROUTE, MAC_COMPILE_TRIGGER_PATH, NONGUI_JOBS, RUNNER_SMOKE_IF, RUNNER_SMOKE_PATH, RUNNER_SMOKE_ROUTE, runnerSmokeProblems, TRUSTED_MAC_ROUTE, draftGuardProblems, guiGuardProblems, isWorkflowFile, macCompileProblems, macCompileTriggerProblems, macConcurrencyProblems, macPathGateProblems, nonPrFilterProblems, parseWorkflowYaml, prCancelProblems, runnerSmokeNameLeakProblems, workflowProblems } from "../workflow-policy.mjs";
+import { ALLOWED_ROUTES, GUI_LEND_GUARD, MAC_COMPILE_HOSTED_IF, MAC_COMPILE_IF, MAC_COMPILE_PATH, MAC_COMPILE_ROUTE, MAC_COMPILE_TRIGGER_PATH, NONGUI_JOBS, RUNNER_SMOKE_IF, RUNNER_SMOKE_PATH, RUNNER_SMOKE_ROUTE, runnerSmokeProblems, TRUSTED_MAC_ROUTE, draftGuardProblems, guiGuardProblems, isWorkflowFile, macCompileProblems, macCompileTriggerProblems, macConcurrencyProblems, macPathGateProblems, nonPrFilterProblems, parseWorkflowYaml, prCancelProblems, runnerSmokeNameLeakProblems, workflowProblems } from "../workflow-policy.mjs";
 import { spawnSync } from "node:child_process";
 
 // PyYAML is optional locally and on hosted images; repo-checks installs it and sets MODELPLAN_REQUIRE_YAML=1, where an
@@ -577,7 +577,170 @@ test("the compile runner is confined to mac-compile.yml, started only through wo
     assert.ok(text.includes(from), from);
     assert.ok(workflowProblems(text.replace(from, to), MAC_COMPILE_PATH).length > 0, `accepted: ${from} -> ${to}`);
   }
-  assert.ok(macCompileProblems(text.replace("    if: ${{ needs.plan.outputs.run == 'true' && github.repository", "    if: ${{ true || github.repository")).length > 0);
+  assert.ok(macCompileProblems(text.replace("    if: ${{ needs.plan.outputs.run == 'true' && needs.plan.outputs.pool == 'owner' && github.repository", "    if: ${{ true || github.repository")).length > 0);
+});
+
+// D486 (owner 2026-11-28): the hosted overflow pool of mac-compile.yml.
+test("D486: compile-hosted runs the owner job's steps on macos-15 with no seed, gated like the owner job, one status job for both", () => {
+  const text = fs.readFileSync(new URL("../../.github/workflows/mac-compile.yml", import.meta.url), "utf8");
+  const job = (name) => new RegExp(`^  ${name}:\\n((?:(?:    .*)?\\n)+)`, "m").exec(text)?.[1] ?? "";
+  const owner = job("compile"), hosted = job("compile-hosted");
+  assert.ok(owner.includes("    " + MAC_COMPILE_IF + "\n") && hosted.includes("    " + MAC_COMPILE_HOSTED_IF + "\n"));
+  assert.equal(MAC_COMPILE_HOSTED_IF, MAC_COMPILE_IF.replace("pool == 'owner'", "pool == 'hosted'"), "same gate, other pool");
+  assert.match(owner, /\n    runs-on: \[self-hosted, macOS, ARM64, modelplan-compile\]\n(?:    #.*\n)*    timeout-minutes: 70\n/, "owner cap 70, above the 49.5-minute #1289 compile");
+  assert.match(hosted, /\n    runs-on: macos-15\n(?:    #.*\n)*    timeout-minutes: 75\n/, "hosted cold build cap 75");
+  // The steps are the owner job's, except that the hosted one reads no seed and writes none.
+  const steps = (j) => j.slice(j.indexOf("    steps:\n")).split("\n").filter((l) => !/^\s*#/.test(l));
+  const diff = (a, b) => a.filter((l, i) => l !== b[i]);
+  const o = steps(owner), h = steps(hosted);
+  assert.equal(o.length, h.length);
+  assert.deepEqual(diff(o, h).map((l) => l.trim()), ["SEED_WRITE: ${{ needs.plan.outputs.seed == 'true' && '1' || '0' }}", "export SEED_ROOT=$HOME/mac-compile-seed/${RUNNER_NAME:-runner}"]);
+  assert.deepEqual(diff(h, o).map((l) => l.trim()), ['SEED_WRITE: "0"', "export SEED_ROOT="]);
+  assert.doesNotMatch(hosted, /mac-compile-seed|secrets\.|write/);
+  // The pool input, validated in the plan job; a seed is owner-only; workflow_run is always owner.
+  assert.match(text, /\n      pool:\n        description: .*\n        type: choice\n        options: \[owner, hosted\]\n        default: owner\n/);
+  assert.match(text, /\n          POOL: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.pool \|\| 'owner' \}\}\n/);
+  // A hosted run has its own concurrency group, so it never cancels the owner run it overflows.
+  assert.match(text, /group: mac-compile-.*inputs\.pool == 'hosted' && format\('\{0\}-hosted', inputs\.pr\) \|\| inputs\.pr/);
+  // The run title does not depend on the pool (the gate and pr-review-sol.yml bind either run alike).
+  assert.doesNotMatch(/^run-name: .*$/m.exec(text)[0], /pool/);
+  const report = job("report");
+  assert.match(report, /^    needs: \[plan, compile, compile-hosted\]\n    if: \$\{\{ !cancelled\(\) && /);
+  assert.match(report, /RESULT: \$\{\{ needs\.plan\.outputs\.pool == 'hosted' && needs\.compile-hosted\.result \|\| needs\.compile\.result \}\}/);
+  // mutations the policy refuses
+  for (const [from, to] of [
+    ["    runs-on: macos-15\n", "    runs-on: [self-hosted, macOS, ARM64, modelplan-compile]\n"],     // hosted job onto the owner Macs
+    ["    runs-on: macos-15\n", "    runs-on: macos-latest\n"],
+    ["needs.plan.outputs.pool == 'hosted' && github.repository", "github.repository"],              // hosted job on every run
+    ["needs.plan.outputs.pool == 'owner' && github.repository", "github.repository"],               // owner job on hosted runs too
+    ["  compile-hosted:\n", "  compile-hosted2:\n"],
+  ]) {
+    assert.ok(text.includes(from), from);
+    assert.ok(workflowProblems(text.replace(from, to), MAC_COMPILE_PATH).length > 0, `accepted: ${from} -> ${to}`);
+  }
+});
+
+// The report step with a stub gh (D486, macrev2-1234-1). The stub serves the head's combined status from $STATUS
+// (shared by every report process, as GitHub's is), the mac-compile run list from $RUNS, applies the -q filter with jq,
+// and logs each post. A status read takes its snapshot at once and, when $HOLD is set, answers only once $HOLD exists:
+// that is the window in which the other pool posts.
+const REPORT_GH = `#!/bin/bash
+shift; url=$1; shift; q=.; st=; tu=
+while [ $# -gt 0 ]; do case $1 in -q) q=$2; shift 2;; -f) case $2 in state=*) st=\${2#state=};; target_url=*) tu=\${2#target_url=};; esac; shift 2;; *) shift;; esac; done
+case $url in
+  */commits/*/status) [ -z "\${READ_FAIL:-}" ] || exit 1; snap=$(cat "$STATUS" 2>/dev/null || echo '{"statuses":[]}'); : > "$STATUS.read.$POOL"
+    if [ -n "\${HOLD:-}" ]; then while [ ! -e "$HOLD" ]; do sleep 0.02; done; fi; jq -r "$q" <<<"$snap";;
+  */actions/workflows/*/runs*) [ -z "\${RUNS_FAIL:-}" ] || exit 1; jq -r "$q" "$RUNS";;
+  */statuses/*) printf '{"statuses":[{"context":"mac-compile","state":"%s","target_url":"%s"}]}' "$st" "$tu" > "$STATUS"; echo "$POOL $st" >> "$STATUS.log";;
+  *) exit 1;;
+esac
+`;
+function reportHarness() {
+  const text = fs.readFileSync(new URL("../../.github/workflows/mac-compile.yml", import.meta.url), "utf8");
+  const sh = /^  report:\n(?:    .*\n)*?        run: \|\n((?:          .*\n|\n)+)/m.exec(text)[1].replace(/^          /gm, "");
+  assert.doesNotMatch(sh, /\$\{\{/, "no expression is interpolated into the script");
+  const dir = fs.mkdtempSync("/tmp/d486-report-");
+  fs.writeFileSync(`${dir}/gh`, REPORT_GH, { mode: 0o755 });
+  const sha = "d".repeat(40);
+  // run ids: owner 101, hosted 202, both for PR #9 at sha
+  const runs = (owner, hosted) => fs.writeFileSync(`${dir}/runs.json`, JSON.stringify({ workflow_runs: [
+    { id: 101, display_title: `mac-compile ${sha}`, ...owner }, { id: 202, display_title: `mac-compile PR #9 @ ${sha}`, ...hosted },
+    { id: 303, display_title: `mac-compile ${"e".repeat(40)}`, status: "in_progress", conclusion: null }] }));
+  const env = (pool, result, extra = {}) => ({ PATH: `${dir}:${process.env.PATH}`, REPO: "o/r", SHA: sha, PR: "9", RUN_ID: pool === "owner" ? "101" : "202",
+    URL: `run-${pool}`, POOL: pool, RESULT: result, STATUS: `${dir}/status.json`, RUNS: `${dir}/runs.json`, ...extra });
+  const reset = () => { for (const f of fs.readdirSync(dir)) if (f.startsWith("status")) fs.rmSync(`${dir}/${f}`); };
+  const final = () => fs.existsSync(`${dir}/status.json`) ? JSON.parse(fs.readFileSync(`${dir}/status.json`, "utf8")).statuses[0] : null;
+  const posts = () => fs.existsSync(`${dir}/status.json.log`) ? fs.readFileSync(`${dir}/status.json.log`, "utf8").trim().split("\n") : [];
+  return { sh, dir, runs, env, reset, final, posts };
+}
+
+test("D486: report posts every success; a failure only with no success and no other unfinished or passed run for the head", () => {
+  const h = reportHarness();
+  const go = (pool, result, { cur, owner = { status: "completed", conclusion: "failure" }, hosted = { status: "completed", conclusion: "failure" }, ...extra } = {}) => {
+    h.reset(); h.runs(owner, hosted);
+    if (cur) fs.writeFileSync(`${h.dir}/status.json`, JSON.stringify({ statuses: [{ context: "mac-compile", state: cur, target_url: "earlier" }] }));
+    const r = spawnSync("bash", ["-c", h.sh], { env: h.env(pool, result, extra) });
+    assert.equal(r.status, 0, r.stderr.toString());
+    return h.posts()[0]?.split(" ")[1] ?? "none";
+  };
+  try {
+    assert.equal(go("hosted", "success"), "success");
+    assert.equal(go("hosted", "failure"), "failure", "the other run finished with a failure: post");
+    assert.equal(go("owner", "cancelled"), "failure", "a job past its time cap (70/75 minutes) is a failure");
+    assert.equal(go("hosted", "skipped"), "success");
+    assert.equal(go("hosted", "success", { cur: "success" }), "success", "success always posts");
+    assert.equal(go("hosted", "success", { cur: "failure" }), "success", "a success replaces the other pool's failure");
+    assert.equal(go("hosted", "failure", { cur: "success" }), "none", "the other pool's success stays");
+    assert.equal(go("hosted", "failure", { cur: "failure" }), "failure");
+    assert.equal(go("hosted", "failure", { owner: { status: "queued", conclusion: null } }), "none", "the owner run still decides");
+    assert.equal(go("hosted", "failure", { owner: { status: "in_progress", conclusion: null } }), "none");
+    assert.equal(go("owner", "failure", { hosted: { status: "completed", conclusion: "success" } }), "none", "the other run passed");
+    assert.equal(go("owner", "failure", { hosted: { status: "completed", conclusion: "cancelled" } }), "failure");
+    assert.equal(go("owner", "failure", { owner: { status: "in_progress", conclusion: null } }), "failure", "its own run (still running) does not count");
+    assert.equal(go("hosted", "failure", { READ_FAIL: "1" }), "failure", "a failed status read posts the failure");
+    assert.equal(go("hosted", "failure", { RUNS_FAIL: "1" }), "failure", "a failed run list posts the failure");
+  } finally { fs.rmSync(h.dir, { recursive: true, force: true }); }
+});
+
+// macrev2-1234-1 acceptance: both report steps read the empty status before either writes, in both write orders; once the
+// success has posted, the status stays success and points to the successful run.
+test("D486: concurrent reports of the two pools never leave a failure over the other pool's success", async () => {
+  const h = reportHarness();
+  const { spawn } = await import("node:child_process");
+  const run = (pool, result, extra = {}) => new Promise((ok) => {
+    const c = spawn("bash", ["-c", h.sh], { env: h.env(pool, result, extra) });
+    let err = ""; c.stderr.on("data", (d) => (err += d)); c.on("close", (code) => ok({ code, err }));
+  });
+  const until = async (f) => { for (let i = 0; i < 500 && !fs.existsSync(f); i++) await new Promise((ok) => setTimeout(ok, 10)); assert.ok(fs.existsSync(f), f); };
+  const unfinished = { status: "in_progress", conclusion: null };
+  try {
+    for (const [ok, bad] of [["hosted", "owner"], ["owner", "hosted"]]) {
+      // order 1: the failing pool reads the empty status, the passing pool posts, then the failing pool goes on
+      h.reset(); h.runs(unfinished, unfinished);
+      const hold = `${h.dir}/status.hold`;
+      const failing = run(bad, "failure", { HOLD: hold });
+      await until(`${h.dir}/status.json.read.${bad}`);
+      const passing = await run(ok, "success");
+      assert.equal(passing.code, 0, passing.err);
+      fs.writeFileSync(hold, "");
+      assert.equal((await failing).code, 0);
+      assert.deepEqual(h.final(), { context: "mac-compile", state: "success", target_url: `run-${ok}` }, `order 1, ${ok} passes: ${h.posts()}`);
+      // order 2: the failing pool runs its whole report first, then the passing pool posts
+      h.reset(); h.runs(unfinished, unfinished);
+      assert.equal((await run(bad, "failure")).code, 0);
+      assert.equal((await run(ok, "success")).code, 0);
+      assert.deepEqual(h.final(), { context: "mac-compile", state: "success", target_url: `run-${ok}` }, `order 2, ${ok} passes: ${h.posts()}`);
+      assert.deepEqual(h.posts(), [`${ok} success`], "the failure posted nothing");
+    }
+    // both pools fail: the later report sees the earlier run finished and posts the failure
+    h.reset(); h.runs({ status: "completed", conclusion: "failure" }, unfinished);
+    assert.equal((await run("hosted", "failure")).code, 0);
+    assert.equal(h.final().state, "failure");
+  } finally { fs.rmSync(h.dir, { recursive: true, force: true }); }
+});
+
+// The plan step's pool handling, run with stub gh/jq inputs.
+test("D486: the plan job accepts pool owner or hosted only, and builds a seed on the owner pool only", () => {
+  const text = fs.readFileSync(new URL("../../.github/workflows/mac-compile.yml", import.meta.url), "utf8");
+  const sh = /      - id: pr\n(?:        .*\n)*?        run: \|\n((?:          .*\n|\n)+?)      # main's plan script/.exec(text)[1].replace(/^          /gm, "");
+  const dir = fs.mkdtempSync("/tmp/d486-plan-");
+  const sha = "c".repeat(40);
+  fs.writeFileSync(`${dir}/gh`, `#!/bin/bash\ncase "$*" in *commits/main*) echo ${sha};; *pulls/*) printf '%s' '{"state":"open","base":{"ref":"main"},"head":{"sha":"${sha}","repo":{"full_name":"o/r"}},"user":{"id":11829005},"draft":false}';; esac\n`, { mode: 0o755 });
+  const go = (env) => {
+    const out = `${dir}/out`; fs.writeFileSync(out, "");
+    const r = spawnSync("bash", ["-c", sh], { env: { PATH: `${dir}:${process.env.PATH}`, GITHUB_OUTPUT: out, REPO: "o/r", EVENT: "workflow_dispatch", PR: "9", SEED: "false", SHA_INPUT: "", POOL: "owner", ...env } });
+    return { status: r.status, out: fs.readFileSync(out, "utf8") };
+  };
+  try {
+    assert.match(go({}).out, /^pool=owner$/m);
+    assert.match(go({ POOL: "hosted" }).out, /^pool=hosted$/m);
+    assert.match(go({ POOL: "" }).out, /^pool=owner$/m, "workflow_run passes owner; empty is owner");
+    assert.notEqual(go({ POOL: "elsewhere" }).status, 0);
+    assert.match(go({ SEED: "true", PR: "" }).out, /^seed=true$/m);
+    const hostedSeed = go({ SEED: "true", PR: "", POOL: "hosted" });
+    assert.notEqual(hostedSeed.status, 0, "no hosted seed");
+    assert.doesNotMatch(hostedSeed.out, /seed=true/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
 test("the smoke label is confined to runner-smoke.yml: dispatch-only, owner on main, read-only, 40 minutes", () => {
