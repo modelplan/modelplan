@@ -24,28 +24,30 @@ const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
 // head gets the review-waiting note). Before, 6 attempts x 180 s plus the back-off held a run for 20 minutes.
 export const REQUEST_TIMEOUT_MS = 360000;
 export const NETWORK_RETRIES = 1;
-// The bounded policy is the GLM provider's (bounded: true). Others keep the old one: 180 s per attempt, up to 5 network
-// retries with growing back-off, a final failure of kind "other".
+// The bounded policy is the GLM provider's (bounded: true): a network error, timeout or body failure may happen at most
+// twice (the second is kind "timeout"); 429/5xx keep the shared 6-attempt budget. Others keep the old one: 180 s per
+// attempt, up to 5 retries with growing back-off, a final network failure of kind "other".
 // One JSON request with retries for 5xx and 429 and for network errors. A quota code ends it at once; a 429 that survives
 // every retry (about two minutes with the default waits) is a sustained 429 and counts as quota. A body that is cut
 // off or aborted after the headers is a network error like a failed connect; only unparsable JSON becomes null.
 async function requestJson(fetchImpl, url, init, { retries = 5, waitMs = 8000, label, timeoutMs, bounded = false }) {
   const tmo = timeoutMs ?? (bounded ? REQUEST_TIMEOUT_MS : 180000);
-  const maxRetries = bounded ? Math.min(retries, NETWORK_RETRIES) : retries;   // ONE shared attempt budget, any mix of failures
+  let netFails = 0;   // the bounded policy allows a network failure at most twice; every request still counts in the one shared budget
   for (let attempt = 0; ; attempt++) {
     let r, j;
     try {
       r = await fetchImpl(url, { ...init, signal: AbortSignal.timeout(tmo) });
       j = await r.json().catch((e) => { if (e instanceof SyntaxError) return null; throw e; });
     } catch (e) {
-      if (attempt < maxRetries) { await sleep(waitMs * (attempt + 1)); continue; }
+      netFails++;
+      if (attempt < retries && (!bounded || netFails <= NETWORK_RETRIES)) { await sleep(waitMs * (attempt + 1)); continue; }
       if (bounded) throw new ProviderError("timeout", `${label}: network error (${e.name}); ${label === "glm" ? "GLM" : label} timed out twice`);
       throw new ProviderError("other", `${label}: network error (${e.name})`);
     }
     const code = j?.error?.code ?? j?.error?.type ?? "";
     if (r.ok) return j;
     if (isQuotaFailure({ status: r.status, code, message: j?.error?.message })) throw new ProviderError("quota", `${label}: HTTP ${r.status} ${code}`);
-    if ((r.status === 429 || r.status >= 500) && attempt < maxRetries) { await sleep(waitMs * (attempt + 1)); continue; }
+    if ((r.status === 429 || r.status >= 500) && attempt < retries) { await sleep(waitMs * (attempt + 1)); continue; }
     // Only the status and the error code are reported; error bodies never echo the key, but nothing else is needed.
     const err = new ProviderError(r.status === 429 ? "quota" : "other", `${label}: HTTP ${r.status} ${code}${r.status === 429 ? " (sustained)" : ""}`);
     err.status = r.status;

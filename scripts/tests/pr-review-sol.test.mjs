@@ -516,9 +516,15 @@ test("D492 round 2: one shared attempt budget: OpenAI 5x503 then a disconnect is
   await assert.rejects(P.openaiProvider({ key: "k", model: "m", effort: "medium", fetchImpl: f, pollMs: 1, waitMs: 0 }).review("x"), (e) => e.kind === "other" && /network error/.test(e.message));
   assert.equal(n, 6, "the old single budget of 6 attempts, any mix");
   let g = 0;
-  const gf = (url, init) => (++g === 1 ? Promise.resolve(res(503)) : new Promise((_, no) => init.signal.addEventListener("abort", () => no(init.signal.reason))));
+  const hangs = (url, init) => new Promise((_, no) => init.signal.addEventListener("abort", () => no(init.signal.reason)));
+  const gf = (url, init) => (++g === 1 ? Promise.resolve(res(503)) : hangs(url, init));
   await assert.rejects(P.glmProvider({ key: "k", baseUrl: "https://g/v4", fetchImpl: gf, waitMs: 0, timeoutMs: 20 }).review("x"), (e) => e.kind === "timeout");
-  assert.equal(g, 2, "two attempts in total, any mix");
+  assert.equal(g, 3, "503 does not use up the two network failures: 503, hang, hang");
+  // GLM rate limits at peak: five 503s then success still succeeds (the old shared 6-attempt budget)
+  let h = 0;
+  const gok = async () => (++h <= 5 ? res(503) : { ok: true, status: 200, json: async () => ({ model: "GLM-5.4", choices: [{ message: { content: "ok" } }], usage: {} }) });
+  assert.equal((await P.glmProvider({ key: "k", baseUrl: "https://g/v4", fetchImpl: gok, waitMs: 0 }).review("x")).text, "ok");
+  assert.equal(h, 6);
 });
 
 test("providers: quota detection (codes, billing limit, sustained 429) and the GLM chat endpoint", async () => {
