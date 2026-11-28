@@ -48,6 +48,8 @@ public enum SettingsPresentationOrigin: Sendable { case userInitiated, restorati
     func hide() { controller.window?.orderOut(nil); presence.apply(closing: controller.window) }
     func refreshPlugins() { controller.refreshCockpitPlugins() }
     func attachCockpitPlugins(_ model: CockpitPluginSettingsModel) { controller.attachCockpitPlugins(model) }
+    /// The Plugins pane's rows as installed (for checks).
+    var cockpitPluginsViewForChecks: SettingsCockpitPluginsView? { controller.cockpitPluginsView }
 }
 
 /// Retain one per app. All Settings entry points share the existing application editor and one lazy window.
@@ -78,6 +80,8 @@ public enum SettingsPresentationOrigin: Sendable { case userInitiated, restorati
     }
     func refreshPlugins() { (surface as? SettingsPluginsRefreshing)?.refreshPlugins() }
     private var request: UInt64 = 0
+    /// The native window's Plugins pane, when the native surface is in use (for checks).
+    var cockpitPluginsViewForChecks: SettingsCockpitPluginsView? { (surface as? NativeSettingsWindowSurface)?.cockpitPluginsViewForChecks }
 
     public init(application: SettingsApplicationCoordinator,
                 canPresent: @escaping @MainActor () -> Bool,

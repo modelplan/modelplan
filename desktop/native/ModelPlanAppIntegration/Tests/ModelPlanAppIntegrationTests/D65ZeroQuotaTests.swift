@@ -162,11 +162,17 @@ private actor D65Engine: EngineClient {
         let (app, view) = try await launch()
         let ids = Dictionary(uniqueKeysWithValues: view.presentedReadingsForChecks.map { ($0.value.name, $0.key) })
         let card = try XCTUnwrap(app.composition.dock.cardContent(for: try XCTUnwrap(ids["Codex empty"]), at: base))
-        let events = card.rows.filter { $0.kind == .event }
-        XCTAssertEqual(events.map(\.value), ["5-hour quota used up · resets in 3h 18m"])
-        XCTAssertEqual(events.first?.tone, .critical)
+        // Master spec C2 (D474; DOCK-3.8-52, ALR-50) replaced D65's own card line: a used-up window is said once, by the
+        // card's LONG alert sentence (red, with its reset), so the D65 "usedUp:" line is left out (said once, not twice).
+        XCTAssertFalse(card.rows.contains { $0.id.hasPrefix("usedUp:") }, "the footer says it; the D65 line is not repeated")
+        let alerts = card.rows.filter { $0.kind == .alert }
+        XCTAssertEqual(alerts.count, 1)
+        let footer = try XCTUnwrap(alerts.first)
+        XCTAssertEqual(footer.value, "Codex empty 5h used up · resets in 3h18")
+        XCTAssertEqual(footer.tone, .critical)
         let other = try XCTUnwrap(app.composition.dock.cardContent(for: try XCTUnwrap(ids["Codex one"]), at: base))
-        XCTAssertTrue(other.rows.allSatisfy { $0.kind != .event }, "a 1 % window says nothing")
+        XCTAssertFalse(other.rows.contains { $0.id.hasPrefix("usedUp:") }, "a 1 % window is not used up")
+        XCTAssertFalse(other.rows.contains { $0.kind == .alert && $0.value.contains("used up") }, "a 1 % window says nothing about used up")
         XCTAssertEqual(EngineRowsText.quotaUsedUp(period: .fiveHour, label: "5h", resetMinutes: 198).chinese, "5 小时额度已用完 · 3 小时 18 分后重置")
         XCTAssertEqual(EngineRowsText.quotaUsedUp(period: .week, label: "week", resetMinutes: 2 * 1440 + 300).english, "Weekly quota used up · resets in 2d 5h")
         XCTAssertEqual(EngineRowsText.quotaUsedUp(period: .fiveHour, label: "5h", resetMinutes: nil).chinese, "5 小时额度已用完")
@@ -175,7 +181,7 @@ private actor D65Engine: EngineClient {
         let view2 = DockCardView(frame: .zero)
         var style = StaticDockPreviewHost.prototypeCardStyle; style.showsActions = false
         try view2.apply(card, style: style)
-        let line = try XCTUnwrap(view2.subviews.first { $0.accessibilityLabel() == "5-hour quota used up · resets in 3h 18m" })
+        let line = try XCTUnwrap(view2.subviews.first { $0.accessibilityLabel() == footer.value })
         let readings = view2.subviews.filter { $0 !== line && $0.accessibilityRole() == .group && $0.accessibilityLabel()?.contains("·") == true }
         let bottom = try XCTUnwrap(readings.map(\.frame.maxY).max())
         XCTAssertGreaterThanOrEqual(line.frame.minY, bottom + 6, "below the readout")

@@ -16,6 +16,8 @@ enum WidgetEmptyReason {
                 return name + " · " + entry.reason.value(language)
             }
         }
+        // Master spec §3.4: subscriptions are there, but none has given a good reading yet.
+        if !rows.isEmpty { return WidgetCardText.noReadingYet.value(language) }
         return WidgetCardText.noSubscriptions.value(language)
     }
 }

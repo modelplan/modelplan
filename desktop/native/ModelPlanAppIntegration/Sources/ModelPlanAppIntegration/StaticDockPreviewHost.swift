@@ -237,6 +237,20 @@ struct DockHelpInteraction: Equatable {
     public var showConsole: (() -> Void)?
     /// D204 (G3-94): the ignition's own press, with the screen point it came from. Nil falls back to `showConsole`.
     public var pressIgnition: ((CGPoint) -> Void)?
+    /// Master spec §7.4 (D473): what a press does now, said only by the tooltip and the accessibility label. The app sets
+    /// it on every cockpit visibility change (open, close, detach, put back).
+    public var ignitionCockpitState: IgnitionCockpitState = .closed {
+        didSet { if ignitionCockpitState != oldValue { applyIgnitionLabel() } }
+    }
+    private func applyIgnitionLabel() {
+        let text = ignitionCockpitState.text.value(preferences.language)
+        consoleButton.toolTip = text
+        consoleButton.setAccessibilityLabel(text)
+    }
+    /// The ignition's tooltip and accessibility label now (for checks).
+    var ignitionLabelForChecks: (toolTip: String?, accessibility: String?) {
+        (consoleButton.toolTip, consoleButton.accessibilityLabel())
+    }
     /// D204 (G3-94): the ignition's frame on screen while it is on the widget; the cockpit does not treat a press there
     /// as an outside click.
     public var ignitionScreenFrame: CGRect? {
@@ -295,6 +309,14 @@ struct DockHelpInteraction: Equatable {
     private var lastPlacementObservation: PlacementObservation?
     private let appearance: Appearance?
     private var attention = DockAttentionState()
+    /// D466 / DOCK-3.7-05: the shared news clock; the host records the first look at an item when a card that shows it
+    /// opens (master spec §3.3: not on widget reveal, not on cockpit opening). The content provider owns the ticking.
+    public var newsClock: DockNewsClockStore?
+    private func recordNewsLook(ids: [String]) {
+        guard let newsClock else { return }
+        let keys = attentionSignals.filter { ids.contains($0.id) }.compactMap { $0.reset?.newsKey }
+        newsClock.look(keys, at: currentDate())
+    }
     private var attentionSignals: [DockSubscriptionSignal] = []
     private var attentionWasExpanded = false
     private var locateLayer: CAShapeLayer?
@@ -388,7 +410,18 @@ struct DockHelpInteraction: Equatable {
     public private(set) var menuNotice: DockNotice?
     /// The menu owner connects DockNoticeIndicatorView; no notification ledger is duplicated here.
     public var menuNoticeDidChange: ((DockNotice?, Bool) -> Void)?
+    /// The pointer dots follow the news clock's first look (master spec §5.1): applied before every attention projection.
+    private func applyNewsLooks() {
+        guard let newsClock else { return }
+        try? attention.acknowledgeLooked(attentionSignals, looked: { newsClock.clock.hasBeenLooked($0) }, at: currentDate())
+    }
+    /// A look recorded elsewhere (the cockpit page's `newsLook`): the pointer dots catch up now, not at the next refresh.
+    public func newsLooksChanged() {
+        guard !retired else { return }
+        applyNewsLooks(); publishAttention(); edge.refresh()
+    }
     private func publishAttention() {
+        applyNewsLooks()
         guard let projection = try? attention.project(attentionSignals, stationBySubscription: geometry.noticeStationBySubscription,
                                                        sliverAlerts: preferences.sliverAlert, at: currentDate()) else { menuNotice = nil; menuNoticeDidChange?(nil, false); return }
         menuNotice = projection.menuNotice
@@ -1188,7 +1221,7 @@ struct DockHelpInteraction: Equatable {
         consoleButton.target = self; consoleButton.action = #selector(ignitionPressed)
         consoleButton.setAccessibilityIdentifier("dock.ignition")
         consoleButton.onHelpFocusChanged = { [weak self] in self?.publishDockHelpInteraction() }
-        consoleButton.setAccessibilityLabel(EngineRowsText.openCockpit.value(preferences.language))
+        applyIgnitionLabel()
         // G3-23: the ignition cap shows the official red art at full strength, as in the prototype.
         // A disabled cockpit entry only disables the button; no dark veil is painted over it.
         container.addSubview(dockView); container.addSubview(consoleButton)
@@ -1318,7 +1351,7 @@ struct DockHelpInteraction: Equatable {
         for window in [panel, cardPanel, overflowPanel] { window?.collectionBehavior = panelCollectionBehavior }
         if value.effective.reduceMotion { locateLayer?.removeAnimation(forKey: "locate-pulse") }
         empty.stringValue = preferences.language == .english ? "No local subscriptions" : "暂无本地订阅"
-        consoleButton.setAccessibilityLabel(EngineRowsText.openCockpit.value(preferences.language))
+        applyIgnitionLabel()
         if !preferences.showDock { pendingUserReveal = false; clearLocateHighlight(); closeHeldCardEverywhere() }
         if preferences.revealMilliseconds != oldReveal {
             let saved = edge.preference
@@ -2274,6 +2307,7 @@ struct DockHelpInteraction: Equatable {
         guard !retired else { throw DockArtworkError.invalidManifest }
         do {
             let geometry = presentationGeometry
+            applyNewsLooks()
             let projection = try attention.project(attentionSignals, stationBySubscription: geometry.noticeStationBySubscription,
                                                    sliverAlerts: preferences.sliverAlert, at: currentDate())
             var marks = [String: DockSliverNoticeMark]()
@@ -2404,7 +2438,9 @@ struct DockHelpInteraction: Equatable {
     }
     func acknowledgeDockReveal() {
         guard permitted, !retired else { return }
-        try? attention.acknowledge(.dockRevealed, signals: attentionSignals, at: currentDate())
+        // Master spec C6 / §3.3 / §5.1 (D474): revealing the widget is not a look at the news (with D114 it is always
+        // revealed, so news would clear unseen), and the pointer dots now follow the look too. Only a card that shows
+        // the item records one (`showCard`); the dots clear from it.
         publishAttention()
     }
     /// D49: the widget stays in place while the cockpit is open; only its transient card and highlight go.
@@ -2455,7 +2491,9 @@ struct DockHelpInteraction: Equatable {
     }
     public func acknowledgeCockpitOpening() {
         guard cockpitEntryEnabled, !retired else { return }
-        try? attention.acknowledge(.cockpitOpening, signals: attentionSignals, at: currentDate())
+        // Master spec C6 (D474): opening the cockpit is no blanket look and clears no pointer dot; the page posts
+        // `newsLook` for the items drawn on its visible page or listed in the opened alert list (CockpitNewsBridge records
+        // them, then `newsLooksChanged`).
         publishAttention()
     }
     /// D204 (G3-94): the ignition toggles an attached cockpit and brings a detached one to the front (the app decides).
@@ -2524,8 +2562,9 @@ struct DockHelpInteraction: Equatable {
             // V1-FINAL §12: a kept reading says quietly why it is not new; no badge, no alert.
             additional.append(.init(id: "kept-cause", kind: .footnote, label: "", value: row.reason))
         }
-        if !loading, !unreadable,
-           let alert = DockCardAlertRule.alert(input: projected, runOutTimes: row.runOutTimes, redBelow: effectiveRedBelow, now: now) {
+        let footerAlert = loading || unreadable ? nil
+            : DockCardAlertRule.alert(input: projected, runOutTimes: row.runOutTimes, redBelow: effectiveRedBelow, now: now)
+        if footerAlert != nil {
             // DOCK-3.8-52: a reset the user can spend is the one thing to do now, so its reserve line brightens.
             if row.hasResetAvailable(at: now) {
                 additional = additional.map { r in
@@ -2534,26 +2573,35 @@ struct DockHelpInteraction: Equatable {
                         emphasised: true, pill: r.pill, hint: r.hint) : r
                 }
             }
-            // A used-up window already has its own D65 line under the readout; the footer does not say it twice.
-            if !alert.usedUp {
-                additional.append(.init(id: "alert", kind: .alert, label: "", value: Self.cardAlertSentence(alert, name: projected.name, now: now, language: language),
-                                        tone: alert.severity == .critical ? .critical : .warning))
-            }
+        }
+        // D466 section 5: the "接下来" block (the same lines as the cockpit strip hover: next timed items in 24 h). In an
+        // alert state with nothing in 24 h it is left out, because the footer sentence already says it (§3.2).
+        if !loading, !unreadable, !kept {
+            additional.append(contentsOf: row.cardNextRows(at: now, english: english, inAlert: footerAlert != nil))
+        }
+        // Master spec C2 (D474; DOCK-3.8-52, DOCK-3.3-13, ALR-50): amber, red and used-up states end with the LONG alert
+        // sentence; the normal state has no footer. A used-up footer says what the D65 line said, so that line goes.
+        if let alert = footerAlert {
+            if alert.usedUp { additional.removeAll { $0.id == "usedUp:" + alert.windowID } }
+            additional.append(.init(id: "alert", kind: .alert, label: "", value: Self.cardAlertSentence(alert, name: projected.name, now: now, language: language),
+                                    tone: alert.severity == .critical ? .critical : .warning))
         }
         // "重新读取" belongs to an unreadable card only; the D41 Keychain button stays wherever it is needed.
         let readAgain = WidgetCardText.readAgain.value(language)
         var action = row.actionLabel
         if unreadable && action.isEmpty { action = readAgain } else if !unreadable && action == readAgain { action = "" }
-        let content = try DockCardProjection.content(input: projected, selectedWindowID: selected,
+        var content = try DockCardProjection.content(input: projected, selectedWindowID: selected,
                 revision: application?.snapshot.revision ?? 0, plan: row.plan,
                 sourceAndAge: loading ? WidgetCardText.reading.value(language) : row.cardUpdatedText(at: now, language: language, selectedWindowID: selected),
                 stateLabel: "",
                 windowDetails: loading ? [:] : row.cardRowDetails(at: now, language: language),
+                windowSecondLines: loading ? [:] : row.cardRowSecondLines(at: now, language: language),
                 additionalRows: additional,
                 links: currentCardSourceLinks(for: id, at: now),
                 enterLabel: enterLabel, dismissLabel: dismissLabel, actionLabel: action,
                 cockpitLabel: cockpitFooter(for: id, language: language), cockpitTarget: projected.name,
                 redBelow: effectiveRedBelow, at: now)
+        content.sourceAndAgeDimmed = !loading && row.cardAgeOverAnHour(at: now, selectedWindowID: selected)
         guard loading else { return content }
         // DOCK-3.8-53 loading: the window names with dark placeholder blocks (empty bars), no numbers and no "--".
         let placeholders = content.rows.map { r -> DockCardRow in
@@ -2565,8 +2613,8 @@ struct DockHelpInteraction: Equatable {
                                enterLabel: content.enterLabel, dismissLabel: content.dismissLabel, actionLabel: content.actionLabel,
                                cockpitLabel: content.cockpitLabel, cockpitTarget: content.cockpitTarget)
     }
-    /// DOCK-3.8-52: the footer is the shared alert sentence (ALR-50, WP-11 `AlertSentence`), the same words as the lamp,
-    /// the alert list and the menu line: "Claude 5h 9% · out ~40m · resets in 2h00".
+    /// DOCK-3.8-52: the footer is the shared alert sentence (ALR-50, WP-11 `AlertSentence`, long form), the same words as
+    /// the lamp tooltip and the alert list: "Claude 5h 9% · est. out in 40m · resets in 2h00".
     static func cardAlertSentence(_ alert: DockCardAlert, name: String, now: Date, language: SettingsLanguage) -> String {
         func minutes(_ date: Date?) -> Double? {
             guard let date else { return nil }
@@ -2583,9 +2631,15 @@ struct DockHelpInteraction: Equatable {
     /// G3-136: the empty ring's card, one line saying why there is no data. Only while no subscription has a ring.
     public func emptyCardContent() throws -> DockCardContent? {
         guard !retired, model?.inputs.isEmpty ?? true, let reason = emptyStationReason?(), !reason.isEmpty else { return nil }
+        // Master spec §3.4 (D474): with no good reading at all the card says what to do, and its button opens Subscriptions.
+        let language = preferences.language
+        let noReading = reason == WidgetCardText.noReadingYet.value(language)
+        var rows = [DockCardRow(id: "empty-reason", kind: .event, label: "", value: reason)]
+        if noReading { rows.append(DockCardRow(id: "empty-hint", kind: .footnote, label: "", value: WidgetCardText.noReadingYetHint.value(language))) }
         let content = DockCardContent(subscriptionID: Self.emptyCardID, revision: application?.snapshot.revision ?? 0, name: "ModelPlan",
-            rows: [DockCardRow(id: "empty-reason", kind: .event, label: "", value: reason)],
-            enterLabel: EngineRowsText.contextSettings.value(preferences.language), dismissLabel: EngineRowsText.contextClose.value(preferences.language))
+            rows: rows,
+            enterLabel: (noReading ? WidgetCardText.openSubscriptions : EngineRowsText.contextSettings).value(language),
+            dismissLabel: EngineRowsText.contextClose.value(language))
         try content.validate()
         return content
     }
@@ -2699,6 +2753,9 @@ struct DockHelpInteraction: Equatable {
         cardGeneration &+= 1
         let token = cardGeneration, feed = inputGeneration
         cardID = id; cardPresentedRevision = content.revision; cardPresentedGeneration = feed; card.isHidden = false
+        recordNewsLook(ids: [id])
+        // The look clears the pointer dots for this item (§5.1); the sliver applies it when it is next drawn.
+        publishAttention()
         installOutsidePressMonitors()
         card.appearance = NSAppearance(named: (application?.effective.darkAppearance ?? true) ? .darkAqua : .aqua)
         card.permitsAction = { [weak self] id, revision in self?.cardIsCurrent(id, revision: revision, token: token, feed: feed) == true }

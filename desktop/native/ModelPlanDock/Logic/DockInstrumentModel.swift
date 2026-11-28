@@ -26,6 +26,9 @@ public struct DockQuotaWindowInput: Sendable {
     /// model-scope claim; that classification needs an explicit wire field.
     public var isGeneral = true
     public var validity: DockWindowValidity = .inheritAggregate
+    /// The producer's estimated run-out for this current window (WP-03 forecast), when one is admitted. Master spec
+    /// decision 2 (D474, C9): the ring is amber only when this falls before the window's reset.
+    public var runOutAt: Date?
     public init(id: String, period: DockQuotaPeriod, label: String, remainingPercent: Double?, resetsAt: Date?, durationSeconds: TimeInterval?) {
         self.id=id;self.period=period;self.label=label;self.remainingPercent=remainingPercent
         self.resetsAt=resetsAt;self.durationSeconds=durationSeconds
@@ -165,9 +168,15 @@ public enum DockInstrumentProjection {
             guard let w, value(w) != nil, case .retained(let observed, _) = w.validity else { return false }
             return DockStaleRule.isDimmed(observedAt: observed, now: now)
         }
+        /// Master spec decision 2 (D474, C9): red at or under the red line (used up included); amber only when the estimate
+        /// runs out before the reset ("will be lost before you can use it"), never for "under 50 %"; otherwise normal.
+        /// A reserve item expiring soon never colours the ring (§4.1 reserve-line scope).
         func status(_ r: Double?, _ w: DockQuotaWindowInput? = nil) -> DockQuotaStatus {
             guard let r, !dimmed(w) else{return .unknown}
-            return r <= redBelow ? .critical : r <= 50 ? .warning : .normal
+            if r <= redBelow { return .critical }
+            if let w, let out = w.runOutAt, out.timeIntervalSinceReferenceDate.isFinite, out > now,
+               w.resetsAt.map({ out < $0 }) ?? true { return .warning }
+            return .normal
         }
         let general=input.windows.filter(\.isGeneral)
         // Match the study's ringWindows ordering by typed window length. Restricted

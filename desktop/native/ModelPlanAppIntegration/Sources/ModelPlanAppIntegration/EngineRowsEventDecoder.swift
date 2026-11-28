@@ -86,18 +86,26 @@ public enum EngineRowsEventDecoder {
 }
 
 extension EngineResetEvent {
-    /// macrev2-862-3: evidence that this account's quota really restarted after the confirmation: a current
-    /// reading, taken after it, of a current window that began after it (its reset minus its duration).
-    /// A routine refresh of a window that started earlier is not evidence. Reset credits never restart a
-    /// window by themselves (the user redeems them), so they never claim one.
-    public func restartedReading(in account: RowsAccount) -> Bool {
+    /// DOCK-3.7-03 / C19 (D474, macrev2-1289-4 round 4): evidence that this account's quota really restarted after the
+    /// confirmation, the one rule the widget shares with the cockpit (`newsRetired` in news-clock.ts): a current reading
+    /// of a current window LONGER than five hours, whose reset is still ahead, and whose current cycle (its reset minus its
+    /// duration) began at or after the confirmation, within `restartSkew`. A five-hour window restarts on its own schedule
+    /// many times a week, so it is never evidence; nor is a routine refresh of a cycle that began earlier. Reset credits
+    /// never restart a window by themselves (the user redeems them), so they never claim one.
+    /// The tolerance is clock skew only, the same as the cockpit's `NEWS_RESTART_SKEW_MS`. A window whose computed cycle
+    /// start lies after `now` never counts (a cycle cannot begin in the future).
+    public static let restartSkew: TimeInterval = 60
+    /// Windows of this length or shorter never prove a reset (the cockpit's `span<=18000`).
+    public static let restartMinimumWindow: Int64 = 18000
+    public func restartedReading(in account: RowsAccount, at now: Date) -> Bool {
         guard !isResetCredit, account.valueState == .current else { return false }
         let confirmed = confirmedAt ?? publishedAt
         return account.windows.contains { window in
-            guard window.current, let duration = window.durationSeconds, duration > 0,
-                  let observed = EngineResetTimestampContract.date(window.observedAt),
-                  let resets = EngineResetTimestampContract.date(window.resetsAt) else { return false }
-            return observed > confirmed && resets.addingTimeInterval(-TimeInterval(duration)) > confirmed
+            guard window.current, let duration = window.durationSeconds, duration > Self.restartMinimumWindow,
+                  let resets = EngineResetTimestampContract.date(window.resetsAt), resets > now else { return false }
+            // R11 round 5: a cycle cannot begin in the future; a computed start after now is an inconsistent reading.
+            let start = resets.addingTimeInterval(-TimeInterval(duration))
+            return start <= now && start >= confirmed.addingTimeInterval(-Self.restartSkew)
         }
     }
 }

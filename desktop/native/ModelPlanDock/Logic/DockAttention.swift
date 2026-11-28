@@ -26,7 +26,16 @@ public struct DockResetSignal: Sendable {
     public var expiresAt: Date?
     /// Overrides the wall-clock dot lifetime (PR 2: presence-counted); still capped by `confirmedDotHardCap`.
     public var confirmedDotUntil: Date?
+    /// A restarted local reading clears a direct limit reset's dot. A banked reset (`.resetCredit`) never restarts a
+    /// window: it only adds to the reserve, so a reading is never evidence for it (D466, DOCK-3.7-03).
     public var restartedReading = false
+    /// D466 / DOCK-3.7-05: false once the shared news clock (`DockNewsClock`) retired this event: 30 minutes after a
+    /// look, 3 present hours, or 24 hours. The provider sets it from the clock on every refresh.
+    public var newsLive = true
+    /// The news-clock key of this event and status.
+    public var newsKey: String { DockNewsClock.key(eventID: id, status: status == .confirmed ? "confirmed" : "announced") }
+    /// Whether a restarted reading retires the dot: only for a direct reset.
+    public var readingRetiresDot: Bool { kind == .directReset && restartedReading }
     /// The last moment the confirmed dot may show, or nil without a confirmation time.
     public var confirmedDotEnd: Date? {
         guard let at = confirmedAt else { return nil }
@@ -90,31 +99,24 @@ extension DockNotice {
 public enum DockNoticeProjection {
     public static func candidates(for signal: DockSubscriptionSignal, at now: Date) -> [DockNotice] {
         guard !signal.id.isEmpty, now.timeIntervalSinceReferenceDate.isFinite else { return [] }
-        let fresh = signal.dataState == .fresh
         var notices = [DockNotice]()
         func append(_ kind: DockNoticeKind, _ ids: [String], _ tone: DockNotice.Tone, _ shape: DockNotice.Shape = .solid, banked: Bool = false) {
             notices.append(DockNotice(key: DockNoticeKey(subscriptionID: signal.id, kind: kind, sourceIDs: ids), tone: tone, shape: shape, banked: banked))
         }
-        if fresh, let forecast = signal.forecast, !forecast.windowID.isEmpty, forecast.validUntil > now {
-            append(.forecast, [forecast.windowID], .amber)
-        }
-        if let reset = signal.reset, !reset.id.isEmpty, reset.expiresAt.map({$0.timeIntervalSinceReferenceDate.isFinite && $0 > now}) ?? true {
+        // D466: one dot meaning, blue = new reset news (hollow announced, solid confirmed). The amber forecast and
+        // reserve-expiry dots and the white credits dot are gone: the ring/number colour, the card's reserve line and the
+        // 0% red ring with "扣点中" already say those. The signal fields stay (the card and the alert rule read them).
+        if let reset = signal.reset, reset.newsLive, !reset.id.isEmpty, reset.expiresAt.map({$0.timeIntervalSinceReferenceDate.isFinite && $0 > now}) ?? true {
             switch reset.status {
             case .announced:
                 let until = reset.scheduledThrough ?? reset.announcedAt?.addingTimeInterval(48*3600)
                 let observed = reset.announcedAt.map { $0 <= now } ?? (reset.scheduledThrough != nil)
                 if observed, let until, until > now { append(.resetAnnounced, [reset.id], DockNotice.resetAnnouncedTone, .hollow, banked: reset.kind == .resetCredit) }
             case .confirmed:
-                if !reset.restartedReading, let at = reset.confirmedAt, at <= now, let end = reset.confirmedDotEnd, now < end {
+                if !reset.readingRetiresDot, let at = reset.confirmedAt, at <= now, let end = reset.confirmedDotEnd, now < end {
                     append(.resetConfirmed, [reset.id], DockNotice.resetConfirmedTone)
                 }
             }
-        }
-        if fresh {
-            // Stable event identity despite an upstream array reorder; expired/unknown cards are never invented.
-            let cards = Set(signal.cards.filter { !$0.id.isEmpty && $0.expiresAt > now && $0.expiresAt <= now.addingTimeInterval(48*3600) }.map(\.id)).sorted()
-            if !cards.isEmpty { append(.cardsExpiring, cards, .amber) }
-            if signal.drawingCredits && signal.creditsKnown && signal.exhaustedQuotaObserved { append(.credits, [], .white) }
         }
         return notices
     }
@@ -165,6 +167,17 @@ public struct DockAttentionState: Sendable {
                 sliverAcknowledgements.insert(notice.key)
                 menuAcknowledgements.insert(notice.key)
             }
+        }
+    }
+    /// Master spec §5.1 / §3.3 (D474): the pointer dots (menu bar, sliver) clear on the first LOOK at the item, the same
+    /// look the news clock records (a card that shows it, the cockpit page drawing it or its alert list). `looked` are the
+    /// news keys (`DockResetSignal.newsKey`) the clock has a first look for. Revealing the widget is not a look.
+    public mutating func acknowledgeLooked(_ signals: [DockSubscriptionSignal], looked: (String) -> Bool, at now: Date) throws {
+        try reconcile(signals, at: now)
+        for s in signals {
+            guard let key = s.reset?.newsKey, looked(key), let notice = DockNoticeProjection.selected(for: s, at: now) else { continue }
+            sliverAcknowledgements.insert(notice.key)
+            menuAcknowledgements.insert(notice.key)
         }
     }
     public mutating func acknowledgeCockpitOpen(_ signals: [DockSubscriptionSignal], at now: Date) throws {

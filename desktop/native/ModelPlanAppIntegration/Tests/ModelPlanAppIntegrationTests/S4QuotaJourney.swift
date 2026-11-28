@@ -237,8 +237,14 @@ actor S4RowsClient: EngineClient {
         entry.composition.dock.setPresentationAllowed(true)
         try require(!entry.cockpitEntryEnabled, "the interim beta must keep cockpit disabled")
         try await inspect?(entry)
+        // Master spec §5.1 (D474): revealing the widget is not a look, so the menu-bar dot stays; the first look clears it.
+        let before=entry.noticeIndicator.notice
         entry.composition.dock.acknowledgeDockReveal()
-        try require(entry.noticeIndicator.notice == nil, "opening the widget must clear the menu-bar indicator without cockpit")
+        try require(entry.noticeIndicator.notice == before, "revealing the widget must not clear the menu-bar indicator")
+        let keys=entry.composition.resetSignals.compactMap { $0.reset?.newsKey }
+        entry.composition.dock.newsClock?.look(keys,at:entry.composition.currentDate())
+        entry.composition.dock.newsLooksChanged()
+        try require(entry.noticeIndicator.notice == nil, "the first look must clear the menu-bar indicator without cockpit")
         await entry.composition.stop()
         return displayed
     }
@@ -375,7 +381,11 @@ actor S4RowsClient: EngineClient {
         try require(entry.noticeIndicator.notice != nil, "normal entry must show the projected menu notice")
         entry.composition.dock.showConsole = {}
         entry.composition.dock.perform(NSSelectorFromString("openConsole"))
-        try require(entry.noticeIndicator.notice == nil, "cockpit acknowledgement must clear the menu indicator")
+        // Master spec C6 / §5.1 (D474): opening the cockpit is no look; the page's look (recorded in the clock) clears it.
+        try require(entry.noticeIndicator.notice != nil, "opening the cockpit alone must not clear the menu indicator")
+        entry.composition.dock.newsClock?.look(entry.composition.resetSignals.compactMap { $0.reset?.newsKey }, at: entry.composition.currentDate())
+        entry.composition.dock.newsLooksChanged()
+        try require(entry.noticeIndicator.notice == nil, "the first look must clear the menu indicator")
         let signals=entry.composition.presentedContent.signals
         guard let matching=signals.first(where:{$0.id == "0123456789abcdef"}),let unmatched=signals.first(where:{$0.id == "fedcba9876543210"}) else { throw Failure(description:"event members missing") }
         try require(matching.reset?.id == decoded[0].id && unmatched.reset == nil,"only the matching member must expose the event signal")
@@ -441,16 +451,40 @@ actor S4RowsClient: EngineClient {
         let originalProjection=captured["projection"] as! [String:Any]
         let originalRow=(originalProjection["rows"] as! [[String:Any]])[0]
         let originalAccount=(originalRow["accounts"] as! [[String:Any]])[0]
-        var restartedWindow=(originalAccount["windows"] as! [[String:Any]])[0]
-        restartedWindow.removeValue(forKey:"modelScope");restartedWindow["current"]=true
-        restartedWindow["observedAt"]=formatter.string(from:confirmationClock);restartedWindow["resetsAt"]=formatter.string(from:confirmationClock.addingTimeInterval(3600))
-        var eventRows=projection["rows"] as! [[String:Any]], eventAccounts=eventRows[0]["accounts"] as! [[String:Any]]
-        eventAccounts[0]["valueState"]="current";eventAccounts[0]["windows"]=[restartedWindow]
-        eventRows[0]["accounts"]=eventAccounts;projection["rows"]=eventRows;data["projection"]=projection
-        let restarted=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:data))
+        // macrev2-1289-4 (round 4), the shared rule (desktop/tests/shared/direct-reset-restart.json): only a window longer
+        // than 5 h whose cycle began within 60 s of the confirmation proves the reset. A 5-hour cycle restarting around the
+        // confirmation while the weekly cycle began a day earlier keeps the notice; then the weekly cycle restarts.
+        let template=(originalAccount["windows"] as! [[String:Any]])[0]
+        func window(_ id:String,_ role:String,duration:Int,cycleStart:TimeInterval) -> [String:Any] {
+            var w=template;w.removeValue(forKey:"modelScope");w["id"]=id;w["role"]=role;w["current"]=true;w["durationSeconds"]=duration
+            w["observedAt"]=formatter.string(from:confirmationClock)
+            w["resetsAt"]=formatter.string(from:confirmationClock.addingTimeInterval(cycleStart+TimeInterval(duration)))
+            return w
+        }
+        func reading(weeklyCycleStart:TimeInterval) throws -> WireRowsSnapshot {
+            var eventRows=projection["rows"] as! [[String:Any]], eventAccounts=eventRows[0]["accounts"] as! [[String:Any]]
+            eventAccounts[0]["valueState"]="current"
+            eventAccounts[0]["windows"]=[window("five","session",duration:18000,cycleStart:-30),window("week","weekly",duration:604800,cycleStart:weeklyCycleStart)]
+            eventRows[0]["accounts"]=eventAccounts;projection["rows"]=eventRows;data["projection"]=projection
+            return try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:data))
+        }
+        try await synthetic.replaceRows(reading(weeklyCycleStart:-86400))
+        try await Task.sleep(for:.milliseconds(50))
+        guard let fiveHourOnly=entry.composition.resetSignals.first(where:{$0.id == matching.id}) else { throw Failure(description:"member missing after the 5-hour restart") }
+        try require(fiveHourOnly.reset?.status == .confirmed && DockNoticeProjection.selected(for:fiveHourOnly,at:confirmationClock) != nil,"a 5-hour cycle restarting never clears the confirmed notice")
+        let restarted=try reading(weeklyCycleStart:0)
         try await synthetic.replaceRows(restarted)
-        guard let restartedSignal=entry.composition.resetSignals.first(where:{$0.id == matching.id}) else { throw Failure(description:"restarted member missing") }
-        try require(restartedSignal.reset?.restartedReading == true && DockNoticeProjection.selected(for:restartedSignal,at:confirmationClock) == nil,"a current reading restarted after confirmation must clear the confirmed notice")
+        // DOCK-3.7-03 / C19 (D474, macrev2-1289-4): once the current reading shows the window restarted after the
+        // confirmation, the confirmed direct reset is no longer news on any surface: the signal carries no reset (so no
+        // dot, menu notice or card block), where D166 kept the event and only flagged the restart. Wait for that reading.
+        func restartedMember() -> DockSubscriptionSignal? { entry.composition.resetSignals.first(where:{$0.id == matching.id}) }
+        func cleared() -> Bool { restartedMember()?.reset == nil && entry.noticeIndicator.notice == nil && entry.composition.menuPresentation.title.isEmpty }
+        for _ in 0..<100 where !cleared() { try await Task.sleep(for:.milliseconds(10)) }
+        guard let restartedSignal=restartedMember() else { throw Failure(description:"restarted member missing") }
+        try require(restartedSignal.reset == nil && DockNoticeProjection.selected(for:restartedSignal,at:confirmationClock) == nil,"a current reading restarted after confirmation must clear the confirmed notice")
+        try require(entry.noticeIndicator.notice == nil && entry.composition.menuPresentation.title.isEmpty,"the restarted reading must leave no menu-bar notice")
+        let restartedCard=try entry.composition.dock.cardContent(for:matching.id)
+        try require(restartedCard?.rows.contains(where:{$0.id.hasPrefix("reset-event:"+decoded[0].id)}) != true,"the card news block must clear with the dot")
         events[0].removeValue(forKey:"confirms");projection["resetEvents"]=events;data["projection"]=projection
         let unlinked=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:data))
         try await synthetic.replaceRows(unlinked)

@@ -175,7 +175,8 @@ import ModelPlanSettings
                           resetsAt: now.addingTimeInterval(300), durationSeconds: 18000)])
                 input.dataState = .fresh
                 let reading = try app.dockReading(for: input, at: now)
-                XCTAssertEqual(reading.status, remaining <= Double(threshold) ? .critical : .warning)
+                // D474 decision 2: above the red line with no estimate, the ring is normal (amber = run-out before reset).
+                XCTAssertEqual(reading.status, remaining <= Double(threshold) ? .critical : .normal)
                 XCTAssertEqual(reading.outer?.status, reading.status)
             }
             let restarted = try SettingsStore(url: url)

@@ -147,11 +147,11 @@ import XCTest
         XCTAssertEqual(try items().filter { $0.title != enProblem }.map(\.title), english)
         let menu = try XCTUnwrap(app.liveStatusMenu)
         let index = try XCTUnwrap(menu.items.firstIndex { $0.title == enProblem })
-        let shown = expectation(description: "The problem opens Settings Diagnostics")
+        let shown = expectation(description: "The problem opens Settings › Subscriptions")
         surface.onShow = { shown.fulfill() }
         menu.performActionForItem(at: index)
         await fulfillment(of: [shown], timeout: 2)
-        XCTAssertEqual(surface.shown, ["diagnostics"])
+        XCTAssertEqual(surface.shown, ["subscriptions"])
 
         try makeDue(failure, seconds: 3_600)
         try FileManager.default.removeItem(at: failed)

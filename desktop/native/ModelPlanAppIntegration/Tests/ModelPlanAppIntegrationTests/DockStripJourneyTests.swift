@@ -51,7 +51,7 @@ private actor DockStripEngine: EngineClient {
     var displays = [DockDisplayArea(id: "primary", frame: .init(x: 0,y: 0,width: 1440,height: 900), visibleFrame: .init(x: 0,y: 80,width: 1440,height: 820))]
     var host: StaticDockPreviewHost { app.composition.dock }
     static func stamp(_ date: Date) -> String { ISO8601DateFormatter().string(from: date) }
-    init(profile: URL? = nil, wall: Date? = nil, shortRemaining: [Int] = [41, 26, 0], weekly: [Int] = [70, 60, 50]) throws {
+    init(profile: URL? = nil, wall: Date? = nil, shortRemaining: [Int] = [41, 26, 0], weekly: [Int] = [70, 60, 50], shortRunsOut: [Int] = []) throws {
         root = profile ?? FileManager.default.temporaryDirectory.appendingPathComponent("dock-strip-" + UUID().uuidString)
         store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../..").standardizedFileURL
@@ -83,7 +83,14 @@ private actor DockStripEngine: EngineClient {
             }
             rows.append(row)
         }
-        projection["rows"] = rows; projection["resetEvents"] = []; raw["projection"] = projection
+        projection["rows"] = rows; projection["resetEvents"] = []
+        // D474 decision 2 (C9): amber comes only from a producer estimate that runs out before the window's reset.
+        projection["forecasts"] = shortRunsOut.map { index -> [String: Any] in
+            ["source": index < 2 ? "codex" : "claude-code", "subscriptionRef": Self.ids[index], "windowId": "short",
+             "runsOutAt": Self.stamp(clock.wall.addingTimeInterval(3600)), "pace": "tight", "basis": "recent-rate",
+             "observedAt": Self.stamp(clock.wall.addingTimeInterval(-60))]
+        }
+        raw["projection"] = projection
     }
     func open(autoHide: Bool = false, cockpitEnabled: Bool = false, notifications: Bool = false) async throws {
         _ = try await store.update { p in p.autoHide = autoHide; p.showDock = true; p.language = .english; p.motion = .on; if notifications { p.notifications.optedIn = true }; for _ in 0..<16 { p.onboarding.next() } }
@@ -106,7 +113,9 @@ private actor DockStripEngine: EngineClient {
 
 @MainActor final class DockStripJourneyTests: XCTestCase {
     func testNormalEntryPaintsOnlyAffectedQuotaPitches() async throws {
-        let fixture = try DockStripFixture(shortRemaining: [51, 50, 0])
+        // D474 decision 2 replaced the "under 50 %" amber rule: the middle account is amber because its estimate runs
+        // out before the reset, not because it reads 50 %.
+        let fixture = try DockStripFixture(shortRemaining: [51, 50, 0], shortRunsOut: [1])
         addTeardownBlock { @MainActor in await fixture.close() }
         try await fixture.open(autoHide: true)
         XCTAssertEqual(fixture.host.edgePresentation?.state, .sliver)
@@ -131,6 +140,8 @@ private actor DockStripEngine: EngineClient {
             windows[0]["remainingPercent"] = 52
             account["windows"] = windows
         }
+        var projection = fixture.raw["projection"] as! [String: Any]
+        projection["forecasts"] = []; fixture.raw["projection"] = projection // the estimate no longer runs out first
         try await fixture.publish()
         _ = try fixture.host.prepareSliver(size: size)
         XCTAssertEqual(view.quotaSegmentColorRolesForChecks.map(\.remainingPercent), [51, 52, 0])
@@ -253,7 +264,7 @@ private actor DockStripEngine: EngineClient {
     }
 
     func testG351AlertPitchGlowsLikeThePrototype() async throws {
-        let fixture = try DockStripFixture(shortRemaining: [51, 50, 0])
+        let fixture = try DockStripFixture(shortRemaining: [51, 50, 0], shortRunsOut: [1]) // D474 decision 2: forecast amber
         addTeardownBlock { @MainActor in await fixture.close() }
         try await fixture.open(autoHide: true)
         XCTAssertEqual(fixture.host.edgePresentation?.state, .sliver)

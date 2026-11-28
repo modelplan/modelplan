@@ -55,14 +55,15 @@ public enum DockWidgetFigures {
     }
 }
 
-/// DOCK-3.8-51: the card's today row. Left half = amount ("≈$10.2 33.9M"), right half = now ("● 1 running · 66 t/s").
+/// DOCK-3.8-51: the card's today row. Left half = amount ("33.9M ≈$10.2"), right half = now ("● 1 running · 66 t/s").
 /// Either half is left out when it has nothing; the row is left out when both are. Always "today" (board-3 item 9).
 public enum DockTodayRow {
     /// - Parameters:
     ///   - cost: the estimated-cost text ("≈$10.2"); nil until WP-06 supplies it (the hook stays empty in v1 final until then).
     ///   - running: the localized running phrase ("1 个在跑"); nil or empty when nothing runs.
     public static func make(label: String, cost: String?, tokens: Int64?, running: String?, tokensPerSecond: Double?) -> DockCardRow? {
-        let left = [cost, tokens.flatMap { $0 > 0 ? DockWidgetFigures.tokens($0) : nil }]
+        // Master spec §2.1 (D464, D474): total tokens first, ≈$ (or "未计价") after it.
+        let left = [tokens.flatMap { $0 > 0 ? DockWidgetFigures.tokens($0) : nil }, cost]
             .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
         var now: [String] = []
         if let running, !running.isEmpty { now.append("● " + running) }

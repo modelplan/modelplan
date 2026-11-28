@@ -49,6 +49,11 @@ import ModelPlanWire
   func sendPluginData(id: String, data: [String: Any])
   /// Open this plugin's big screen once the page can (after its plugin state).
   func openPluginScreen(_ id: String)
+  /// D466: the shared news clock's answers for the page (sent on load, with each display, and on change).
+  func setNews(_ items: [CockpitNewsItem])
+  /// D474 decision 3 (C45): the member keys that had a good reading on this Mac (sent on load, with each display, and
+  /// on change); the page draws a column only for these or a good reading now.
+  func setSeen(_ ids: [String])
   /// macrevb-1104-8: a screen request the page holds and has not delivered yet.
   var heldPluginScreen: String? { get }
   func display(_ data: WireCockpitData, ticket: CockpitQueryTicket)
@@ -78,6 +83,8 @@ public extension CockpitPageSurface {
   func setPlugins(_ json: Data) {}
   func sendPluginData(id: String, data: [String: Any]) {}
   func openPluginScreen(_ id: String) {}
+  func setNews(_ items: [CockpitNewsItem]) {}
+  func setSeen(_ ids: [String]) {}
   var heldPluginScreen: String? { nil }
 }
 extension CockpitWindowController: CockpitPageSurface {}
@@ -137,6 +144,17 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   /// D376: the page's right-click Remove on a plugin key (a valid plugin id); the app confirms before it turns the plugin off.
   public var onPluginClose: ((String) -> Void)?
   public private(set) var pluginsRunning: [String] = []
+  /// D466: the app's shared news clock answers (`DockNewsClock`); handed to every page and re-sent when they change.
+  public var newsItems: [CockpitNewsItem] = [] {
+    didSet { if newsItems != oldValue { page?.setNews(newsItems) } }
+  }
+  /// D474 decision 3 (C45): the app's seen-subscriptions memory; handed to every page and re-sent when it changes.
+  /// Nil (an app without the store) sends nothing, so the page keeps every member.
+  public var seenIDs: [String]? {
+    didSet { if seenIDs != oldValue, let seenIDs { page?.setSeen(seenIDs) } }
+  }
+  /// D466: announcements the open cockpit drew for the first time; the app records them (`recordNewsLook`).
+  public var onNewsLook: (([CockpitNewsLookEvent]) -> Void)?
   private func reportPluginsRunning(_ ids: [String]) {
     guard ids != pluginsRunning else { return }
     pluginsRunning = ids; onPluginsRunning?(ids)
@@ -393,6 +411,8 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   /// One page and its callbacks; the same for a prewarmed page and one made by a click.
   private func makeWiredPage(_ context: CockpitEngineContext) throws -> any CockpitPageSurface {
     let newPage = try makePage(context)
+    newPage.setNews(newsItems)
+    if let seenIDs { newPage.setSeen(seenIDs) }
     newPage.setAckedCautions(ackedCautions)
     newPage.setPinnedModels(pinnedModels)
     if let pluginsJSON { newPage.setPlugins(pluginsJSON) }
@@ -578,6 +598,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       reportPluginsRunning(ids); return
     }
     if case .pluginsEdit(let state) = intent { onPluginsEdit?(state); return }
+    if case .newsLook(let events) = intent { if (1...64).contains(events.count) { onNewsLook?(events) }; return }
     if case .pluginClose(let id) = intent { if CockpitPluginWire.validID(id) { onPluginClose?(id) }; return }
     if case .cautionAck(let ids)=intent {
       guard CockpitCautionIdentities.valid(ids) else { return }

@@ -28,17 +28,16 @@ import XCTest
         XCTAssertEqual(reading.litTimePoints(positions: 37), 28)
     }
 
-    func testGoldenNoticesKeepCardsAndForecastDistinctFromPublicReset() {
+    /// D466: reserve expiry and a forecast are not events any more (the ring colour and the card's reserve line say them).
+    func testGoldenCardsAndForecastDrawNoDotOnlyPublicResetDoes() {
         let now = Date(timeIntervalSince1970: 1_792_506_300)
         let provider = S1SyntheticProvider(count: 4, now: now)
         let content = provider.makeContent(.init(snapshot: nil, diagnostics: .init(), now: now))
-        let notices = Dictionary(uniqueKeysWithValues: content.signals.compactMap { signal in
-            DockNoticeProjection.selected(for: signal, at: now).map { (signal.id, $0) }
-        })
-        XCTAssertEqual(Set(notices.keys), Set(["codex", "claude"]))
-        XCTAssertEqual(notices["codex"]?.key.kind, .cardsExpiring)
-        XCTAssertEqual(notices["claude"]?.key.kind, .forecast)
-        XCTAssertTrue(notices.values.allSatisfy { $0.tone == .amber && $0.shape == .solid })
+        XCTAssertTrue(content.signals.contains { !$0.cards.isEmpty } && content.signals.contains { $0.forecast != nil })
+        XCTAssertTrue(content.signals.allSatisfy { DockNoticeProjection.selected(for: $0, at: now) == nil })
+        let announced = S1SyntheticProvider(count: 1, now: now, noticeCase: .announced).makeContent(.init(snapshot: nil, diagnostics: .init(), now: now))
+        let notice = announced.signals.compactMap { DockNoticeProjection.selected(for: $0, at: now) }.first
+        XCTAssertEqual(notice?.key.kind, .resetAnnounced); XCTAssertEqual(notice?.tone, .blue); XCTAssertEqual(notice?.shape, .hollow)
     }
 
     func testProduceOffscreenGallery() async throws {
