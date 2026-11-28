@@ -5,6 +5,7 @@
 // Uses the framework's placeholder plugin; the real plugins bring their own specs.
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
 import {appearance,commands,pageId,sample,shell,excludePortholeFlicker} from '../fixture.mjs';
+import {usePerPage} from '../pseudo-long.mjs';
 test.beforeEach(async({page})=>excludePortholeFlicker(page));
 
 // The calendar (D121) and resource (D324) plugins are default on; these framework specs keep them off so only the
@@ -20,6 +21,7 @@ function dataWith(count,unconnected=[]) {
  return data;
 }
 async function open(page,data,plugins) {
+ await usePerPage(page,6);// these specs are about the plugin layout rules; columns per page by language have their own spec (master-band)
  await page.clock.setFixedTime(new Date('2026-11-04T12:00:00Z'));
  await page.addInitScript(()=>{window.__events=[];window.webkit={messageHandlers:{cockpit:{postMessage(raw){window.__events.push(JSON.parse(raw));}}}};});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
@@ -106,7 +108,7 @@ test('CKP-PLG-51 the plugin column has no inner frame; its cells use the Other-c
  await expect(column(page).locator('.pl-foot')).toHaveText('Framework');
  const shape=await page.evaluate(()=>{
   const sub=document.querySelector('.eng-cols .ec[data-col]'),plug=document.querySelector('.eng-cols .pl-col');
-  const tops=c=>[...c.children].map(e=>Math.round(e.getBoundingClientRect().top));
+  const tops=c=>[...c.children].filter(e=>!e.classList.contains('ec-strip')).map(e=>Math.round(e.getBoundingClientRect().top));
   const frames=[plug,...plug.querySelectorAll('*')].filter(e=>{const s=getComputedStyle(e);return s.boxShadow!=='none'||['Top','Right','Bottom','Left'].some(side=>s['border'+side+'Style']!=='none'&&parseFloat(s['border'+side+'Width'])>0&&!e.classList.contains('qrow-t'));}).map(e=>e.className);
   const sizes=(c,sel)=>{const e=c.querySelector(sel);if(!e)return null;const s=getComputedStyle(e);return {size:s.fontSize,family:s.fontFamily};};
   const bar=plug.querySelector('.pl-bar').getBoundingClientRect(),fill=plug.querySelector('.pl-bar i').getBoundingClientRect();
@@ -291,7 +293,6 @@ test('#1104 a host pluginScreen message opens an enabled plugin\'s big screen an
 });
 
 test('"+" menu: detected tools first, then all subscriptions; plugins below (never the framework placeholder); Add places the plugin',async({page})=>{
- const calendarColumn=page.locator('.eng-cols .pl-col[data-plugin="calendar"]'),calendarKey=page.locator('.eng-keys .pl-key[data-plugin="calendar"]');
  const {send,receive}=await open(page,dataWith(1,[['grok','off'],['gemini-cli','needs_consent']]));
  const plus=page.locator('.eng-keys .ek-bay').first();
  await expect(plus).toHaveAttribute('aria-label','＋ Add a subscription');
@@ -303,27 +304,28 @@ test('"+" menu: detected tools first, then all subscriptions; plugins below (nev
  await expect(menu.locator('[data-pm-all]')).toHaveText('All subscriptions…');
  // Owner 11-21: the placeholder is a framework fixture; no user-facing list offers it. The shipped plugins are offered.
  await expect(menu.locator('[data-pm-plugin="placeholder"]')).toHaveCount(0);
- await expect(menu.locator('[data-pm-plugin]')).toHaveCount(2);
- await expect(menu.locator('[data-pm-plugin="calendar"]')).toContainText('Add');
+ // D466: the calendar is the fixed 日历 page, so the menu offers the resource plugin alone.
+ await expect(menu.locator('[data-pm-plugin]')).toHaveCount(1);
+ await expect(menu.locator('[data-pm-plugin="calendar"]')).toHaveCount(0);
+ await expect(menu.locator('[data-pm-plugin="resources"]')).toContainText('Add');
  // Escape closes and returns focus; a connect item asks the host for Settings > Subscriptions (CKP-ENG-24).
  await page.keyboard.press('Escape');await expect(menu).toHaveCount(0);await expect(plus).toBeFocused();
  await plus.click();await menu.locator('[data-pm-row="gemini-cli"]').click();
  expect(await page.evaluate(()=>window.__events.filter(e=>e.type==='action').map(e=>e.action))).toEqual(['openSettingsSubscriptions']);
- await plus.click();await menu.locator('[data-pm-plugin="calendar"]').click();
+ await plus.click();await menu.locator('[data-pm-plugin="resources"]').click();
  await expect(menu).toHaveCount(0);
- await expect(calendarColumn).toHaveCount(1);
- await expect(calendarColumn).toHaveAttribute('data-running','true');
+ // The resource plugin is host-sampled: with a host that never sent plugin state it is kept but not laid out.
  // This host never sent plugin state, so the page keeps the edit to itself (an older host would reject the action).
  expect(await pluginEdits(page)).toEqual([]);expect(await running(page)).toEqual([]);
  await page.locator('.eng-keys .ek-bay').first().click();
- await expect(menu.locator('[data-pm-plugin="calendar"]')).toBeDisabled();
- await expect(menu.locator('[data-pm-plugin="calendar"]')).toContainText('✓ Added');
+ await expect(menu.locator('[data-pm-plugin="resources"]')).toBeDisabled();
+ await expect(menu.locator('[data-pm-plugin="resources"]')).toContainText('✓ Added');
  // Chinese labels.
  await page.keyboard.press('Escape');
  expect(await receive(send('appearance',{...appearance,locale:'zh-CN',redBelow:25}))).toBe(true);
  await page.locator('.eng-keys .ek-bay').first().click();
  await expect(page.locator('.pl-menu .pm-h')).toHaveText(['连接一个订阅','添加一个插件']);
- await expect(calendarKey.locator('.ek-name')).toHaveText('日历');
+ await expect(page.locator('.pl-menu [data-pm-plugin="resources"] .pm-n')).toHaveText('资源占用');
 });
 
 test('host plugin state is validated: a bad message is refused and changes nothing',async({page})=>{

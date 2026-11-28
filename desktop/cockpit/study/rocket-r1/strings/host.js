@@ -109,6 +109,8 @@ register('host', {
   webCompare: ['line', '在网站上对比', 'Compare on the website'],
   webHow: ['line', '怎么算的', 'How it’s worked out'],
   // Owner D277 (CKP-ENG-27): the quiet line under the engine table.
+  hudRank: ['aria', '第 {n} 位 · ★ {e}', 'No. {n} · ★ {e}'],
+  hudBasis: ['aria', '按能力与价格排名', 'ranked by ability and price'],
   updatedNow: ['line', '刚刚更新', 'Updated just now'],
   updatedMin: ['line', '{n} 分钟前更新', 'Updated {n} min ago'],
   updatedHour: ['line', '{n} 小时前更新', 'Updated {n} h ago'],

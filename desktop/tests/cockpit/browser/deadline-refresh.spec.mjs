@@ -228,7 +228,9 @@ test('same verified quota keeps focus across value and observation updates',asyn
 });
 test('pointer-focused quota stays ringless after display replacement and keyboard navigation shows focus',async({page})=>{
  const data=twoVerified(),{send,receive}=await open(page,data),cell=()=>page.locator('.eng-cols .ec[data-col="0123456789abcdef"] .qcell[data-row="other"]');
- await cell().click();await page.keyboard.press('Escape');await expect(cell()).toBeFocused();
+ // D474 §7.2: a click on a band cell opens 订阅; this test is about pointer FOCUS, so it presses the cell and releases elsewhere.
+ {const b=await cell().boundingBox();await page.mouse.move(b.x+b.width/2,b.y+b.height/2);await page.mouse.down();await page.mouse.move(2,2);await page.mouse.up();}
+ await page.keyboard.press('Escape');await expect(cell()).toBeFocused();
  await expect(cell()).toHaveAttribute('data-pointer-focus','');
  data.projection.rows[0].accounts[0].windows[0].remainingPercent=10;
  expect(await receive(send('display',{data}))).toBe(true);await expect(cell()).toBeFocused();
@@ -312,7 +314,7 @@ test('reset mode cannot distinguish otherwise identical quota siblings',async({p
 function sevenRows(){const data=dataFor(),base=data.projection.rows[0];for(let i=1;i<7;i++){const row=structuredClone(base);row.id='tool'+i;row.name={en:'Tool '+i,zh:'工具 '+i};row.accounts[0].subscriptionRef=null;data.projection.rows.push(row);}return data;}
 test('appearance followed by unchanged selected shell preserves page and Add focus',async({page})=>{
  const data=sevenRows(),ref=data.projection.rows[0].accounts[0].subscriptionRef,{send,receive}=await open(page,data);expect(await receive(send('shell',{...shell,scope:ref}))).toBe(true);await page.getByRole('button',{name:'Next subscriptions'}).click();
- const add=page.locator('.eng-keys button[data-add-subscription]').nth(1);await add.focus();await expect(add).toBeFocused();expect(await receive(send('appearance',{theme:'night',locale:'zh-CN',reduceMotion:true,reduceTransparency:false,showProjectNames:true}))).toBe(true);await expect(add).toBeFocused();
+ const add=page.locator('.eng-keys button[data-add-subscription]').nth(1);await add.focus();await expect(add).toBeFocused();expect(await receive(send('appearance',{theme:'night',locale:'en',reduceMotion:true,reduceTransparency:false,showProjectNames:true}))).toBe(true);await expect(add).toBeFocused();
  expect(await receive(send('shell',{...shell,scope:ref}))).toBe(true);await expect(page.locator('.eng-pgn[data-page="1"]')).toHaveCount(1);await expect(page.locator('.eng-keys button[data-add-subscription]').nth(1)).toBeFocused();await expect(page.locator('#cockpit')).toHaveAttribute('data-scope','subscription');
 });
 test('appearance followed by unchanged All shell preserves focused MFD member',async({page})=>{

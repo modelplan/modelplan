@@ -118,7 +118,7 @@ export interface MenuOptions {readonly data:WireCockpitData|null;readonly locale
 export interface PluginHost {
   readonly registry:PluginRegistry;
   state():PluginState;
-  layout(subscriptions:number):PluginLayout;
+  layout(subscriptions:number,per?:number):PluginLayout;
   /** The engine's repaint; replaced by each new engine table. */
   bindEngine(repaint:(()=>void)|null):void;
   /** Turn the first empty slots of a drawn page into this page's plugin columns, then re-check the lifecycle. */
@@ -316,6 +316,8 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
   function openScreen(id:string|null,keep=false):boolean {
     if(id===null){closeScreen();return true;}
     const plugin=registry.get(id);
+    // D466: a page-only plugin (the calendar) is the deck's fixed page; the deck opens it.
+    if(plugin?.pageOnly){if(disposed)return false;closeScreen();root.dispatchEvent(new CustomEvent('cockpit-calendar',{detail:{scope:null}}));return true;}
     if(disposed||!enabled(id)||!plugin)return false;
     if(screen?.id===id){if(!keep)closeScreen();return true;}
     const well=root.querySelector<HTMLElement>('.dk-mfd .mfd-screen');if(!well)return false;
@@ -363,7 +365,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
     registry,
     state:()=>state,
     // A host-sampled plugin is laid out only once the host has sent its plugin state (it is the one that samples).
-    layout:subscriptions=>pluginLayout(subscriptions,active().filter(p=>negotiated||!registry.get(p.id)?.hostSampled)),
+    layout:(subscriptions,per)=>pluginLayout(subscriptions,active().filter(p=>(negotiated||!registry.get(p.id)?.hostSampled)&&!registry.get(p.id)?.pageOnly),per),
     bindEngine(next){repaint=next;},
     decorate(table,page,value){
       locale=value;forget();placed.clear();columns.clear();
@@ -454,7 +456,7 @@ export function mountPluginHost(root:HTMLElement,report:PluginReports,registry=n
       }
       const more=item('pm-more',()=>{options.connect();});more.dataset.pmAll='';more.append(fitted('pm-n',w('plugin.allSubscriptions')));m.append(more);
       m.append(el('div','pm-sep'),fitted('pm-h',w('plugin.addPlugin')));
-      for(const plugin of registry.list().filter(p=>!p.frameworkOnly)){
+      for(const plugin of registry.list().filter(p=>!p.frameworkOnly&&!p.pageOnly)){
         const added=enabled(plugin.id),b=item('pm-plugin'+(added?' on':''),()=>{host.add(plugin.id);},added);b.dataset.pmPlugin=plugin.id;
         b.append(icon(plugin,'pm-ic'),fitted('pm-n',pluginWords(options.locale,plugin.title)),added?fitted('pm-ok',w('plugin.added')):el('b','pm-go',w('plugin.addGo').full));m.append(b);
       }

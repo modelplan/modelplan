@@ -3,6 +3,32 @@
 import {register} from '../i18n.js';
 
 register('eng', {
+  // D474 §3.1: columns per page by language (zh 6, en 5); the pseudo-long test locale overrides it to 4.
+  perPage: ['aria', '6', '5'],
+  // D474 §7.1 hover card (title / facts / basis). Every figure and mark of the band explains itself.
+  hcRead: ['aria', '读数 {a}前', 'read {a} ago'],
+  hcEstimate: ['aria', '按最近的用量估算', 'estimated from recent use'],
+  hcTotal: ['aria', '共 {n} token', '{n} tokens in total'],
+  hcInput: ['aria', '输入 {n}', 'input {n}'],
+  hcCacheWrite: ['aria', '缓存写入 {n}', 'cache write {n}'],
+  hcCacheRead: ['aria', '缓存读取 {n}', 'cache read {n}'],
+  hcOutput: ['aria', '输出 {n}', 'output {n}'],
+  hcReasoning: ['aria', '含推理 {n}', 'incl. reasoning {n}'],
+  hcCacheShare: ['aria', '缓存读占 {p}%', 'cache reads are {p}%'],
+  hcCost: ['aria', '{c} · 按公开 API 价估算', '{c} at public API prices'],
+  hcUnpriced: ['aria', '{p}% 的用量没有公开价，未计入', '{p}% of use has no public price, not counted'],
+  hcShared: ['aria', '今天的用量按工具记，这 {n} 个 {tool} 订阅分不开 · {tool} 合计 {total}', 'Today’s use is counted per tool, so these {n} {tool} subscriptions cannot be split · {tool} total {total}'],
+  hcSharedTitle: ['aria', '{tool} · 今天', '{tool} · today'],
+  hcRangeTitle: ['aria', '{s} · {r}', '{s} · {r}'],
+  hcWindowTitle: ['aria', '{s} · {w}', '{s} · {w}'],
+  hcReserveTitle: ['aria', '{s} · 储备', '{s} · Reserve'],
+  hcCardLine: ['aria', '{n} 次重置 · {t} 后到期', '{n} reset(s) · expires in {t}'],
+  hcCardNoExpiry: ['aria', '{n} 次重置 · 没有到期时间', '{n} reset(s) · no expiry time'],
+  hcPoints: ['aria', '点数 {v}', 'points {v}'],
+  hcKeyPlan: ['aria', '方案 {p}', 'plan {p}'],
+  hcKeyAlias: ['aria', '别名 {a}', 'alias {a}'],
+  agoLine: ['lcd', '{t}前', '{t} ago'],
+  aroundAt: ['lcd', '{t} 前后', 'around {t}'],
   addSubscription: ['aria', '＋ 添加订阅', '＋ Add a subscription'],
   usage7: ['lcd', '7日用量', '7d usage'],
   now: ['lcd', '现在', 'Now'],
@@ -18,7 +44,7 @@ register('eng', {
   rowDay: ['lcd', '每日', 'Daily'],
   rowWeek: ['lcd', '每周', 'Weekly'],
   rowMonth: ['lcd', '每月', 'Monthly'],
-  todayBasis: ['aria', '今日输出；今日平均生成速度为可测速输出 token 总量除以生成秒数总量，不是实时速度；按当前来源关联，非历史账户归属', 'Today’s output; today’s average generation speed is summed eligible output tokens divided by summed generation seconds, not live speed; current source binding, not historical account attribution'],
+  todayBasis: ['aria', '今日 token 总量（输入、缓存、输出）；今日平均生成速度为可测速输出 token 总量除以生成秒数总量，不是实时速度；按当前来源关联，非历史账户归属', 'Today’s total tokens (input, cache, output); today’s average generation speed is summed eligible output tokens divided by summed generation seconds, not live speed; current source binding, not historical account attribution'],
   averageAria: ['aria', '今日平均生成速度 {n} token 每秒', {"one": "Today’s average generation speed {n} token per second", "other": "Today’s average generation speed {n} tokens per second"}],
   resetUnknownShort: ['lcd', '未知', '?'],
   resetWordOne: ['lcd', '重置 1 次', '1 reset'],
@@ -71,7 +97,7 @@ register('eng', {
   noUsage: ['lcd', '{r}暂无用量', 'No usage {r}'],
   rangeToday: ['silk', '今天', 'Today'], range7d: ['silk', '7天', '7d'], range30d: ['silk', '30天', '30d'],
   noUsageRangeToday: ['lcd', '今天', 'today'], noUsageRange7d: ['lcd', '7天', 'in 7d'], noUsageRange30d: ['lcd', '30天', 'in 30d'],
-  rangeBasis: ['aria', '所选时间范围内的输出 token 与平均生成速度（可测速输出 token 总量除以生成秒数总量），按当前来源关联，非历史账户归属', 'Output tokens and average generation speed over the selected range (measurable output tokens over generation seconds); bound to the current source, not historic account ownership'],
+  rangeBasis: ['aria', '所选时间范围内的 token 总量与平均生成速度（可测速输出 token 总量除以生成秒数总量），按当前来源关联，非历史账户归属', 'Total tokens and average generation speed over the selected range (measurable output tokens over generation seconds); bound to the current source, not historic account ownership'],
   costHint: ['aria', '估算费用：按公开价格和你的用量估算，不是账单', 'Estimated cost: your usage at public prices, not a bill'], // CKP-ENG-53 ≈
   tps: ['lcd', 't/s', 't/s'],
   // 专项: extra quotas (a model's or a feature's own limit); +1 = one more extra in the column

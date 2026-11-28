@@ -33,7 +33,7 @@ async function open(page,locale){
 for(const locale of ['zh-CN','en'])test(`D417 extra windows are named in full, never Other (${locale})`,async({page})=>{
  await open(page,locale);
  const table=page.locator('.u11-engine-table');
- await expect(table.locator('.eng-cols > .ec[data-col]')).toHaveCount(6);
+ await expect(table.locator('.eng-cols > .ec[data-col]')).toHaveCount(locale==='en'?5:6);
  // The heading never reads the bare 其他/Other; three different names make it the neutral 额外/Extra.
  await expect(table.locator('.lb-other')).toHaveText(locale==='en'?'Extra':'额外');
  const cells=await table.locator('.qcell[data-kind="extra"]').evaluateAll(list=>list.map(e=>{const col=e.closest('.ec').getBoundingClientRect(),t=e.querySelector('.qtxt'),r=t.getBoundingClientRect();

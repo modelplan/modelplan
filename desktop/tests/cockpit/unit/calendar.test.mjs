@@ -4,6 +4,8 @@
 process.env.TZ='America/Los_Angeles';
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {existsSync,symlinkSync} from 'node:fs';
+import {fileURLToPath} from 'node:url';
 import {capture} from '../fixture.mjs';
 import {HOUR,addDays,startOfDay,dayOffset,stripWindow,dayWindow,hourMarks,midnights,dayPieces,packLanes,nextMinute,wallHours,hhmm} from '../../../cockpit/.tmp/compiled/src/calendar-time.js';
 import {parseCalendarData,calendarFromCockpit,abbreviation,shortName,CALENDAR_MAX_BYTES} from '../../../cockpit/.tmp/compiled/src/calendar-data.js';
@@ -331,6 +333,50 @@ test('D406 round 2: the half-hour floor is local: 00:05 in Asia/Kathmandu stays 
  }finally{process.env.TZ=keep;}
 });
 
+// D466: one item list behind the strip, its hover card and the 日历 page. Multi-day facts are one item on their day
+// (never a span); weekly resets are projected by the window's length; the subscription filter keeps one lane.
+test('D466 calendarModel: peaks, own resets (weekly projected), timed announcement, reserve expiry as one all-day item',async()=>{
+ const {calendarModel,filterModel,within}=await import('../../../cockpit/.tmp/compiled/src/calendar-model.js');
+ const {data}=display(),m=calendarModel(data,NOW);
+ assert.deepEqual(m.subs.map(s=>[s.name.en,s.rules]),[['Claude Code',false],['Codex',false],['GLM Coding',true]]);
+ const kinds=sub=>m.items.filter(x=>x.sub===sub).map(x=>x.kind);
+ assert.ok(kinds(2).includes('peak'));
+ const weeks=m.items.filter(x=>x.sub===0&&x.kind==='resetWeek');
+ assert.equal(weeks[0].at,local(2026,11,12,9));assert.equal(weeks[0].projected,false);
+ assert.ok(weeks.length>=4&&weeks.slice(1).every(x=>x.projected));
+ const reserve=m.items.filter(x=>x.kind==='reserve');
+ // macrev2-1291-5: each known expiry is its own all-day item (never a span, never only the earliest).
+ assert.equal(reserve.length,2,'one item per known expiry day');assert.ok(reserve.every(x=>x.allDay));assert.deepEqual(reserve.map(x=>x.at),[local(2026,11,13,18),local(2026,11,20)]);
+ const official=m.items.find(x=>x.kind==='official');
+ assert.equal(official.sub,2);assert.equal(official.allDay,false);assert.equal(official.status,'announced');
+ assert.equal(m.items.some(x=>x.sub<0),false,'a row the user does not have adds nothing');
+ const only=filterModel(m,m.subs[2].key);
+ assert.equal(only.subs.length,1);assert.ok(only.items.every(x=>x.sub===0));assert.ok(only.items.some(x=>x.kind==='peak'));
+ assert.equal(filterModel(m,null),m);
+ assert.ok(within(m.items,NOW,NOW+24*HOUR).some(x=>x.kind==='peak'&&x.sub===2));
+});
+test('D466 the strip hover card: the next 24 h, else "nothing" and the next two items after it, with peak state for a rules plan',async()=>{
+ globalThis.document??={documentElement:{}};
+ // macrev2-1291-1: tsc emits only src/, but calendar-page.ts imports the study i18n tables. A clean checkout has no
+ // .tmp/compiled/study, so link it (realpath resolution keeps one i18n instance, the one setLanguage below drives).
+ const compiledStudy=fileURLToPath(new URL('../../../cockpit/.tmp/compiled/study',import.meta.url));
+ if(!existsSync(compiledStudy))symlinkSync(fileURLToPath(new URL('../../../cockpit/study',import.meta.url)),compiledStudy,'dir');
+ const {setLanguage}=await import('../../../cockpit/study/rocket-r1/i18n.js');
+ const {calendarModel}=await import('../../../cockpit/.tmp/compiled/src/calendar-model.js');
+ const {nextLines}=await import('../../../cockpit/.tmp/compiled/src/calendar-page.js');
+ setLanguage('zh-CN');
+ const {data}=display(),m=calendarModel(data,NOW);
+ const glm=nextLines(m,2,'zh-CN');
+ assert.equal(glm.title,'GLM Coding · 接下来 24 小时');assert.equal(glm.now,'闲时');assert.equal(glm.empty,false);
+ assert.ok(glm.lines.some(l=>l.time==='22:00–02:00'&&l.text==='高峰'));
+ // Codex has no rules and (here) nothing in 24 h beyond its 5 h reset; drop that to see the "later" form.
+ const quiet={...m,items:m.items.filter(x=>!(x.sub===1&&x.at<NOW+24*HOUR))};
+ const codex=nextLines(quiet,1,'zh-CN');
+ assert.equal(codex.now,null);assert.equal(codex.empty,true);assert.ok(codex.lines.length<=2);
+ setLanguage('en');
+ assert.equal(nextLines(m,2,'en').now,'Off-peak');
+});
+
 // macrevb-1290-2: the calendar reads the same news clock as the key dot, reserve "+1" and alert list. An untimed confirmed
 // banked reset leaves the calendar's all-day line at the same tick as the others; a timed one stays until its time.
 test('macrevb-1290-2 an untimed banked reset leaves the calendar with its news clock; a timed announcement stays until its time',async()=>{
@@ -346,4 +392,25 @@ test('macrevb-1290-2 an untimed banked reset leaves the calendar with its news c
   assert.ok(!kinds(NOW+30*60_000).includes('creditConfirmed'),'gone at the look deadline, although the event expires later');
   assert.ok(kinds(NOW+30*60_000).includes('announced'),'a timed announcement stays until its time');
  }finally{newsClock.reset();}
+});
+
+// macrev2-1291-4/-5/-7: the fixed page reads every admitted subscription (no 16-member plugin cap), a row-wide peak reaches every
+// subscription on the row, and the strip's marks sit on a 10-minute grid (§5.3).
+test('macrev2-1291-7 the fixed page has no transport cap; the plugin seam keeps its own',async()=>{
+ const {calendarModel}=await import('../../../cockpit/.tmp/compiled/src/calendar-model.js');
+ const {data}=display();
+ const seed=data.projection.rows[0];
+ for(let i=0;i<18;i++){const row=structuredClone(seed);row.id=`extra-${i}`;row.name={en:`Extra ${i}`,zh:`额外${i}`};row.accounts.forEach((a,k)=>{a.subscriptionRef=`${(i+1).toString(16).padStart(16,'0')}`;a.accountLocator=a.subscriptionRef;});data.projection.rows.push(row);data.subscriptions.push({subscriptionRef:row.accounts[0].subscriptionRef,accounts:[{tool:row.id,account:structuredClone(row.accounts[0])}]});}
+ const bounded=calendarFromCockpit(data,NOW),open=calendarFromCockpit(data,NOW,false);
+ assert.equal(bounded.subs.length,16,'the plugin seam is bounded');
+ assert.ok(open.subs.length>16,'the fixed page is not');
+ assert.equal(calendarModel(data,NOW).subs.length,open.subs.length);
+});
+test('macrev2-1291-4 a row-wide published peak is every subscription of the row\'s, not the first one\'s',()=>{
+ const {data}=display(),second=structuredClone(data.projection.rows[2].accounts[0]);
+ second.subscriptionRef='00000000000000cc';second.accountLocator='00000000000000cc';
+ data.projection.rows[2].accounts.push(second);data.subscriptions.push({subscriptionRef:'00000000000000cc',accounts:[{tool:'glm',account:structuredClone(second)}]});
+ const shaped=calendarFromCockpit(data,NOW,false),glm=shaped.subs.map((s,i)=>s.name.en==='GLM Coding'?i:-1).filter(i=>i>=0);
+ assert.equal(glm.length,2);
+ for(const i of glm)assert.ok(shaped.peaks.some(p=>p.sub===i),`subscription ${i} has the peak`);
 });

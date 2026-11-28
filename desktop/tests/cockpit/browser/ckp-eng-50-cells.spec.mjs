@@ -55,17 +55,19 @@ for(const [locale,unreadable,usedUp,quotaOnly,reset,stale] of [['en','no reading
   await expect(cell(page,4).locator('.qvalue')).toHaveText('0');await expect(cell(page,4).locator('.qtxt.ql2.crit')).toHaveText(usedUp);await expect(cell(page,4).locator('.qtxt.ql1')).toHaveText(reset);
   const [ink,low]=await cell(page,4).evaluate(e=>{const p=document.createElement('i');p.style.color='var(--st-low)';e.append(p);const r=[getComputedStyle(e.querySelector('.qnum')).color,getComputedStyle(p).color];p.remove();return r;});
   expect(ink,'the used-up number is red').toBe(low);
-  await expect(page.locator('.eng-cols > .ec[data-col]').nth(5).locator('.qrow-t .qq')).toHaveText(quotaOnly);
   await expect(page.locator('.eng-cols > .ec[data-col]').nth(0).locator('.qrow-t .qq')).toHaveCount(0);
+  // D474 §3.1: English holds five columns a page, so the sixth subscription is the first column of page 2.
+  if(locale==='en')await page.locator('[data-bpage="1"]').click();
+  await expect(page.locator('.eng-cols > .ec[data-col]').nth(locale==='en'?0:5).locator('.qrow-t .qq')).toHaveText(quotaOnly);
  });
 
 test('CKP-ENG-50 hovering a reading with an unknown reset shows it (macrevb-1020-2)',async({page})=>{
  const {data,account,sync}=fixture(2);account(0).windows[0].resetsAt=null;sync();
  await open(page,data);
  await cell(page,0).hover();
- await expect(page.locator('.eng-hint')).toBeVisible();await expect(page.locator('.eng-hint')).toContainText('reset ?');
+ await expect(page.locator('.hc-card')).toBeVisible({timeout:2000});await expect(page.locator('.hc-card')).toContainText('reset ?');
  await cell(page,0,'second').hover();
- await expect(page.locator('.eng-hint')).toHaveCount(0);
+ await expect(page.locator('.hc-card')).not.toContainText('reset ?',{timeout:2000});
 });
 
 test('CKP-ENG-54 an alert washes its column; a stale or unreadable one does not',async({page})=>{
@@ -150,15 +152,18 @@ test('sampling 11-22: the lower corners of All select All without paging',async(
  await expect(page.locator('.eng-pgn')).toHaveText('2/2');
 });
 
-test('CKP-ENG-53 six English columns: ≈cost never drops; speed drops before tokens',async({page})=>{
- const {data,sync}=fixture(6);
+// D464 (reverses CKP-ENG-53's drop order): tokens never drop; speed drops before ≈cost.
+test('D464 five English columns (a page): tokens never drop; speed drops before ≈cost',async({page})=>{
+ const {data,sync}=fixture(5);
  for(const s of data.details.subscriptions)s.today=[{...s.today[0],observedOutputTokens:212e6,generationTps:52}];
  sync();await open(page,data);
  const row=page.locator('.eng-cols > .ec[data-col]').first().locator('.qrow-t');
- const shown=async sel=>row.locator(sel).evaluate(e=>getComputedStyle(e).display!=='none').catch(()=>false);
+ const shown=async sel=>(await row.locator(sel).count())>0&&await row.locator(sel).first().evaluate(e=>getComputedStyle(e).display!=='none');
  const fits=await row.evaluate(e=>e.scrollWidth<=e.clientWidth);
  expect(fits,'the row never overflows').toBe(true);
- if(!(await shown('.qtokens')))expect(await shown('.qaverage'),'tokens only drop after speed').toBe(false);
+ expect(await shown('.qtokens'),'tokens stay').toBe(true);
+ // No ≈cost is on the row here (no prices): speed has nothing to drop before.
+ if((await row.locator('.qcost').count())>0&&!(await shown('.qcost')))expect(await shown('.qaverage'),'≈cost only drops after speed').toBe(false);
  await expect(row.locator('.qtokens')).toHaveText('212M');
 });
 
@@ -202,7 +207,7 @@ function withHistory(data){
   subscriptions:refs.map((ref,i)=>({subscriptionRef:ref,sources:[{source:`synthetic-${i+1}`,bindingBasis:'source-wide-current-binding',recent7d:sums(212e6,52),recent30d:sums(900e6,48)}]})),
   models:ranking,tools:ranking,daily:[],hourly:[],projects:{recent7d:[],recent30d:[]},cycles:[],
   cost:{basis:'api-list-price',currency:'USD',pricesAsOf:'2026-11-18',models:{today:[],recent7d:[],recent30d:[]},hourly:[],
-   daily:refs.flatMap((ref,i)=>[{at:localKey(0),source:`synthetic-${i+1}`,estimatedUsd:3,pricedTokens:1000,unpricedTokens:0},{at:localKey(3),source:`synthetic-${i+1}`,estimatedUsd:61,pricedTokens:1000,unpricedTokens:0},{at:localKey(20),source:`synthetic-${i+1}`,estimatedUsd:100,pricedTokens:1000,unpricedTokens:0}])}};
+   daily:refs.flatMap((ref,i)=>[{at:localKey(0),source:`synthetic-${i+1}`,estimatedUsd:3,pricedTokens:12000,unpricedTokens:0},{at:localKey(3),source:`synthetic-${i+1}`,estimatedUsd:61,pricedTokens:211_988_000,unpricedTokens:0},{at:localKey(20),source:`synthetic-${i+1}`,estimatedUsd:100,pricedTokens:688_000_000,unpricedTokens:0}])}};
 }
 for(const [range,label,tokens,cost] of [['today','Today','12k','≈$3'],['7d','7d','212M','≈$64'],['30d','30d','900M','≈$164']])
  test(`G3-156 CKP-ENG-53 the range row follows the ${range} key: label, ≈cost, tokens and speed`,async({page})=>{
@@ -215,13 +220,13 @@ for(const [range,label,tokens,cost] of [['today','Today','12k','≈$3'],['7d','7
   await expect(row.locator('.qaverage')).toContainText(range==='today'?'42':range==='7d'?'52':'48');
  });
 for(const range of ['today','7d','30d'])
- test(`G3-156 CKP-ENG-53 six columns, ${range}: the row never overflows and drops speed before tokens, never the cost`,async({page})=>{
-  const {data,sync}=fixture(6);withHistory(data);sync();await open(page,data,'en',range);
+ test(`G3-156 D464 five English columns, ${range}: the row never overflows and drops speed before ≈cost, never the tokens`,async({page})=>{
+  const {data,sync}=fixture(5);withHistory(data);sync();await open(page,data,'en',range);
   const row=page.locator('.eng-cols > .ec[data-col]').first().locator('.qrow-t');
-  const shown=async sel=>row.locator(sel).evaluate(e=>getComputedStyle(e).display!=='none').catch(()=>false);
+  const shown=async sel=>(await row.locator(sel).count())>0&&await row.locator(sel).first().evaluate(e=>getComputedStyle(e).display!=='none');
   expect(await row.evaluate(e=>e.scrollWidth<=e.clientWidth)).toBe(true);
-  expect(await shown('.qcost'),'cost stays').toBe(true);
-  if(!(await shown('.qtokens')))expect(await shown('.qaverage'),'tokens only drop after speed').toBe(false);
+  expect(await shown('.qtokens'),'tokens stay').toBe(true);
+  if(!(await shown('.qcost')))expect(await shown('.qaverage'),'≈cost only drops after speed').toBe(false);
  });
 test('G3-156 the range row says no usage in the range, not "quota only", when history is read and nothing is recorded',async({page})=>{
  for(const [range,text] of [['today','No usage today'],['7d','No usage in 7d'],['30d','No usage in 30d']]){

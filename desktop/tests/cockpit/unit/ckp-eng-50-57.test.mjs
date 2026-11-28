@@ -58,8 +58,8 @@ for(const [lang,unreadable,usedUp,quotaOnly,r90,r3000] of [['en','no reading','u
 test('CKP-ENG-50 the hover of a reading with an unknown reset says so (macrevb-1020-2)',()=>{
  const html=view([account('a',[win('5h',75,null),win('week',40,3000)])]);
  const cells=[...html.matchAll(/<div class="qcell[^"]*"[^>]*>/g)].map(m=>m[0]);
- assert.match(cells[0],/data-tip="[^"]*reset \?/,'the unknown-reset cell carries a visible hover');
- assert.doesNotMatch(cells[1],/data-tip=/,'a cell with a known reset shows its time instead');
+ assert.match(cells[0],/data-hc-facts="[^"]*reset \?/,'the unknown-reset cell carries a visible hover');
+ assert.doesNotMatch(cells[1],/data-hc-facts="[^"]*reset \?/,'a cell with a known reset shows its time instead');
 });
 
 for(const [lang,tag] of [['en','MCP · mo'],['zh-CN','MCP · 月']])test(`CKP-ENG-51 the Other row's tag and +N (${lang})`,()=>{
@@ -69,7 +69,7 @@ for(const [lang,tag] of [['en','MCP · mo'],['zh-CN','MCP · 月']])test(`CKP-EN
  assert.equal(other[1],tag);assert.equal(other[2],'1');
  // C33: under the 额外 heading the cell names its window (no period in the cell; the hover says "MCP · 每月额度").
  assert.match(lines(html).at(-1).full,/^MCP .* \+1$/);
- assert.match(html,lang==='en'?/data-tip="[^"]*MCP · monthly quota/:/data-tip="[^"]*MCP · 每月额度/);
+ assert.match(html,lang==='en'?/data-hc-facts="[^"]*MCP · monthly quota/:/data-hc-facts="[^"]*MCP · 每月额度/);
 });
 
 // D474 §3.1 (amends CKP-ENG-52, C24): one quiet line; the expiry clause only within 48 h, in amber; a later expiry is not drawn.
@@ -86,11 +86,12 @@ for(const [lang,cards,expiry,points] of [['en','2 resets','2 expire in 30h','Cre
   assert.equal(model([account('c',[win('5h',75,90)],{cards:[{count:0,expiresAt:null}],credits:{balance:0}})],lang).reserve,false);
  });
 
-for(const [lang,label] of [['en','Today'],['zh-CN','今天']])test(`CKP-ENG-53 the range row: ≈cost first, then tokens, then speed (${lang})`,()=>{
+// D464 (reverses CKP-ENG-53's order): tokens are the big figure, then ≈cost, then speed.
+for(const [lang,label] of [['en','Today'],['zh-CN','今天']])test(`D464 CKP-ENG-53 the range row: tokens first, then ≈cost, then speed (${lang})`,()=>{
  const html=view([account('a',[win('5h',75,90)],{todayTokens:212e6,todayAverageGenerationTps:52,rangeCost:64.2})],lang);
  const row=html.match(/<div class="qrow qrow-t"[^]*?<\/div>/)[0];
  const order=[...row.matchAll(/class="(qcost|qtokens|qaverage)"/g)].map(m=>m[1]);
- assert.deepEqual(order,['qcost','qtokens','qaverage']);
+ assert.deepEqual(order,['qtokens','qcost','qaverage']);
  assert.match(row,/<span class="qcost" title="[^"]+" aria-label="≈\$64 · [^"]+">≈\$64<\/span>/);
  // No price: no ≈$ at all, never a guess.
  assert.doesNotMatch(view([account('b',[win('5h',75,90)],{todayTokens:212e6})],lang),/qcost/);assert.match(row,/212M/);assert.match(row,/52<em> t\/s<\/em>/);
@@ -211,7 +212,7 @@ for(const [range,zh,en] of [['today','今天','Today'],['7d','7天','7d'],['30d'
    assert.match(html,new RegExp(`<span class="lb lb-t"[^>]*>${label}</span>`));
    const row=col(html,'use').match(/<div class="qrow qrow-t"[\s\S]*?<\/div>/)[0];
    assert.match(row,/qcost/);assert.match(row,/qtokens/);assert.match(row,/qaverage/);assert.doesNotMatch(row,/class="qq"/);
-   // Drop order: cost first in the row, then tokens, then speed (the host drops from the end).
-   assert.ok(row.indexOf('qcost')<row.indexOf('qtokens')&&row.indexOf('qtokens')<row.indexOf('qaverage'));
+   // D464: tokens first in the row, then ≈cost, then speed (the host drops from the end).
+   assert.ok(row.indexOf('qtokens')<row.indexOf('qcost')&&row.indexOf('qcost')<row.indexOf('qaverage'));
   }
  });

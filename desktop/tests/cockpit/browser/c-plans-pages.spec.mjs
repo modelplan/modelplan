@@ -23,16 +23,17 @@ async function open(page,data,locale='en'){
  return {send,receive};
 }
 
-test('CKP-MFD-63 the page keys read Overview, Plans, Models, Breakdown in that order; the effort page has no key',async({page})=>{
+// D466: the fixed 日历 page key follows 去向.
+test('CKP-MFD-63 the page keys read Overview, Plans, Models, Breakdown, Calendar in that order; the effort page has no key',async({page})=>{
  await open(page,dataFor(2));
- expect(await page.locator('.mfd-pk .pk').evaluateAll(k=>k.map(b=>b.dataset.mfd))).toEqual(['page:overview','page:sub','page:tune','page:where']);
- expect(await page.locator('.mfd-pk .pk').allTextContents()).toEqual(['Overview','Plans','Models','Breakdown']);
- expect(await page.locator('.mfd-pk .pk').evaluateAll(k=>k.map(b=>b.getAttribute('aria-label')))).toEqual(['Overview','Plans','Models','Breakdown']);
+ expect(await page.locator('.mfd-pk .pk').evaluateAll(k=>k.map(b=>b.dataset.mfd))).toEqual(['page:overview','page:sub','page:tune','page:where','page:calendar']);
+ expect(await page.locator('.mfd-pk .pk').allTextContents()).toEqual(['Overview','Plans','Models','Breakdown','Calendar']);
+ expect(await page.locator('.mfd-pk .pk').evaluateAll(k=>k.map(b=>b.getAttribute('aria-label')))).toEqual(['Overview','Plans','Models','Breakdown','Calendar']);
 });
 
-test('CKP-MFD-63 the Chinese page keys read 总览 订阅 模型 去向',async({page})=>{
+test('CKP-MFD-63 the Chinese page keys read 总览 订阅 模型 去向 日历',async({page})=>{
  await open(page,dataFor(2),'zh-CN');
- expect(await page.locator('.mfd-pk .pk').allTextContents()).toEqual(['总览','订阅','模型','去向']);
+ expect(await page.locator('.mfd-pk .pk').allTextContents()).toEqual(['总览','订阅','模型','去向','日历']);
 });
 
 for(const n of [1,2])test(`CKP-MFD-64 with ${n} subscription(s) the Subscription page opens the first one expanded`,async({page})=>{

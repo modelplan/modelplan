@@ -9,7 +9,8 @@ import './strings/review49.js';
 const TAG = {'5h':'eng.t5h', day:'eng.tDay', week:'eng.tWeek', month:'eng.tMonth'};
 const LABEL = {'5h':'eng.row5h', day:'eng.rowDay', week:'eng.rowWeek', month:'eng.rowMonth'};
 const H = 3600e3;
-export const rowsTemplate = m => [m.rows.length ? `repeat(${m.rows.length},minmax(0,1fr))` : '', '23px', m.reserve ? '32px' : ''].filter(Boolean).join(' ');
+// D464: the range row holds the big token figure (32 px); the reserve is one quiet line (26 px).
+export const rowsTemplate = m => [m.rows.length ? `repeat(${m.rows.length},minmax(0,1fr))` : '', '32px', m.reserve ? '26px' : ''].filter(Boolean).join(' ');
 const bar = c => `<span class="qmeter"><span class="qbar">${Array.from({length:10},(_,i)=>`<i${i<c.lit?' class="on"':''}></i>`).join('')}</span>${c.timeLit==null?'':`<span class="qtime" data-frac="${c.timeLeft}" aria-hidden="true">${Array.from({length:10},(_,i)=>`<i${i<c.timeLit?' class="on"':''}></i>`).join('')}</span>`}</span>`;
 const paint = c => ` style="--qf:${fillColour(c.level)||'var(--lcd-muted)'};--qn:${numberColour(c.level)||'var(--lcd-ink)'}"`;
 // G3-109: an extra whose period has no copy (role "other") shows its name alone, never a raw key like extra.per.other.
@@ -55,10 +56,19 @@ function lines(col,c,m,row,lead,named){
   if(named&&!narrow) return [L(join(named.wide,reset.full,age)+more,join(named.narrow,reset.short,age)+more),est];
   return [L(join(reset.full,age)+more,join(reset.short,age)+more),est];
 }
+// D474 §7.1: hover or focus shows the shared three-part card (src/hover-card.ts): title, facts, basis. The element carries
+// the same text in its aria-label. `key` is stable across redraws so an open card survives a refresh.
+const hcText = (title, facts, basis) => [title, ...facts, basis].filter(Boolean).join(' · ');
+const hcAttrs = (key, title, facts, basis = '') => `data-hc="${esc(title)}" data-hc-key="${esc(key)}" data-hc-facts="${esc(facts.filter(Boolean).join('\n'))}" data-hc-basis="${esc(basis)}" aria-label="${esc(hcText(title, facts.filter(Boolean), basis))}"`;
 const hoverTag = c => c.extra && has('extra.quota.'+c.period) ? t('extra.hover',{n:extraName(c),p:t('extra.quota.'+c.period)}) : periodTag(c);
 function title(col,c,ui){return [col.name,hoverTag(c),c.value==null?t('eng.noReading'):t(ui.used?'eng.used':'eng.left',{v:Math.round(c.value)}),
   c.level==='low'?t('eng.lvLow'):c.level==='mid'?t('eng.lvMid'):'',c.runOutMin!=null?t('eng.runOut',{t:dhm(c.runOutMin)}):c.lasts?t('eng.lasts'):'',c.resetIn!=null?t('eng.resetIn',{t:dhm(c.resetIn)}):c.value!=null&&!col.grey?t('eng.resetUnknown'):'',
   c.lapsed||col.state==='error'?t('eng.unreadable'):'',(c.lapsed||col.grey)&&col.attemptAt!=null?t('eng.lastTry',{at:hm(col.attemptAt)}):''].filter(Boolean).join(' · ');}
+function factsOf(col,c,ui){return [c.value==null?t('eng.noReading'):t(ui.used?'eng.used':'eng.left',{v:Math.round(c.value)}),
+  c.level==='low'?t('eng.lvLow'):c.level==='mid'?t('eng.lvMid'):'',c.resetIn!=null?t('eng.resetIn',{t:dhm(c.resetIn)}):c.value!=null&&!col.grey?t('eng.resetUnknown'):'',
+  c.runOutMin!=null?t('eng.runOut',{t:dhm(c.runOutMin)}):c.lasts?t('eng.lasts'):'',
+  c.lapsed||col.state==='error'?t('eng.unreadable'):'',(c.lapsed||col.grey)&&col.attemptAt!=null?t('eng.lastTry',{at:hm(col.attemptAt)}):''].filter(Boolean);}
+const readBasis=(col,c)=>[c.runOutMin!=null||c.lasts?t('eng.hcEstimate'):'',col.ageMin!=null?t('eng.hcRead',{a:ageText(col.ageMin)}):''].filter(Boolean).join(' · ');
 const qtxt=(l,n)=>`<em class="qtxt ql${n}${l.cls?' '+l.cls:''}" data-full="${esc(l.full)}" data-short="${esc(l.short)}">${esc(l.full)}</em>`;
 function cell(col,c,row,m,ui,fresh,lead){
   const different=c.extra||c.period!==m.rowPeriods[row], tag=different?periodTag(c):'';
@@ -66,23 +76,40 @@ function cell(col,c,row,m,ui,fresh,lead){
   const mixed=otherHeading(m)===t('eng.extra');
   const named=c.extra?(mixed?{wide:extraName(c),narrow:extraShort(c)}:null):different?{wide:tag,narrow:tag}:null;
   const [l1,l2]=lines(col,c,m,row,lead,named);
-  const tip=c.all?c.all.map(x=>title(col,x,ui)).join('\n'):title(col,c,ui);
-  // Extras are focusable and carry their details (the hover always adds the period: "MCP · 每月额度"); a reading whose
-  // reset time is unknown or that lapsed says so on hover, as its accessible name does.
-  const focusable=c.extra||c.all?.some(x=>x.extra), unknownReset=c.value!=null&&c.resetIn==null&&!col.grey;
-  const tipAttr=focusable||c.lapsed?`tabindex="0" data-tip="${esc(tip)}"`:unknownReset?`data-tip="${esc(tip)}"`:'';
+  const title_=t('eng.hcWindowTitle',{s:col.short,w:c.all&&c.all.length>1?t('eng.extra'):hoverTag(c)});
+  const facts=c.all&&c.all.length>1?c.all.map(x=>title(col,x,ui).split(' · ').slice(1).join(' · ')):factsOf(col,c,ui);
+  const hc=hcAttrs(`cell:${col.id}:${row}`,title_,facts,readBasis(col,c));
   const value=c.value==null||c.lapsed;
-  return `<div class="qcell lv-${c.level}${c.extra?' qx':''}${c.drawing?' used':''}${c.noData?' nodata':''}${c.lapsed?' lapsed':''}" data-row="${row}" data-kind="${c.extra?'extra':c.kind}" data-tag="${esc(tag)}" data-more="${c.more||0}"${paint(c)} ${tipAttr} aria-label="${esc(tip)}">
+  return `<div class="qcell lv-${c.level}${c.extra?' qx':''}${c.drawing?' used':''}${c.noData?' nodata':''}${c.lapsed?' lapsed':''}" data-row="${row}" data-kind="${c.extra?'extra':c.kind}" data-tag="${esc(tag)}" data-more="${c.more||0}"${paint(c)} tabindex="0" ${hc}>
     <span class="qline"><b class="qnum${fresh?' lcd-in':''}"><span class="qvalue">${value?'--':Math.round(c.value)}</span>${value?'':'<small>%</small>'}</b><span class="qlines">${qtxt(l1,1)}${l2.full?qtxt(l2,2):''}</span></span>${bar(c)}</div>`;
 }
-// CKP-ENG-53: the range row, ≈cost first and brightest, then tokens, then speed; the host drops speed and then tokens
-// when they do not fit (never a clipped "42/s"). No usage record at all: "quota only" (CKP-ENG-50).
+// D464 (reverses CKP-ENG-53's order, D290(2)): the range row leads with tokens, the big figure, then ≈cost, then speed;
+// the host drops speed and then ≈cost when they do not fit; tokens never drop. No usage record at all: "quota only" (CKP-ENG-50).
 const cap=r=>r==='today'?'Today':r;
+const rangeName = (m, col) => t('eng.range' + cap(m.range || 'today'));
+// §7.1 range-row tokens: the total, then input / cache write / cache read / output (zeros hidden; 含推理 on 7天 / 30天 only),
+// the cache-read share, the ≈$ basis and the unpriced note. A shared-source 今天 cell explains itself (G-a).
+function todayHover(col,m){
+ const range=m.range||'today',title=t('eng.hcRangeTitle',{s:col.short,r:rangeName(m,col)});
+ if(col.shared)return {title:t('eng.hcSharedTitle',{tool:col.tool||col.short}),facts:[t('eng.hcShared',{n:col.shared.subscriptions,tool:col.tool||col.short,total:tok(col.shared.total)})],basis:''};
+ if(col.today==null)return null;
+ const k=col.kinds,n=v=>tok(v),facts=[t('eng.hcTotal',{n:tok(col.today)})];
+ if(k){
+  const total=k.input+k.cacheWrite+k.cacheRead+k.output;
+  if(k.input>0)facts.push(t('eng.hcInput',{n:n(k.input)}));if(k.cacheWrite>0)facts.push(t('eng.hcCacheWrite',{n:n(k.cacheWrite)}));if(k.cacheRead>0)facts.push(t('eng.hcCacheRead',{n:n(k.cacheRead)}));
+  facts.push(t('eng.hcOutput',{n:n(k.output)})+(k.reasoning>0?' · '+t('eng.hcReasoning',{n:n(k.reasoning)}):''));
+  if(k.cacheRead>0&&total>0)facts.push(t('eng.hcCacheShare',{p:Math.round(100*k.cacheRead/total)}));
+ }
+ const cost=approxCost(col.cost);if(cost)facts.push(t('eng.hcCost',{c:cost}));
+ if(col.unpricedShare!=null&&col.unpricedShare>0)facts.push(t('eng.hcUnpriced',{p:Math.max(1,Math.round(100*col.unpricedShare))}));
+ return {title,facts,basis:col.ageMin!=null?t('eng.hcRead',{a:ageText(col.ageMin)}):''};
+}
 function today(col,m){
  const range=m.range||'today';
  const cost=approxCost(col.cost);
- const parts=(cost?`<span class="qcost" title="${esc(t('eng.costHint'))}" aria-label="${esc(cost+' · '+t('eng.costHint'))}">${esc(cost)}</span>`:'')+(col.today==null?'':`<span class="qtokens">${tok(col.today)}</span>`)+(col.speed==null?'':`<span class="qaverage" aria-label="${esc(t('eng.averageAria',{n:col.speed}))}">${Math.round(col.speed)}<em> t/s</em></span>`);
- return `<div class="qrow qrow-t" aria-label="${esc(t(range==='today'?'eng.todayBasis':'eng.rangeBasis'))}">${parts||(col.noUsage?`<span class="qq">${t('eng.noUsage',{r:t('eng.noUsageRange'+cap(range))})}</span>`:col.quotaOnly?`<span class="qq">${t('eng.quotaOnly')}</span>`:'')}</div>`;}
+ const parts=(col.shared?`<span class="qtokens shared">—</span>`:col.today==null?'':`<span class="qtokens">${tok(col.today)}</span>`)+(cost?`<span class="qcost" title="${esc(t('eng.costHint'))}" aria-label="${esc(cost+' · '+t('eng.costHint'))}">${esc(cost)}</span>`:'')+(col.speed==null?'':`<span class="qaverage" aria-label="${esc(t('eng.averageAria',{n:col.speed}))}">${Math.round(col.speed)}<em> t/s</em></span>`);
+ const h=todayHover(col,m),hc=h?` tabindex="0" ${hcAttrs(`range:${col.id}`,h.title,h.facts,h.basis)}`:` aria-label="${esc(t(range==='today'?'eng.todayBasis':'eng.rangeBasis'))}"`;
+ return `<div class="qrow qrow-t"${hc}>${parts||(col.noUsage?`<span class="qq">${t('eng.noUsage',{r:t('eng.noUsageRange'+cap(range))})}</span>`:col.quotaOnly?`<span class="qq">${t('eng.quotaOnly')}</span>`:'')}</div>`;}
 // Within 48 h an expiry reads in whole hours ("40h"), under an hour in minutes.
 const expiryLeft = m => m < 60 ? `${Math.max(1,Math.round(m))}m` : `${Math.round(m/60)}h`;
 function reserve(col,m,ui){
@@ -107,7 +134,10 @@ function reserve(col,m,ui){
   const pts=points&&!(narrow&&left)?`<span class="qrv-p"${r.money?` data-full="${esc(points)}" data-short="${esc(r.money)}"`:''}>${esc(points)}</span>`:'';
   const sep=d=>`<i class="qrv-sep"${d} aria-hidden="true">${narrow&&ui.lang!=='en'?'·':' · '}</i>`;
   const parts=[cards,expiry,pts].filter(Boolean);
-  return `<div class="qrow qrow-r${narrow?' narrow':''}" aria-label="${esc(aria)}">${parts.map((p,i)=>i?sep(i===1&&words&&drop?drop:'')+p:p).join('')}</div>`;
+  // §7.1 reserve row: each banked reset with its expiry, the points, the balance.
+  const lines=(r.list||[]).map(c=>c.expiresAt==null?t('eng.hcCardNoExpiry',{n:c.count}):t('eng.hcCardLine',{n:c.count,t:countdown(Math.max(0,(c.expiresAt-ui.now)/6e4))})),
+    hcFacts=[...lines,r.plus>0?t('eng.plusAria',{n:r.plus}):'',r.money?t('eng.balance',{v:r.money}):r.credits==null?'':t('eng.hcPoints',{v:formatCredits(r.credits,ui.lang).replace('<','&lt;')})];
+  return `<div class="qrow qrow-r${narrow?' narrow':''}" tabindex="0" ${hcAttrs('reserve:'+col.id,t('eng.hcReserveTitle',{s:col.short}),hcFacts,'')}>${parts.map((p,i)=>i?sep(i===1&&words&&drop?drop:'')+p:p).join('')}</div>`;
 }
 // Exactly two extra instruments in the wide-column prototype; missing history stays unplotted.
 function detail(col, ui) {
@@ -130,7 +160,9 @@ function column(col,m,ui,changed){
  const cells=col.state==='error'&&!m.rows.some(r=>col.cells[r])?{...col.cells,[m.rows[0]]:UNREAD}:col.cells;
  return `<div class="ec${col.tint?' tint-'+col.tint:''}${col.grey?' grey':''}${col.off?' dimmed':''}" data-col="${esc(col.id)}" data-state="${esc(col.state)}">`+
  m.rows.map(r=>col.state==='loading'?placeholder(col,r):cells[r]?cell(col,cells[r],r,m,ui,changed.has(`${col.id}:${r}`),m.rows.find(x=>cells[x])):`<div class="qcell none" data-row="${r}"></div>`).join('')+today(col,m)+(m.reserve?reserve(col,m,ui):'')+(m.rich?detail(col,ui):'')+'</div>';}
-const key=col=>`<button class="ek bd-r${col.on?' on':''}${col.off?' off':''}" data-sub="${esc(col.id)}" data-col="${esc(col.id)}" data-mat="part" title="${esc(col.name)}" aria-pressed="${col.on}" aria-label="${esc(t('eng.keyAria',{name:col.name,k:col.key}))}"><span class="ek-identity"><img class="lamp" src="assets/brands/${esc(col.logo)}" alt=""><span class="ek-name" data-full="${esc(col.short)}" data-short="${esc(col.alias||col.short)}" title="${esc(col.name)}">${esc(col.short)}</span></span><i class="bl" style="--v:${esc(col.colour)}"></i><span class="ki">${col.key}</span>${col.news?`<i class="ek-news ${col.news==='confirmed'?'solid':'hollow'}" data-news="${esc(col.newsMarks||'')}" role="img" aria-label="${esc(t(col.news==='confirmed'?'eng.newsConfirmed':'eng.newsAnnounced'))}"></i>`:''}</button>`;
+// §7.1 key: full name · plan · alias · updated, and the news line during the clock.
+const keyFacts=col=>[col.plan?t('eng.hcKeyPlan',{p:col.plan}):'',col.alias&&col.alias!==col.short?t('eng.hcKeyAlias',{a:col.alias}):'',col.updated||'',col.news?t(col.news==='confirmed'?'eng.newsConfirmed':'eng.newsAnnounced'):''].filter(Boolean);
+const key=col=>`<button class="ek bd-r${col.on?' on':''}${col.off?' off':''}" data-sub="${esc(col.id)}" data-col="${esc(col.id)}" data-mat="part" aria-pressed="${col.on}" ${hcAttrs('key:'+col.id,col.name,keyFacts(col))}><span class="ek-identity"><img class="lamp" src="assets/brands/${esc(col.logo)}" alt=""><span class="ek-name" data-full="${esc(col.short)}" data-short="${esc(col.alias||col.short)}" title="${esc(col.name)}">${esc(col.short)}</span></span><i class="bl" style="--v:${esc(col.colour)}"></i><span class="ki">${col.key}</span>${col.news?`<i class="ek-news ${col.news==='confirmed'?'solid':'hollow'}" data-news="${esc(col.newsMarks||'')}" role="img" aria-label="${esc(t(col.news==='confirmed'?'eng.newsConfirmed':'eng.newsAnnounced'))}"></i>`:''}</button>`;
 // D417: the third row's heading names what its cells are when every column agrees (MCP, Opus, ...); mixed columns
 // carry their own names in the cells and the heading says only that these are extra windows, never a bare "Other".
 export function otherHeading(m) {
@@ -165,5 +197,5 @@ export function engineView(m,{changed=new Set(),lang='zh-CN',now=Date.now()}={})
  const emptyKeys=Array.from({length:n-m.cols.length},()=>emptyKey(addLabel)).join('');
  const labels=m.empty?'':m.rows.map(r=>`<span class="lb lb-${r}">${t(r==='other'?otherHeading(m):LABEL[m.rowPeriods[r]]||'eng.other')}</span>`).join('')+`<span class="lb lb-t" aria-label="${esc(t((m.range||'today')==='today'?'eng.todayBasis':'eng.rangeBasis'))}">${t('eng.range'+cap(m.range||'today'))}</span>`+(m.reserve?`<span class="lb lb-r" tabindex="0" aria-label="${esc(t('eng.reserveHint'))}" data-tip="${esc(t('eng.reserveHint'))}">${t('eng.reserve')}</span>`:'');
  const keys=`<div class="eng-krow${m.pages>1?' paged':''}"><button class="ek ek-all${m.scoped?'':' on'}" data-all data-mat="part" aria-pressed="${!m.scoped}" aria-label="${t('eng.allAria')}"><span>${t('eng.all')}</span><i class="bl" aria-hidden="true"></i></button>${pager(m)}<div class="eng-keys" style="--n:${n}">${m.cols.map(key).join('')}${emptyKeys}</div></div>`;
- return `${keys}<div class="eng-lcd cls-${m.cls}${m.rich?' few-rich':''}" data-mat="well" style="--n:${n};--rows:${rowsTemplate(m)}">${m.empty?`<p class="ec-empty">${t('eng.empty')}</p>`:`<div class="eng-labels">${labels}</div><div class="eng-cols">${m.cols.map(col=>column(col,m,ui,changed)).join('')}${empty}</div>`}</div>`;
+ return `${keys}<div class="eng-lcd cls-${m.cls}${m.rich?' few-rich':''}${m.reserve?' has-res':''}" data-mat="well" style="--n:${n};--rows:${rowsTemplate(m)}">${m.empty?`<p class="ec-empty">${t('eng.empty')}</p>`:`<div class="eng-labels">${labels}</div><div class="eng-cols">${m.cols.map(col=>column(col,m,ui,changed)).join('')}${empty}</div>`}</div>`;
 }

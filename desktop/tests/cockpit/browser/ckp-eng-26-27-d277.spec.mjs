@@ -50,12 +50,14 @@ test('CKP-ENG-26 at or below the red line the run-out text is red',async({page})
  expect(ink).toBe(low);
 });
 
-for(const [locale,label,updated,refresh] of [['en','Synthetic Pro 200','Updated 3 min ago','Refresh'],['zh-CN','Synthetic Pro 200','3 分钟前更新','刷新']])
- test(`CKP-ENG-27 the key carries the plan and one quiet updated line has Refresh (${locale})`,async({page})=>{
-  const {data,row}=fixture();row.name={en:'Synthetic',zh:'Synthetic'};
+// D466 (band round 1, reverses the plan-name part of D277): the key shows the short tool name ("ZCode" for "ZCode / GLM");
+// the plan tier is added only when two shown keys share that short name.
+for(const [locale,updated,refresh] of [['en','Updated 3 min ago','Refresh'],['zh-CN','3 分钟前更新','刷新']])
+ test(`CKP-ENG-27 D466 the key shows the short name and one quiet updated line has Refresh (${locale})`,async({page})=>{
+  const {data,row}=fixture();row.name={en:'Synthetic / GLM',zh:'Synthetic / GLM'};
   await open(page,data,locale);
   const name=page.locator('.eng-keys .ek[data-sub] .ek-name').first();
-  await expect(name).toHaveAttribute('data-full',label);await expect(name).toHaveText(label);
+  await expect(name).toHaveAttribute('data-full','Synthetic');await expect(name).toHaveText('Synthetic');
   // D376: the update line lives on the BOTTOM line of the 总览 screen, not under the engine table.
   const line=page.locator('.mfd-page.pg-overview .ov-foot .eng-upd');
   await expect(line).toHaveCount(1);await expect(line.locator('.eng-upd-t')).toHaveText(updated);
@@ -67,6 +69,13 @@ for(const [locale,label,updated,refresh] of [['en','Synthetic Pro 200','Updated 
   expect(box.y+box.height,'inside the overview screen').toBeLessThanOrEqual(screen.y+screen.height+1);
   expect(box.y,'on its bottom line').toBeGreaterThan(screen.y+screen.height*0.6);
  });
+
+test('D466 two keys with the same short name add their plan tier',async({page})=>{
+ const {data}=fixture();for(const r of data.projection.rows)r.name={en:'Synthetic',zh:'Synthetic'};
+ data.projection.rows[1].accounts[0].plan.name={en:'Plus',zh:'Plus'};
+ await open(page,data);
+ await expect(page.locator('.eng-keys .ek[data-sub] .ek-name')).toHaveText(['Synthetic Pro 200','Synthetic Plus']);
+});
 
 test('CKP-ENG-27 a plan the reader does not know leaves the name alone',async({page})=>{
  const {data,row}=fixture({plan:null});

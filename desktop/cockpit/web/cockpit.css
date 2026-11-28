@@ -323,8 +323,12 @@ html[data-reduce-motion="true"] .ck-base :is(.bz,.bz-empty)::before,html[data-re
 .ck-eng .qq{font:400 10px/1 var(--f-lcd);color:var(--lcd-muted)}
 /* CKP-ENG-53: ≈cost leads and is the brightest; tokens and speed step back beside it, and drop (speed first) when narrow. */
 .ck-eng .qrow-t{overflow:hidden}
-.ck-eng .qcost{font-weight:600;color:var(--lcd-ink)}
-.ck-eng .qrow-t:has(.qcost) :is(.qtokens,.qaverage){color:var(--lcd-muted)}
+/* D464: tokens are the big figure (19 px, full ink, a small "token" unit), ≈cost next (12 px, secondary), speed last. */
+.ck-eng .qrow-t{justify-content:flex-start;align-items:baseline;gap:7px}
+.ck-eng .qrow-t .qtokens{font:600 19px/1 var(--f-lcd);color:var(--lcd-ink);white-space:nowrap}
+.ck-eng .qrow-t .qtokens::after{content:" token";font:400 10px/1 var(--f-lcd);color:var(--lcd-muted)}
+.ck-eng .qcost{font:400 12px/1 var(--f-lcd);color:color-mix(in srgb,var(--lcd-ink) 72%,transparent);white-space:nowrap}
+.ck-eng .qrow-t .qaverage{margin-left:0;font-size:11px;color:var(--lcd-muted);white-space:nowrap}
 .ck-eng .qrow-t .drop{display:none}
 .ck-eng .qrv-c{display:block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
@@ -574,6 +578,102 @@ html[data-reduce-motion="true"] [data-wait-shown="true"] .ck-eng .ec-empty{anima
 .ck-eng .qrow-r .qrv-x.warn{color:var(--st-mid)}
 .ck-eng .qrow-r .qrv-sep{font-style:normal;flex:none}
 .ck-eng .qrow-r .qrv-plus{flex:none;margin-left:3px;padding:0;border:0;background:none;color:var(--trial);font-weight:600}
+.ck-eng .cls-narrow .qrow-t .qtokens{font-size:15px}
+.ck-eng .cls-narrow .qrow-t .qtokens::after{content:none}
+/* D474 §4.2, §6.1, C25: the calm 24 h strip at the right edge of a subscription column. No now bar and no track: a reset is a
+   2 pt notch the rail's width (ink-3), a peak a maker-tint block (≈ 38 %), a run-out an amber dashed tick, a timed official
+   reset a blue tick; nothing falls in 24 h, nothing is drawn. The hit area is the text margin (16 pt wide, 10 pt narrow)
+   spanning the quota rows, so it is never over text; a faint rail shows on column hover or focus. */
+.ck-eng .eng-lcd{--ec-low:32px;--ec-margin:16px;--ec-rail:6px}
+.ck-eng .eng-lcd.has-res{--ec-low:58px}
+.ck-eng .eng-lcd.cls-narrow{--ec-margin:10px;--ec-rail:3px}
+.ck-eng .ec:has(> .ec-strip) > .qcell{padding-right:var(--ec-margin)}
+.ck-eng .ec-strip{position:absolute;right:0;top:0;bottom:var(--ec-low);width:var(--ec-margin);margin:0;padding:0;border:0;border-radius:0;background:none;cursor:pointer;z-index:2}
+.ck-eng .ec-strip:focus-visible{outline:1px solid color-mix(in srgb,var(--silk-hi) 55%,transparent);outline-offset:-1px}
+.ck-eng .ec-strip-bar{position:absolute;left:calc(50% - var(--ec-rail) / 2);top:3px;bottom:3px;width:var(--ec-rail);border-radius:1px;background:none}
+.ck-eng .ec:is(:hover,:focus-within) .ec-strip-bar,.ck-eng .ec-strip:focus-visible .ec-strip-bar{background:color-mix(in srgb,var(--lcd-ink) 12%,transparent)}
+.ck-eng .ec-strip-bar i,.cal-page .ag-lane i{position:absolute;left:0;right:0;display:block;font-style:normal}
+.ck-eng .ec-strip-bar .st-peak{background:var(--c);opacity:.38;border-radius:1px;min-height:2px}
+.ck-eng .ec-strip-bar .st-reset{left:0;right:0;height:2px;margin-top:-1px;background:var(--lcd-muted)}
+.ck-eng .ec-strip-bar .st-run{left:0;right:0;height:0;margin-top:-.5px;border-top:1.5px dashed var(--st-mid);background:none}
+.ck-eng .ec-strip-bar .st-off{left:0;right:0;height:2px;margin-top:-1px;border-radius:0;background:var(--trial)}
+.cal-page .ag-lane .st-h{height:1px;background:#262d37}
+.cal-page .ag-lane .st-mid{height:1px;background:#39414c}
+:is(.cal-page .ag-lane) .st-peak{background:var(--c);border-radius:1.5px;min-height:2px}
+:is(.cal-page .ag-lane) .st-peak.tent{opacity:.55}
+:is(.cal-page .ag-lane) .st-reset{left:-2px;right:-2px;height:1.6px;margin-top:-.8px;background:#e9edf0}
+:is(.cal-page .ag-lane) .st-run{left:-2px;right:-2px;height:1.6px;margin-top:-.8px;background:var(--st-mid)}
+:is(.cal-page .ag-lane) .st-off{left:.2px;right:auto;width:5.6px;height:5.6px;margin-top:-2.8px;border-radius:50%;background:var(--trial)}
+:is(.cal-page .ag-lane) .st-now{left:-3px;right:-3px;height:2.2px;background:var(--st-ok)}
+/* The strip's hover card, left of the strip; it takes the pointer so its "7 天日历 ›" link can be pressed. */
+#cockpit .ec-next{pointer-events:auto;z-index:40;min-width:150px;gap:2px}
+#cockpit .ec-next .ln{display:grid;grid-template-columns:72px auto;gap:6px;font:10.5px/1.5 var(--f-lcd);color:var(--lcd-ink)}
+#cockpit .ec-next .ln b{font-weight:500;color:#c6ced7}
+#cockpit .ec-next .ln em{font-style:normal}
+#cockpit .ec-next .ln.now b,#cockpit .ec-next .ln.now em{color:var(--st-ok)}
+#cockpit .ec-next .ln.peak b{color:#c4b5ff}
+#cockpit .ec-next .ln.warn :is(b,em){color:var(--st-mid)}
+#cockpit .ec-next .ln.news :is(b,em){color:var(--trial)}
+#cockpit .ec-next .ln.quiet{display:block;color:var(--lcd-muted)}
+#cockpit .ec-next .ln.link{display:block;margin:2px 0 0;padding:0;border:0;background:none;text-align:left;color:#9cc2ff;cursor:pointer;font:10.5px/1.5 var(--f-lcd)}
+#cockpit .ec-next .ln.link:hover,#cockpit .ec-next .ln.link:focus-visible{text-decoration:underline;outline:none}
+/* D466: the big screen's 日历 tab (5th page key). */
+.mfd-pk{grid-template-columns:repeat(5,minmax(0,1fr))}
+.mfd-page.pg-calendar{display:flex;flex-direction:column;min-height:0}
+.cal-page{display:flex;flex-direction:column;gap:3px;height:100%;min-height:0;font:10px/1.3 var(--f-lcd);color:var(--lcd-ink)}
+.cal-page .cal-head{display:flex;align-items:center;justify-content:space-between;gap:6px;flex:none}
+.cal-page .cal-chip{display:inline-flex;align-items:center;gap:4px;height:15px;padding:0 7px;border-radius:8px;border:1px solid var(--lcd-rule);font:10px/1 var(--f-lcd);color:var(--lcd-muted);background:none;white-space:nowrap}
+.cal-page button.cal-chip{cursor:pointer;color:var(--lcd-ink);border-color:var(--c,var(--lcd-muted));background:color-mix(in srgb,var(--c,var(--lcd-muted)) 16%,transparent)}
+.cal-page .cal-chip b{font-weight:400}
+.cal-page .cal-range{color:var(--lcd-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cal-page .cal-news{display:flex;align-items:center;gap:4px;margin:0;color:var(--trial);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cal-page .cal-news .al-dot{position:relative;display:inline-block;width:10px;height:10px}
+.cal-page .cal-ag{position:relative;flex:1 1 0;min-height:0;display:grid;grid-template-columns:34px auto minmax(0,1fr);gap:0 8px}
+.cal-page .ag-axis{position:relative}
+.cal-page .ag-h{position:absolute;right:0;margin-top:-6px;font:9px/12px var(--f-lcd);font-style:normal;color:var(--lcd-muted);white-space:nowrap}
+.cal-page .ag-lanes{display:flex;gap:6px}
+.cal-page .ag-lane{position:relative;width:8px;border-radius:2px;background:#161b23}
+.cal-page .ag-words{position:relative;min-width:0}
+.cal-page .ag-w{position:absolute;left:0;right:0;display:flex;gap:6px;margin:0;font:10px/12px var(--f-lcd);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cal-page .ag-w b{flex:none;font-weight:500;color:#c6ced7}
+.cal-page :is(.ag-w,.w7-li,.c30-li).now :is(b,span){color:var(--st-ok)}
+.cal-page :is(.ag-w,.w7-li,.c30-li).peak b{color:#c4b5ff}
+.cal-page :is(.ag-w,.w7-li,.c30-li,.cal-later span).warn{color:var(--st-mid)}
+.cal-page :is(.ag-w,.w7-li,.c30-li).news{color:var(--trial)}
+.cal-page :is(.ag-w,.w7-li,.c30-li).past{color:var(--lcd-muted)}
+.cal-page .cal-later{display:flex;align-items:center;gap:8px;flex:none;color:var(--lcd-muted);white-space:nowrap;overflow:hidden}
+.cal-page .cal-later span{overflow:hidden;text-overflow:ellipsis}
+.cal-page .cal-more{margin-left:auto;padding:0 2px;border:0;background:none;color:#9cc2ff;font:10px var(--f-lcd);cursor:pointer}
+.cal-page .cal-wk7{--w7-g:22px;position:relative;flex:none;display:grid;grid-template-rows:22px auto 96px}
+.cal-page .w7-days,.cal-page .w7-ad,.cal-page .w7-body{position:relative}
+.cal-page .w7-dh{position:absolute;top:0;height:20px;display:flex;align-items:center;justify-content:center;gap:3px;margin:0;padding:0;border:0;border-radius:3px;background:none;color:var(--lcd-muted);font:10px/1 var(--f-lcd);cursor:pointer}
+.cal-page .w7-dh i{font-style:normal}.cal-page .w7-dh b{font-weight:600;color:var(--lcd-ink)}
+.cal-page .w7-dh.today :is(i,b){color:var(--st-ok)}
+.cal-page .w7-dh.sel{background:#ffffff12}
+.cal-page .w7-ad{height:15px;border-bottom:1px solid var(--lcd-rule)}
+.cal-page .w7-adl{position:absolute;left:0;top:2px;font:8px/11px var(--f-lcd);color:var(--lcd-muted);white-space:nowrap}
+.cal-page .w7-chip{position:absolute;top:1px;height:12px;box-sizing:border-box;margin:0 2px;padding:0 3px 0 4px;border-radius:6px;border-left:2px solid var(--c);background:#1b2029;font:10px/12px var(--f-lcd);white-space:nowrap;overflow:hidden;text-overflow:clip;max-width:calc((100% - var(--w7-g)) / 7 - 4px)}
+.cal-page button.w7-more{border-top:0;border-right:0;border-bottom:0;color:var(--lcd-ink);cursor:pointer}
+.cal-page .w7-chip.news{color:var(--trial)}.cal-page .w7-chip.past{color:var(--lcd-muted)}.cal-page .w7-chip.reserve{color:var(--st-mid)}
+.cal-page .w7-body .w7-g{position:absolute;left:var(--w7-g);right:0;height:1px;background:var(--lcd-rule)}
+.cal-page .w7-g.g0{top:0}.cal-page .w7-g.g6{top:25%}.cal-page .w7-g.g12{top:50%}.cal-page .w7-g.g18{top:75%}
+.cal-page .w7-hl{position:absolute;left:0;margin-top:-1px;font:8px/9px var(--f-lcd);font-style:normal;color:var(--lcd-muted)}
+.cal-page .w7-col{position:absolute;top:0;bottom:0;border-left:1px solid #ffffff0a}
+.cal-page .w7-col.sel{background:#ffffff08}
+.cal-page .w7-pk{position:absolute;display:block;border-radius:2px;background:var(--c);opacity:.85;min-height:2px}
+.cal-page .w7-pk.tent{opacity:.45}
+.cal-page .w7-rc{position:absolute;display:block;height:12px;margin-top:-6px;padding:0 3px 0 4px;box-sizing:border-box;border:1px solid #c6ced7;border-left:2px solid var(--c);border-radius:6px;background:#0d1015;font:10px/10px var(--f-lcd);white-space:nowrap;overflow:hidden;text-overflow:clip;z-index:1}
+.cal-page .w7-rc.news{border-color:var(--trial);color:var(--trial)}.cal-page .w7-rc.past{color:var(--lcd-muted);border-color:var(--lcd-rule)}
+.cal-page .w7-run{position:absolute;display:block;height:0;border-top:1px dashed var(--st-mid)}
+.cal-page .w7-now{position:absolute;display:block;height:1.5px;background:var(--st-ok)}
+.cal-page .w7-list,.cal-page .cal-30{flex:1 1 0;min-height:40px;overflow-y:auto}
+.cal-page :is(.w7-lh,.c30-d){margin:2px 0 1px;font:600 10px/13px var(--f-lcd);color:var(--lcd-ink)}
+.cal-page :is(.w7-li,.c30-li){display:grid;grid-template-columns:6px 78px minmax(0,1fr);align-items:center;gap:5px;margin:0;font:10px/13px var(--f-lcd);white-space:nowrap}
+.cal-page :is(.w7-li,.c30-li) span{overflow:hidden;text-overflow:ellipsis}
+.cal-page :is(.w7-li,.c30-li).quiet{display:block;color:var(--lcd-muted)}
+.cal-page .w7-sw{display:block;width:3px;height:9px;border-radius:1px}
+.cal-page :is(.w7-li,.c30-li) b{font-weight:500;color:#c6ced7}
+
 
 /* D411 nitpick 8: the subscription key row ends where the panels below end (632 px), not 2 px short. */
 .ck-eng .eng-keys{right:var(--eng-pr)}
@@ -610,3 +710,21 @@ html[data-reduce-motion="true"] [data-wait-shown="true"] .ck-eng .ec-empty{anima
 #cockpit .mfd-alerts .al-who.over{-webkit-mask-image:linear-gradient(to left,transparent 0,#000 12px);mask-image:linear-gradient(to left,transparent 0,#000 12px)}
 #cockpit .mfd-alerts .al-rest{flex:none;white-space:nowrap}
 .ck-eng .qrow-r .drop{display:none}
+
+/* #1291 (D474 §6.1): the label column is 42 pt in 中文 and 50 pt in English (one threshold: the column count follows, §3.1: zh 6,
+   en 5, so 91 pt and 107.6 pt columns). 全部 and the pager sit over it. */
+#cockpit .ck-eng{--eng-lab:42px}
+:root:lang(en) #cockpit .ck-eng{--eng-lab:50px}
+
+/* #1291 (D474 §7.1): the shared hover card: title, facts, basis in ink-3. ≤ 260 wide, ≤ 6 lines; text only. */
+#cockpit .mfd-tip.hc-card{z-index:41;max-width:260px;white-space:normal;pointer-events:none;visibility:hidden}
+#cockpit .mfd-tip.hc-card.on{visibility:visible;transition:visibility 0s linear var(--hc-delay,400ms)}
+#cockpit .mfd-tip.hc-card .basis{color:var(--lcd-muted)}
+
+/* #1291 (5 page keys, D466): the "总览 │ 资源" switch lives in the first key slot, now 1/5 of the screen (≈ 71 pt). Tighter
+   padding and gaps so both tabs fit it in 中文 and English without clipping. */
+#cockpit .mfd-pk .pk-seg{padding:0 2px}
+#cockpit .pk-seg .h{gap:2px;padding:0 1px;letter-spacing:.02em}
+#cockpit .pk-seg .sep{margin:0 2px}
+#cockpit .pk-seg .cur[data-short="false"]{padding:0 2px}
+.ck-eng .qrow-t{padding-top:3px}/* the 19 px tokens figure keeps its whole font box inside the row (walk: clipped text) */

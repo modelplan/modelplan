@@ -33,7 +33,9 @@ test('MOT-2.3-09 state, input and appearance changes leave the frame and reading
  await page.keyboard.down('Alt');await held('help map down');await page.keyboard.up('Alt');await held('help map up');
  for(const name of ['Plans','Models','Breakdown','Overview']){await page.getByRole('button',{name,exact:true}).click();await held(`page ${name}`);}
  for(const change of [{reduceMotion:true},{reduceTransparency:true},{theme:'day'},{locale:'zh-CN'}]){
-  expect(await receive(send('appearance',{...appearance,...change}))).toBe(true);await held(JSON.stringify(change));
+  expect(await receive(send('appearance',{...appearance,...change}))).toBe(true);
+  // A language switch moves the cells by design: the label column is 42 pt in 中文 and 50 pt in English (D474 §6.1); rows keep their height and place.
+  if(change.locale)expect((await columns(page)).map(r=>[r[1],r[3]]),JSON.stringify(change)).toEqual(cells.map(r=>[r[1],r[3]]));else await held(JSON.stringify(change));
   expect(await receive(send('appearance',appearance))).toBe(true);await held('appearance restored');
  }
 });

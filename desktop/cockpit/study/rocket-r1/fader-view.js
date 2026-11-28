@@ -160,12 +160,15 @@ export function card(c, f = {}) {
   }
   if (use) {
     const priced = typeof use.cost === 'number' && Number.isFinite(use.cost) && use.cost > 0;
-    lines.bigFull = priced ? approxCost(use.cost) : tokShort(use.tokens); lines.big = clip(priced ? cardCost(use.cost) : lines.bigFull); lines.bigKind = priced ? 'cost' : 'tokens';
-    // "1000B 100%" is 10 characters: the share (also drawn by the bar) drops off before the tokens are cut.
-    const tok = tokShort(use.tokens), pct = pctOf(use.share) + '%';
-    // D405: the token count is set larger than the share, so the share stays on the line only while both fit the 52 px slot
+    // D464 (owner 11-26, as the band's range row): tokens are the big figure; ≈cost moves to the small line with the share.
+    lines.bigFull = tokShort(use.tokens); lines.big = clip(lines.bigFull); lines.bigKind = 'tokens';
+    const tok = tokShort(use.tokens), cost = priced ? cardCost(use.cost) : '', pct = pctOf(use.share) + '%';
+    // D405: the first part is set larger than the share, so the share stays on the line only while both fit the 52 px slot
     // (seven characters together); otherwise the bar alone shows it, and the accessible name keeps it.
-    lines.bar = Math.max(0, Math.min(1, use.share)); lines.useFull = [tok, pct]; lines.use = [...tok].length + [...pct].length <= USE_FIT ? [tok, pct] : [clip(tok)];
+    // Without a public price the small line keeps the tokens with the share, as before.
+    const first = priced ? cost : tok;
+    lines.bar = Math.max(0, Math.min(1, use.share)); lines.useFull = [priced ? approxCost(use.cost) : tok, pct];
+    lines.use = [...first].length + [...pct].length <= USE_FIT ? [first, pct] : [clip(first)];
   } else if (f.live || f.recorded) {
     lines.state = 'norecord'; lines.big = t('fad.cardNoRecord'); lines.bigKind = 'note';
   } else {
@@ -207,7 +210,7 @@ export function stripAria(c) {
   if (c.unlisted) return `${c.name}: ${t('fad.cardUnlisted')}`;
   const current = t('fad.stripAria', {m: c.name, cur: c.cur || t('fad.unreportedAria'), rec: c.rec, x: c.recX != null ? t('fad.stripAriaX', {x: times(c.recX)}) : '',
     more: c.others.length ? t('fad.stripAriaMore', {more: c.others.map(([e, n]) => `${e}×${n}`).join(' ')}) : '',
-    use: c.card && c.card.use ? t('fad.stripAriaUse', {u: [c.card.bigKind === 'cost' ? c.card.bigFull : '', c.card.useFull.join(' ')].filter(Boolean).join(' · ')}) : ''});
+    use: c.card && c.card.use ? t('fad.stripAriaUse', {u: [c.card.useFull[0] !== c.card.bigFull ? c.card.bigFull : '', c.card.useFull.join(' ')].filter(Boolean).join(' · ')}) : ''});
   if (!c.trial) return current;
   const tr = c.trial, fastOnly = tr.fast != null && tr.effort === c.base;
   return current + ' · ' + t('fad.stripTrialAria', {m: c.name, e: fastOnly ? t(tr.fast ? 'fad.tryFast' : 'fad.tryStd') : tr.effort + (tr.fast ? ' ⚡' : ''),

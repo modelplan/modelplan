@@ -107,3 +107,51 @@ export function estCostText(usd:number):string|null {
  if(k<999.5)return `≈$${Number(k.toPrecision(k<100?2:3))}k`;
  return `≈$${Number((k/1000).toPrecision(2))}M`;
 }
+
+/** The band range row's figures for one subscription (D474 §2.5, G-a): total tokens, never output only.
+ *  - 今天: Σ(pricedTokens + unpricedTokens) of `cost.daily` for today over the subscription's sources, counted only when each
+ *    source serves exactly this one subscription; a source shared with another subscription (two Codex accounts) cannot be
+ *    split, so the cell is `shared` (it shows `—` and the tool total in its hover).
+ *  - 7天 / 30天: `history.subscriptions[].sources[].recentNd.totalTokens` (exact per subscription). When every source of the
+ *    subscription binds only it, `cost.daily` gives the same figure the 总览 total reads, so the band equals 总览.
+ *  Without prices (`cost` absent) there is no `cost.*` figure: the caller falls back to its output-token reading. */
+export interface BandUsage {
+ /** Total tokens in the range, or null when there is none (or when the source is shared). */
+ readonly tokens:number|null;
+ /** The cost basis the figure came from: the day buckets or the history sums. */
+ readonly from:'cost'|'history'|null;
+ /** Two or more subscriptions share a source of this one: the figure cannot be split. `total` is the tool's total in the range. */
+ readonly shared:{readonly subscriptions:number;readonly total:number}|null;
+ /** Unpriced tokens ÷ all tokens in the range (the "9% has no public price" note), null without tokens or without cost. */
+ readonly unpricedShare:number|null;
+ /** 7天 / 30天 only (G-b: 今天 has none): the token kinds behind the total, from the subscription's own history sums. */
+ readonly kinds:{readonly input:number;readonly cacheWrite:number;readonly cacheRead:number;readonly output:number;readonly reasoning:number}|null;
+}
+export function bandUsage(data:WireCockpitData,ref:string|null,range:CockpitRangeKey,now:number):BandUsage {
+ const none:BandUsage={tokens:null,from:null,shared:null,unpricedShare:null,kinds:null};
+ const h=data.history,sub=ref===null?undefined:h?.subscriptions.find(x=>x.subscriptionRef===ref);
+ if(!h||!sub||sub.sources.length===0)return none;
+ const verified=new Set(data.subscriptions.map(s=>s.subscriptionRef)),servers=new Map<string,Set<string>>();
+ for(const s of h.subscriptions)if(verified.has(s.subscriptionRef))for(const x of s.sources){const set=servers.get(x.source)??new Set<string>();set.add(s.subscriptionRef);servers.set(x.source,set);}
+ const mine=sub.sources.map(x=>x.source),exclusive=mine.length>0&&mine.every(s=>(servers.get(s)?.size??0)===1);
+ const c=h.cost,priced=h.coverage==='local-history'&&usable(c);
+ const days=range==='today'?1:range==='7d'?7:30,from=daysAgo(now,days-1),today=daysAgo(now,0);
+ const fromCost=()=>{let p=0,u=0;for(const b of c!.daily)if(mine.includes(b.source)&&b.at>=from&&b.at<=today){p+=b.pricedTokens;u+=b.unpricedTokens;}const total=p+u;return {tokens:total,unpricedShare:total>0?u/total:null};};
+ if(range==='today'){
+  if(!priced)return none;
+  if(!exclusive){
+   const shared=mine.filter(s=>(servers.get(s)?.size??0)>1);let total=0;
+   for(const b of c!.daily)if(shared.includes(b.source)&&b.at===today)total+=b.pricedTokens+b.unpricedTokens;
+   return {tokens:null,from:null,shared:{subscriptions:Math.max(...shared.map(s=>servers.get(s)!.size)),total},unpricedShare:null,kinds:null};
+  }
+  const f=fromCost();return f.tokens>0?{tokens:f.tokens,from:'cost',shared:null,unpricedShare:f.unpricedShare,kinds:null}:none;// nothing recorded today is "no usage", never a 0
+ }
+ const bound=sub.sources.every(x=>x.bindingBasis==='source-wide-current-binding');
+ let sum=0,requests=0;const kinds={input:0,cacheWrite:0,cacheRead:0,output:0,reasoning:0};
+ for(const x of sub.sources){const w=range==='7d'?x.recent7d:x.recent30d;if(!w)continue;sum+=w.totalTokens??w.outputTokens;requests+=w.observedRequests;kinds.input+=w.inputTokens??0;kinds.cacheWrite+=w.cacheWriteTokens??0;kinds.cacheRead+=w.cacheReadTokens??0;kinds.output+=w.outputTokens;kinds.reasoning+=w.reasoningTokens??0;}
+ const split=requests>0?kinds:null;
+ if(priced&&exclusive){const f=fromCost();if(f.tokens>0)return {tokens:f.tokens,from:'cost',shared:null,unpricedShare:f.unpricedShare,kinds:split};}
+ if(!bound)return none;
+ return requests>0&&sum>=0?{tokens:sum,from:'history',shared:null,unpricedShare:null,kinds:split}:none;
+}
+export type CockpitRangeKey='today'|'7d'|'30d';

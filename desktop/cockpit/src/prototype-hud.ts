@@ -62,7 +62,7 @@ export function paintHud(host:HTMLElement,data:WireCockpitData|null|undefined,lo
  const chart=document.createElement('div');chart.className='hud-chart';chart.append(miniChart(rows,seenEfforts(rows),162,77,ht(locale,'host.hudChartLabel')));host.append(chart);
  const list=document.createElement('div');list.className='hud-list';
  for(const [i,m] of rows.entries()){
-  const row=document.createElement('button');row.type='button';row.className='hp'+(m.id===options.selected?' selected':'')+(m.dominated?' dominated':'');row.dataset.hudModel=m.id;row.dataset.hudName=m.name;row.title=m.name;
+  const row=document.createElement('button');row.type='button';row.className='hp'+(m.id===options.selected?' selected':'')+(m.dominated?' dominated':'');row.dataset.hudModel=m.id;row.dataset.hudName=m.name;{const facts=ht(locale,'host.hudRank',{n:i+1,e:m.rec}),basis=ht(locale,'host.hudBasis');row.dataset.hc=m.name;row.dataset.hcKey='hud:'+m.id;row.dataset.hcFacts=facts;row.dataset.hcBasis=basis;row.setAttribute('aria-label',`${m.name} · ${facts} · ${basis}`);}
   const n=document.createElement('span');n.className='hp-n';n.textContent=String(i+1);
   // A running session at ★ glows the star; at any other effort the name turns gold (porthole.js:56-63).
   const atStar=m.latestEffort!==undefined&&m.latestEffort?.toLowerCase()===m.rec.toLowerCase(),elsewhere=m.latestEffort!==undefined&&!atStar;

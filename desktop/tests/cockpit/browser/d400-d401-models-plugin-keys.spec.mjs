@@ -2,7 +2,8 @@
 // D400: the Models page is one page with one behaviour for both entries (a HUD click and the 模型 tab): the same page
 // state, the user's list/chart choice kept, the same return behaviour. D401: a plugin key follows the subscription-key
 // logic: selecting a plugin deselects the subscription, only the plugin key is lit, the overview restores the selection.
-// Synthetic data only.
+// D466: the calendar is no longer a plugin key (it is the 5th page), so these use the Resources key and, where two
+// plugin keys are needed, the framework placeholder. Synthetic data only.
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
 import {appearance,commands,pageId,shell,excludePortholeFlicker} from '../fixture.mjs';
 import {visualFixture} from '../visual-fixture.mjs';
@@ -20,6 +21,7 @@ async function open(page){
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('plugins',{plugins:on}))).toBe(true);
  expect(await receive(send('display',{data}))).toBe(true);
+ return {send,receive};
 }
 // What the owner sees of the lower panel and the keys.
 const snap=page=>page.evaluate(()=>{
@@ -70,7 +72,7 @@ const key=(page,id)=>page.locator(`.eng-keys .pl-key[data-plugin="${id}"]`);
 test('D401 selecting a plugin deselects the subscription: only the plugin key is lit',async({page})=>{
  await open(page);
  await page.keyboard.press('1');let s=await snap(page);expect(s.subs.length).toBe(1);const sub=s.subs[0];
- for(const id of ['calendar','resources']){
+ for(const id of ['resources']){
   await key(page,id).click();s=await snap(page);
   expect(s.subs,`${id}: no subscription lit`).toEqual([]);expect(s.all,`${id}: All not lit`).toEqual([]);expect(s.plugins).toEqual([id]);expect(s.pageKeys).toEqual([]);
   await page.keyboard.press('Escape');s=await snap(page);
@@ -80,34 +82,36 @@ test('D401 selecting a plugin deselects the subscription: only the plugin key is
 test('D401 the overview, the switch and the same key all restore the previous selection',async({page})=>{
  await open(page);
  await page.keyboard.press('1');const sub=(await snap(page)).subs[0];
- await key(page,'calendar').click();await page.getByRole('tab',{name:'Overview'}).click();expect((await snap(page)).subs).toEqual([sub]);
+ await key(page,'resources').click();await page.getByRole('tab',{name:'Overview'}).click();expect((await snap(page)).subs).toEqual([sub]);
  await key(page,'resources').click();await key(page,'resources').click();expect((await snap(page)).subs).toEqual([sub]);
- await key(page,'calendar').click();await key(page,'resources').click();const s=await snap(page);expect(s.plugins).toEqual(['resources']);expect(s.subs).toEqual([]);
+ await key(page,'resources').click();const s=await snap(page);expect(s.plugins).toEqual(['resources']);expect(s.subs).toEqual([]);
  // Pressing the remembered subscription key brings it back (it is not toggled off); another one selects that one.
  await page.locator(`.eng-keys .ek[data-sub="${sub}"]`).click();let t=await snap(page);expect(t.subs).toEqual([sub]);expect(t.plugins).toEqual([]);
- await key(page,'calendar').click();await page.locator('.eng-keys .ek[data-sub]').nth(1).click();t=await snap(page);expect(t.subs.length).toBe(1);expect(t.subs[0]).not.toBe(sub);expect(t.plugins).toEqual([]);
- await key(page,'calendar').click();await page.locator('.ek[data-all]').click();t=await snap(page);expect(t.all).toEqual(['all']);expect(t.subs).toEqual([]);
+ await key(page,'resources').click();await page.locator('.eng-keys .ek[data-sub]').nth(1).click();t=await snap(page);expect(t.subs.length).toBe(1);expect(t.subs[0]).not.toBe(sub);expect(t.plugins).toEqual([]);
+ await key(page,'resources').click();await page.locator('.ek[data-all]').click();t=await snap(page);expect(t.all).toEqual(['all']);expect(t.subs).toEqual([]);
 });
 test('D401 with All selected a plugin leaves nothing but the plugin key lit, and All returns',async({page})=>{
  await open(page);
  expect((await snap(page)).all).toEqual(['all']);
- await key(page,'calendar').click();let s=await snap(page);expect(s.all).toEqual([]);expect(s.plugins).toEqual(['calendar']);
+ await key(page,'resources').click();let s=await snap(page);expect(s.all).toEqual([]);expect(s.plugins).toEqual(['resources']);
  await page.keyboard.press('Escape');s=await snap(page);expect(s.all).toEqual(['all']);expect(s.plugins).toEqual([]);
 });
 // macrevb-1211-2: the plugin key's context menu never lights or darkens the key; lit and aria-pressed follow the screen alone.
 test('D401 a plugin key context menu leaves the key lit exactly while its screen is open',async({page})=>{
- await open(page);
+ const {send,receive}=await open(page);
+ // Two plugin keys: Resources and the framework placeholder (D466: the calendar has no key).
+ expect(await receive(send('plugins',{plugins:{version:1,entries:[{id:'calendar',enabled:true,pinned:false},{id:'resources',enabled:true,pinned:true},{id:'placeholder',enabled:true,pinned:true}],settings:{}}}))).toBe(true);
  const state=async id=>({lit:await key(page,id).evaluate(k=>k.classList.contains('on')),pressed:await key(page,id).getAttribute('aria-pressed'),screen:await page.locator(`.pl-screen[data-plugin="${id}"]`).count()});
  // Active key: the screen is open; the menu opens and Escape dismisses only the menu.
- await key(page,'calendar').click();expect(await state('calendar')).toEqual({lit:true,pressed:'true',screen:1});
- await key(page,'calendar').click({button:'right'});await expect(page.locator('.pl-menu')).toHaveCount(1);
- expect(await state('calendar')).toEqual({lit:true,pressed:'true',screen:1});
- await page.keyboard.press('Escape');await expect(page.locator('.pl-menu')).toHaveCount(0);
- expect(await state('calendar'),'still lit with its screen open after the menu closes').toEqual({lit:true,pressed:'true',screen:1});
- // Inactive key: the menu opens on it without lighting it, and closing it leaves it dark.
+ await key(page,'resources').click();expect(await state('resources')).toEqual({lit:true,pressed:'true',screen:1});
  await key(page,'resources').click({button:'right'});await expect(page.locator('.pl-menu')).toHaveCount(1);
- expect(await state('resources'),'a menu does not light a key whose screen is closed').toEqual({lit:false,pressed:'false',screen:0});
+ expect(await state('resources')).toEqual({lit:true,pressed:'true',screen:1});
  await page.keyboard.press('Escape');await expect(page.locator('.pl-menu')).toHaveCount(0);
- expect(await state('resources')).toEqual({lit:false,pressed:'false',screen:0});
- expect(await state('calendar')).toEqual({lit:true,pressed:'true',screen:1});
+ expect(await state('resources'),'still lit with its screen open after the menu closes').toEqual({lit:true,pressed:'true',screen:1});
+ // Inactive key: the menu opens on it without lighting it, and closing it leaves it dark.
+ await key(page,'placeholder').click({button:'right'});await expect(page.locator('.pl-menu')).toHaveCount(1);
+ expect(await state('placeholder'),'a menu does not light a key whose screen is closed').toEqual({lit:false,pressed:'false',screen:0});
+ await page.keyboard.press('Escape');await expect(page.locator('.pl-menu')).toHaveCount(0);
+ expect(await state('placeholder')).toEqual({lit:false,pressed:'false',screen:0});
+ expect(await state('resources')).toEqual({lit:true,pressed:'true',screen:1});
 });

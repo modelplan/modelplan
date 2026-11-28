@@ -118,6 +118,10 @@ export interface CockpitPlugin {
    *  list offers it (the empty-slot "+" menu here). Settings › Plugins hides it natively through CockpitPluginDefinition
    *  frameworkOnly, which lands with #1134 (ghglm-1135-3). */
   readonly frameworkOnly?:boolean;
+  /** D466: the plugin is drawn as a fixed big-screen page (the calendar's 日历 tab), so it has no column, no key and no
+   *  place in the "+" menu; a request to open its screen opens that page. It stays registered for saved states and the
+   *  Settings mirror. */
+  readonly pageOnly?:boolean;
   /** The host samples this plugin's readings (e.g. the resource plugin). Such a plugin is drawn only for a host that sent
    *  its plugin state, so a host that cannot sample never shows an empty column. */
   readonly hostSampled?:boolean;

@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import {faderModel,cardText,effortLine,stripAria,lcdView,CARD_LINE} from '../../../cockpit/study/rocket-r1/fader-view.js';
 import {approxCost,tokShort} from '../../../cockpit/study/rocket-r1/mfd-pages/fmt.js';
 import {setLanguage} from '../../../cockpit/study/rocket-r1/i18n.js';
+import {assertChartOrder} from '../chart-order.mjs';
 import {cardUsage,currentEffort,CURRENT_WINDOW_MS} from '../../../cockpit/.tmp/compiled/src/model-card.js';
 
 globalThis.document??={documentElement:{}};
@@ -15,12 +16,13 @@ const fader=(o={})=>({id:'m',name:'GPT-6.1 Sol',short:'Sol 6.1',rec:'Med',e,curr
 const channel=(f,ui={})=>faderModel({faders:[f],accounts:[{id:'a',colour:'#6aa8ff'}]},{bank:0,bankSize:3,selModel:null,previews:{},view:null,...ui}).channels[0];
 const chars=s=>[...s].length;
 
-test('CKP-FAD-50 a used model: name, ≈cost large, share bar, "212M 17%", "High ★Med"; no ability bars',()=>{
+// D464 (amends CKP-FAD-50): tokens are the large figure; ≈cost moves to the small line with the share.
+test('CKP-FAD-50 D464 a used model: name, tokens large, share bar, "≈$64 17%", "High ★Med"; no ability bars',()=>{
  setLanguage('en');
  const c=channel(fader({use:{tokens:212e6,share:.17,cost:64}}));
- assert.equal(c.card.state,'normal');assert.equal(c.card.big,'≈$64');assert.equal(c.card.bigKind,'cost');
- assert.equal(c.card.bar,.17);assert.deepEqual(c.card.use,['212M','17%']);
- assert.deepEqual(cardText(c.card),['Sol 6.1','≈$64','212M 17%','High ★Med']);
+ assert.equal(c.card.state,'normal');assert.equal(c.card.big,'212M');assert.equal(c.card.bigKind,'tokens');
+ assert.equal(c.card.bar,.17);assert.deepEqual(c.card.use,['≈$64','17%']);
+ assert.deepEqual(cardText(c.card),['Sol 6.1','212M','≈$64 17%','High ★Med']);
  assert.equal(c.bars,undefined,'the five ability bars are gone (CKP-FAD-04 superseded)');
 });
 
@@ -98,23 +100,29 @@ test('CKP-FAD-53 current effort: most tokens in the last 15 minutes, with hyster
  assert.deepEqual(c.dots.map(d=>d.e),['XHigh']);
 });
 
-test('the range use: ≈cost only from the WP-06 estimate (shares by ≈cost), tokens and token shares otherwise; never a guess',()=>{
+test('the range use (D474 §2.5): total tokens from cost.models for every range, token share of the range total; ≈$ small; output tokens only without a publication',()=>{
  const ranking=(top,total)=>({totalObservedOutputTokens:total,top});
- const cost=rows=>({basis:'api-list-price',currency:'USD',pricesAsOf:'2026-11-18',daily:[],hourly:[],models:{today:[],recent7d:rows,recent30d:[]}});
- const row=(model,usd,priced,unpriced=0)=>({model,source:'codex',estimatedUsd:usd,pricedTokens:priced,unpricedTokens:unpriced});
+ const cost=(rows,today=[])=>({basis:'api-list-price',currency:'USD',pricesAsOf:'2026-11-18',daily:[],hourly:[],models:{today,recent7d:rows,recent30d:rows}});
+ const row=(model,usd,priced,unpriced=0,source='codex')=>({model,source,estimatedUsd:usd,pricedTokens:priced,unpricedTokens:unpriced});
  const h={coverage:'local-history',models:{recent7d:ranking([{name:'sol',observedOutputTokens:212e6},{name:'opus',observedOutputTokens:480e6},{name:'glm',observedOutputTokens:96e6}],1247e6),recent30d:ranking([],0)}};
- // Without #1050's cost section (or with "Show estimated cost" off, which drops it): tokens and token shares only.
+ // Without the cost section (no publication, or "Show estimated cost" off): the history ranking's output tokens and shares.
  assert.deepEqual(cardUsage(h,'7d').get('sol'),{tokens:212e6,share:212/1247});
- const priced={...h,cost:cost([row('sol',64,212e6),row('opus',310,480e6),row('glm',null,0,96e6)])};
- const u=cardUsage(priced,'7d');
- assert.deepEqual(u.get('sol'),{tokens:212e6,share:64/374,cost:64});
- assert.deepEqual(u.get('glm'),{tokens:96e6,share:96/1247},'no public price: tokens, token share, no ≈$');
- // An unusable section (another basis or currency) is ignored; a range the ranking lacks takes tokens from the cost rows.
- assert.equal(cardUsage({...priced,cost:{...priced.cost,currency:'EUR'}},'7d').get('sol').cost,undefined);
- const today={...h,cost:{...cost([]),models:{today:[row('sol',3.1,9e6,1e6)],recent7d:[],recent30d:[]}}};
- assert.deepEqual(cardUsage(today,'today').get('sol'),{tokens:10e6,share:1,cost:3.1});
+ // With it: the total (priced + unpriced) of every range, the share is the token share of ALL rows, the unknown row included.
+ const priced={...h,cost:cost([row('sol',64,2e9,12e6),row('opus',310,480e6),row('glm',null,0,96e6),row('unknown',null,0,10e6)])};
+ const u=cardUsage(priced,'7d'),total=2e9+12e6+480e6+96e6+10e6;
+ assert.deepEqual(u.get('sol'),{tokens:2e9+12e6,share:(2e9+12e6)/total,cost:64},'tokens are the TOTAL, not the output ranking');
+ assert.deepEqual(u.get('glm'),{tokens:96e6,share:96e6/total},'no public price: tokens and token share, no ≈$');
+ assert.equal(u.has('unknown'),false,'the unknown row has no card, but stays in the denominator');
+ // A model on two sources is one card: the rows are summed.
+ const two=cardUsage({...h,cost:cost([row('sol',10,100e6,0,'codex'),row('sol',5,50e6,0,'zcode'),row('opus',1,50e6)])},'7d');
+ assert.deepEqual(two.get('sol'),{tokens:150e6,share:.75,cost:15});
+ // Every range reads cost.models: today and 30 days too, even where the output ranking has nothing.
+ assert.deepEqual(cardUsage({...h,cost:cost([],[row('sol',3.1,9e6,1e6)])},'today').get('sol'),{tokens:10e6,share:1,cost:3.1});
+ assert.equal(cardUsage({...priced,cost:{...priced.cost,currency:'EUR'}},'7d').get('sol').cost,undefined,'an unusable section falls back to the output ranking');
  assert.equal(cardUsage(h,'30d').size,0);assert.equal(cardUsage(h,'today').size,0);
  assert.equal(cardUsage({...h,coverage:'none'},'7d').size,0);assert.equal(cardUsage(null,'7d').size,0);
+ // Chart-order: the card bank keeps the publication's order; the usage map never reorders it (the caller indexes by id).
+ const ids=['opus','sol','glm'];assertChartOrder(ids.map((id,i)=>({id,pos:i*10})),['opus','sol','glm'],'bank order');
 });
 
 test('LBL-2.2-51 ≈cost and token formats on the card',()=>{
@@ -123,13 +131,15 @@ test('LBL-2.2-51 ≈cost and token formats on the card',()=>{
 });
 
 // Owner 11-21 (G3-144…): the cost in the card's large slot never clips, and the unknown current effort says what it is.
-test('G3-145 the card cost is a short form that fits the 52 px slot: under $0.01 "<$0.01", under $1 two decimals; the accessible text keeps the estimate',()=>{
+// D464: the cost moved to the small line; it keeps the G3-145 short form (the full estimate stays in useFull).
+test('G3-145 D464 the card cost is a short form on the small line: under $0.01 "<$0.01", under $1 two decimals; the accessible text keeps the estimate',()=>{
  setLanguage('en');
- const big=cost=>channel(fader({use:{tokens:432,share:.01,cost}})).card;
- assert.equal(big(0.004).big,'<$0.01');assert.equal(big(0.004).bigFull,'≈$0.004');
- assert.equal(big(0.012).big,'≈$0.01');assert.equal(big(0.42).big,'≈$0.42');
- assert.equal(big(9.1).big,'≈$9.1');assert.equal(big(1234).big,'≈$1.2k');
- for(const v of [0.0004,0.004,0.012,0.09,0.42,0.999,1,9.1,64,310,1234,12345])assert.ok(chars(big(v).big)<=6,`${v} -> ${big(v).big}`);
+ const card=cost=>channel(fader({use:{tokens:432,share:.01,cost}})).card;
+ assert.equal(card(0.004).use[0],'<$0.01');assert.equal(card(0.004).useFull[0],'≈$0.004');
+ assert.equal(card(0.012).use[0],'≈$0.01');assert.equal(card(0.42).use[0],'≈$0.42');
+ assert.equal(card(9.1).use[0],'≈$9.1');assert.equal(card(1234).use[0],'≈$1.2k');
+ assert.equal(card(9.1).big,'432');
+ for(const v of [0.0004,0.004,0.012,0.09,0.42,0.999,1,9.1,64,310,1234,12345])assert.ok(chars(card(v).use.join(' '))<=9,`${v} -> ${card(v).use}`);
 });
 
 // G3-146 named the unknown current effort "档位未报告" / "Effort ?" and banned the "当前未报告" look. G3-182 (owner row 35,
