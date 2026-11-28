@@ -309,11 +309,11 @@ test("D94: non-GUI jobs refuse GUI runners unless gui-2 is lent; the V1 host is 
 test("desktop.yml pr=<N> dispatch builds refs/pull/<N>/merge in every job it owns (D112)", () => {
   const text = fs.readFileSync(new URL("../../.github/workflows/desktop.yml", import.meta.url), "utf8");
   assert.match(text, /^      pr:\n        description: .*\n        type: string\n        default: ""$/m, "workflow_dispatch input pr");
-  assert.match(text, /^run-name: "\$\{\{ inputs\.pr && format\('desktop PR #\{0\} merged with main', inputs\.pr\) \|\| '' \}\}"$/m,
-    "the coordinator finds a pr dispatch by its title; other runs keep GitHub's default title");
+  assert.match(text, /^run-name: "\$\{\{ inputs\.pr && inputs\.sha && format\('desktop PR GUI #\{0\} @ \{1\}', inputs\.pr, inputs\.sha\) \|\| inputs\.pr && format\('desktop PR #\{0\} merged with main', inputs\.pr\) \|\| '' \}\}"$/m,
+    "the coordinator finds a pr dispatch by its title (D481: a PR GUI run by 'desktop PR GUI #<n> @ <sha>'); other runs keep GitHub's default title");
   const job = (name) => new RegExp(`^  ${name}:\\n((?:(?:    .*)?\\n)+)`, "m").exec(text)?.[1] ?? "";
   const resolver = job("pr-ref");
-  assert.match(resolver, /if: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.pr != '' /);
+  assert.match(resolver, /if: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.pr != '' && inputs\.sha == '' /, "a PR GUI run (D481) resolves no merge");
   assert.match(resolver, /refs\/pull\/\$PR\/merge/);
   assert.match(resolver, /\.base\.ref <<<"\$j"\)" = main/, "a PR whose base is not main must be rejected");
   {
@@ -403,7 +403,7 @@ test("D169: desktop.yml starts GUI legs only on dispatch, in the merge queue and
   assert.match(text, /^  schedule:\n    - cron: "[0-9]+ [0-9]+ \* \* \*"\n/m, "a nightly schedule");
   assert.doesNotMatch(text, /gui-ci/, "no label starts a GUI leg on pull_request");
   const scope = job("gui-scope");
-  assert.match(scope, /if: \$\{\{ !cancelled\(\) && !inputs\.mac_ci_probe && \(\(github\.event_name == 'workflow_dispatch' && inputs\.gui\) \|\| \(github\.event_name == 'merge_group' && needs\.queue-scope\.outputs\.gui == 'true'\) \|\| github\.event_name == 'schedule'\) \}\}/);
+  assert.match(scope, /if: \$\{\{ !cancelled\(\) && !inputs\.mac_ci_probe && !inputs\.perf && \(\(github\.event_name == 'workflow_dispatch' && \(inputs\.gui \|\| inputs\.sha != ''\)\) \|\| \(github\.event_name == 'merge_group' && needs\.queue-scope\.outputs\.gui == 'true'\) \|\| github\.event_name == 'schedule'\) \}\}/);
   for (const name of ["native", "native-hosted", "native-owner-gui"]) {
     const body = job(name);
     assert.match(body, /needs: gui-scope\n/, name);
@@ -474,6 +474,80 @@ test("D169: desktop.yml starts GUI legs only on dispatch, in the merge queue and
     for (const status of ["queued", "in_progress", "waiting"])
       assert.equal(night(runs(self, { id: 5, status, conclusion: null })), "run=false classes=full", status);
     assert.equal(go({ EVENT: "schedule", REF: "refs/heads/main", GH_FAIL: "1" }), "run=true classes=full", "unreadable -> run");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// D481 (owner 2026-11-27): a PR whose paths map to GUI classes needs an exact-head PR GUI run of those classes before
+// modelplan-gates passes. The run is a desktop dispatch of the PR's own head branch with pr=<n> and sha=<head>.
+test("D481: a pr+sha dispatch is the PR GUI leg: exact head on its own branch, mapped classes only, nothing else runs", () => {
+  const text = fs.readFileSync(new URL("../../.github/workflows/desktop.yml", import.meta.url), "utf8");
+  const job = (name) => new RegExp(`^  ${name}:\\n((?:(?:    .*)?\\n)+)`, "m").exec(text)?.[1] ?? "";
+  assert.match(text, /^      sha:\n        description: .*\n        type: string\n        default: ""$/m, "workflow_dispatch input sha");
+  // Only gui-scope and the GUI legs run: pr-ref resolves no merge, so every job that needs it skips; native-headless skips.
+  for (const name of ["app", "shell", "native-partition", "cockpit-pins", "cockpit-spi-tests", "app-smoke"])
+    assert.match(job(name), /\(!inputs\.pr \|\| needs\.pr-ref\.result == 'success'\)/, name);
+  assert.match(job("native-headless"), /if: \$\{\{ !cancelled\(\) && !inputs\.mac_ci_probe && !inputs\.perf && !inputs\.sha && /);
+  for (const name of ["native", "native-hosted", "native-owner-gui"])
+    assert.match(job(name), /\n      gui_classes: \$\{\{ needs\.gui-scope\.outputs\.classes \}\}\n/, name);
+  const scope = job("gui-scope");
+  assert.match(scope, /\n      pull-requests: read\n/);
+  assert.match(scope, /\n          PR: \$\{\{ inputs\.pr \}\}\n          PR_SHA: \$\{\{ inputs\.sha \}\}\n          GUI_MAP: desktop\/native\/tools\/ci\/gui-test-map\.json\n/);
+  const sh = /run: \|\n((?:          .*\n|\n)+)/.exec(scope)[1].replace(/^          /gm, "");
+  assert.doesNotMatch(sh, /\$\{\{/, "no expression is interpolated into the script");
+  const dir = fs.mkdtempSync("/tmp/d481-scope-");
+  const head = "a".repeat(40), other = "b".repeat(40);
+  // gh: the PR (or $PRJSON) and its file rows ($FILES, already in the --jq shape); git: fetch, cat-file and show of main's map.
+  fs.writeFileSync(`${dir}/gh`, '#!/bin/bash\ncase "$*" in\n *pulls/*/files*) printf "%s" "$FILES";;\n *pulls/*) printf "%s" "$PRJSON";;\n *) exit 1;;\nesac\n', { mode: 0o755 });
+  fs.writeFileSync(`${dir}/git`, '#!/bin/bash\ncase "$1" in fetch) [ -z "${NO_FETCH:-}" ];; cat-file) [ -n "${MAIN_MAP:-}" ];; show) cat "$MAIN_MAP";; *) exit 1;; esac\n', { mode: 0o755 });
+  const prJson = (over = {}) => JSON.stringify({ state: "open", draft: false, base: { ref: "main" }, head: { sha: head, ref: "claude/x", repo: { full_name: "o/r" } }, ...over });
+  const rows = (...names) => names.map((n) => JSON.stringify({ filename: n, previous_filename: null })).join("\n") + "\n";
+  const go = (env = {}) => {
+    const out = `${dir}/out`; fs.writeFileSync(out, "");
+    const r = spawnSync("bash", ["-c", sh], { cwd: new URL("../..", import.meta.url).pathname, env: { PATH: `${dir}:${process.env.PATH}`, RUNNER_TEMP: dir,
+      GITHUB_OUTPUT: out, GITHUB_STEP_SUMMARY: `${dir}/summary`, GITHUB_SHA: head, REPO: "o/r", GH_TOKEN: "x", GUI_FULL: "false",
+      EVENT: "workflow_dispatch", REF: "refs/heads/claude/x", PR: "9", PR_SHA: head, GUI_MAP: "desktop/native/tools/ci/gui-test-map.json",
+      PRJSON: prJson(), FILES: rows("desktop/native/ModelPlanDock/Native/DockInstrumentRenderer.swift"), ...env } });
+    return { status: r.status, out: fs.readFileSync(out, "utf8").trim().split("\n").join(" "), err: r.stderr.toString() + r.stdout.toString() };
+  };
+  try {
+    const ring = go();
+    assert.equal(ring.status, 0, `exit ${ring.status}: ${ring.err}`);
+    assert.match(ring.out, /^run=true classes=[A-Za-z0-9_,]*\bD65ZeroQuotaTests\b/, "#1208's ring renderer runs D65ZeroQuotaTests");
+    assert.doesNotMatch(ring.out, /full/, "never the full share");
+    // macrev2-1310-1: the selected set is recorded for the gate as a notice annotation, exactly as gui-map.mjs reads it.
+    const rec = /^::notice title=D481 PR GUI classes::(.+)$/m.exec(ring.err)?.[1] ?? "";
+    assert.match(rec, /^app-integration:[A-Za-z0-9_]+(,[a-z-]+:[A-Za-z0-9_]+)*$/);
+    assert.ok(rec.split(",").includes("app-integration:D65ZeroQuotaTests"));
+    assert.match(ring.err, /^::notice title=D481 PR GUI absent classes::none$/m, "every selected class is declared at this head");
+    assert.match(go({ FILES: rows("docs/mac-ci.md") }).err, /^::notice title=D481 PR GUI classes::none$/m, "no class: recorded as none");
+    assert.equal(go({ FILES: rows("docs/mac-ci.md", "cli/main.go") }).out, "run=false classes=none", "no mapped class: nothing runs");
+    // main's map is unioned in; classes of a whole-run package only (settings) still run the leg, narrowed to none.
+    fs.writeFileSync(`${dir}/main-map.json`, JSON.stringify({ schemaVersion: 1, packages: { "app-integration": "x", settings: "y" },
+      areas: [{ area: "cli", paths: ["cli/**"], classes: { settings: ["SettingsB5GridTests"] } }] }));
+    assert.equal(go({ FILES: rows("cli/main.go"), MAIN_MAP: `${dir}/main-map.json` }).out, "run=true classes=none");
+    fs.writeFileSync(`${dir}/bad-map.json`, "{}");
+    // Every mismatch fails the run (no output, nonzero): the gate then sees a failed PR GUI run, never a pass.
+    for (const [why, env] of [
+      ["the branch moved", { GITHUB_SHA: other }],
+      ["the PR moved", { PRJSON: prJson({ head: { sha: other, ref: "claude/x", repo: { full_name: "o/r" } } }) }],
+      ["another branch", { PRJSON: prJson({ head: { sha: head, ref: "claude/y", repo: { full_name: "o/r" } } }) }],
+      ["a fork", { PRJSON: prJson({ head: { sha: head, ref: "claude/x", repo: { full_name: "fork/r" } } }) }],
+      ["a draft", { PRJSON: prJson({ draft: true }) }],
+      ["closed", { PRJSON: prJson({ state: "closed" }) }],
+      ["not on main", { PRJSON: prJson({ base: { ref: "release" } }) }],
+      ["main dispatch", { REF: "refs/heads/main" }],
+      ["release dispatch", { REF: "refs/heads/release/v1" }],
+      ["tag dispatch", { REF: "refs/tags/v1" }],
+      ["short sha", { PR_SHA: "abc", GITHUB_SHA: "abc" }],
+      ["bad pr", { PR: "9;id" }],
+      ["main unreadable", { NO_FETCH: "1" }],
+      ["invalid main map", { MAIN_MAP: `${dir}/bad-map.json` }],
+      ["unreadable PR", { PRJSON: "" }],
+    ]) {
+      const r = go(env);
+      assert.notEqual(r.status, 0, why);
+      assert.equal(r.out, "", `${why}: no outputs`);
+    }
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 

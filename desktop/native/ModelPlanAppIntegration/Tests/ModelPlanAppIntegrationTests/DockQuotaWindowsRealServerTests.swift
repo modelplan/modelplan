@@ -95,8 +95,8 @@ import XCTest
         let reading = try XCTUnwrap(view.presentedReadingsForChecks[ref])
         XCTAssertEqual(reading.selectedWindowID, monthly.id)
         XCTAssertEqual(reading.readout, "12%", "The real plan-wide monthly quota is tighter than either general ring")
-        XCTAssertEqual(reading.outer?.fraction, 0.63)
-        XCTAssertEqual(reading.inner?.fraction, 0.24)
+        XCTAssertEqual(reading.outer?.fraction, 0.24, "D399: the weekly window is the outer ring")
+        XCTAssertEqual(reading.inner?.fraction, 0.63, "D399: the five-hour window is the inner ring")
 
         let placement = try XCTUnwrap(dock.edgePresentation?.placement)
         let anchor = try XCTUnwrap(view.interactionAnchor(ref))

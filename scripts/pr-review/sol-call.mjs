@@ -5,7 +5,7 @@
 // error moves on to the next one, and when all are out of quota it records a wait (providers.mjs). No tool, file or
 // network access is offered to the model and nothing from the PR is executed. The answer goes to a file, never to the
 // public job log, and is refused if it contains a credential.
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseAnswer, retryInput } from "./sol.mjs";
 import { fallbackEnabled, glmProvider, openaiProvider, providerOrder, reviewInOrder } from "./providers.mjs";
@@ -28,7 +28,8 @@ try { r = await reviewInOrder({ input, order, build }); } catch (e) { fail(e.mes
 // A dropped answer (no final VERDICT, no Record, a block without a blocker) is retried once with the reason appended.
 // A second invalid answer is recorded as "noverdict"; the post step then says so in a short advisory note.
 const head = String(env.HEAD_SHA ?? "");
-const invalid = (x) => { if (x.provider === "waiting" || !x.text?.trim()) return null; const a = parseAnswer(x.text, head); return a.ok ? null : a.why; };
+const priorIds = existsSync(join(dir, "prior-blockers")) ? readFileSync(join(dir, "prior-blockers"), "utf8").split("\n").filter(Boolean) : [];
+const invalid = (x) => { if (x.provider === "waiting" || !x.text?.trim()) return null; const a = parseAnswer(x.text, head, priorIds); return a.ok ? null : a.why; };
 let again = null;
 const firstWhy = /^[0-9a-f]{40}$/.test(head) ? invalid(r) : null;
 if (firstWhy) {

@@ -1,0 +1,1 @@
+The quota rings now put the weekly window on the outer ring and the 5-hour window on the inner ring (before, the other way round). A 5-hour window that is running low shows it by colour and a brighter ring on the inner ring, and the number in the middle still shows the window with the least left. A subscription with one window still shows one ring.

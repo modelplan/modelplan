@@ -40,6 +40,13 @@ type codexParser struct {
 	liveOnly bool
 }
 
+// autoReviewModel is Codex's background auto-review thread. It is an internal reviewer id, not a model the
+// user chose (the quota side's background() in quota/sources.go treats it the same way): it must never
+// show as a live session or a named model.
+const autoReviewModel = "codex-auto-review"
+
+func autoReview(model string) bool { return model == autoReviewModel }
+
 func newCodex() *codexParser { return &codexParser{} }
 
 func (p *codexParser) line(off, _ int64, b []byte) {
@@ -95,7 +102,7 @@ func (p *codexParser) line(off, _ int64, b []byte) {
 				e = c.Payload.Mode.Settings.Effort
 			}
 			t.cfg = config{clip(c.Payload.Model), clip(e), speedMode(clip(c.Payload.ServiceTier))}
-			t.skip = c.Payload.Model == "codex-auto-review"
+			t.skip = autoReview(c.Payload.Model)
 			if c.Payload.Cwd != "" {
 				t.cwd = c.Payload.Cwd
 			}

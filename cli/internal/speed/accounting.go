@@ -361,14 +361,14 @@ func accountingRowsBySession(cache string) ([]PerfRow, map[string]bool, map[stri
 	}
 	rows := map[string]*PerfRow{}
 	for _, v := range seen {
-		key := usageHash(v.source, day(v.At), v.Model, v.epoch, v.Imported)
+		key := usageHash(v.source, day(v.At), unreviewed(v.Model), v.epoch, v.Imported)
 		r := rows[key]
 		if r == nil {
 			parser := ParserCodex
 			if v.source == "claude-code" {
 				parser = ParserClaude
 			}
-			r = &PerfRow{GrantEpoch: v.epoch, Day: day(v.At), Source: v.source, Model: v.Model, EffortStatus: "unreported", Parser: parser, Eligibility: EligibilityV1}
+			r = &PerfRow{GrantEpoch: v.epoch, Day: day(v.At), Source: v.source, Model: unreviewed(v.Model), EffortStatus: "unreported", Parser: parser, Eligibility: EligibilityV1}
 			if v.Imported {
 				r.Origin = OriginImport
 			}
@@ -598,6 +598,9 @@ func (p *accountingParser) lineDoc(_, _ int64, b, doc []byte) {
 	model := p.model
 	if e.Payload.Model != "" {
 		model = e.Payload.Model
+	}
+	if autoReview(model) {
+		model = "" // the tokens stay in the Codex total; the reviewer id is not a model
 	}
 	session := p.session
 	if session == "" {
@@ -884,4 +887,12 @@ func mergeImportedUsage(old, incoming usageFile, ranges []span) usageFile {
 		}
 	}
 	return incoming
+}
+
+// unreviewed maps records stored before the auto-review rule to the same unnamed model.
+func unreviewed(model string) string {
+	if autoReview(model) {
+		return ""
+	}
+	return model
 }

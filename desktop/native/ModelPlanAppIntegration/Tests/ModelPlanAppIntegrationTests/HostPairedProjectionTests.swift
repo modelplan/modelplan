@@ -353,7 +353,7 @@ actor EntrySyntheticClient: EngineClient {
         func assertBand(_ id: String, _ expected: DockQuotaStatus, line: UInt = #line) throws {
             let reading = try XCTUnwrap(view.presentedReadingsForChecks[id], line: line)
             XCTAssertEqual(reading.status, expected, line: line)
-            XCTAssertEqual(reading.inner?.status, expected, line: line)
+            XCTAssertEqual(reading.outer?.status, expected, line: line)
             let card = try XCTUnwrap(dock.cardContent(for: id, at: wall), line: line)
             XCTAssertEqual(card.rows.first { $0.id == "quota:weekly:604800:main:main" }?.tone, expected, line: line)
         }

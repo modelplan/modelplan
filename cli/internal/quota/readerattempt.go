@@ -28,7 +28,7 @@ func loadReaderAttempt(cache, provider string) (time.Time, error) {
 	if status != "" || json.Unmarshal(b, &s) != nil || s.SchemaVersion != 1 {
 		return time.Time{}, errors.New("reader budget unavailable")
 	}
-	return s.NextAttemptAt, nil
+	return antigravityClamp(cache, provider, s.NextAttemptAt), nil
 }
 
 func readerAttemptDue(cache, provider string, now time.Time) bool {
@@ -67,6 +67,11 @@ func legacyNativeDue(cache, provider string, e codexbarEntry, now time.Time) boo
 }
 
 func legacyNativeNext(cache, provider string, e codexbarEntry) (time.Time, error) {
+	next, err := legacyNativeNextRaw(cache, provider, e)
+	return antigravityClamp(cache, provider, next), err
+}
+
+func legacyNativeNextRaw(cache, provider string, e codexbarEntry) (time.Time, error) {
 	next, err := loadReaderAttempt(cache, provider)
 	if err != nil || !next.IsZero() {
 		return next, err

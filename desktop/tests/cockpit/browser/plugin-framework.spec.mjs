@@ -115,7 +115,9 @@ test('CKP-PLG-51 the plugin column has no inner frame; its cells use the Other-c
  // Rows line up with the subscription column (three cells, the bottom line), and nothing draws a frame inside it.
  expect(shape.plug).toEqual(shape.sub);
  expect(shape.frames).toEqual([]);
- expect(shape.num[1]).toEqual(shape.num[0]);expect(shape.side[1]).toEqual(shape.side[0]);
+ // D474 §2.2: the cell's two lines are 10.5–11.5 px (line 1 a half step larger when wide); the plugin's side text sits in that range.
+ expect(shape.num[1]).toEqual(shape.num[0]);expect(shape.side[1].family).toEqual(shape.side[0].family);
+ expect(parseFloat(shape.side[1].size)).toBeGreaterThanOrEqual(10.5);expect(parseFloat(shape.side[1].size)).toBeLessThanOrEqual(11.5);
  // The bar is continuous (one fill), not the quota's ten segments.
  expect(shape.fill).toBe(61);expect(shape.segments).toBe(1);
 });

@@ -481,7 +481,8 @@ func TestLiveSessionInProgressCoversEveryProjectedState(t *testing.T) {
 		{"waiting activity, not expired", LiveRecord{LastAt: now.Add(-time.Second), Activity: act("waiting", time.Minute)}, "running", true, true},
 		{"activity expired, parser sees no open turn", LiveRecord{LastAt: now.Add(-time.Second), Activity: act("running", -time.Second)}, "idle", false, true},
 		{"just ended (finished activity)", LiveRecord{LastAt: now.Add(-time.Second), Activity: act("finished", time.Minute)}, "idle", false, true},
-		{"stale record is not projected", LiveRecord{Running: true, LastAt: now.Add(-2 * LiveWithin)}, "", true, false},
+		{"past the live window it is listed idle, never running", LiveRecord{Running: true, LastAt: now.Add(-2 * LiveWithin)}, "idle", false, true},
+		{"past the idle horizon it is not projected", LiveRecord{Running: true, LastAt: now.Add(-2 * LiveIdleKeep)}, "", true, false},
 	}
 	for _, c := range cases {
 		c.rec.Ref, c.rec.Source = "1111111111111111", "codex"
@@ -496,5 +497,35 @@ func TestLiveSessionInProgressCoversEveryProjectedState(t *testing.T) {
 		if len(got) != 1 || got[0].Status != c.wantStatus || got[0].InProgress != c.inProgress {
 			t.Errorf("%s: %+v, want status %s in progress %v", c.name, got, c.wantStatus, c.inProgress)
 		}
+	}
+}
+
+// D277: the session area keeps the most recent sessions as idle ("6m ago"), up to LiveIdleMax within LiveIdleKeep.
+func TestLiveSessionsKeepRecentIdle(t *testing.T) {
+	now := time.Date(2026, 11, 26, 12, 0, 0, 0, time.UTC)
+	var recs []LiveRecord
+	for i := 0; i < 8; i++ {
+		recs = append(recs, LiveRecord{Ref: fmt.Sprintf("%016d", i), Source: "codex", Running: true, LastAt: now.Add(-6*time.Minute - time.Duration(i)*time.Hour)})
+	}
+	recs = append(recs, LiveRecord{Ref: "9999999999999999", Source: "codex", Running: true, LastAt: now.Add(-time.Second)})
+	v := PerfView{OK: true, Recording: true, Now: now, Ledger: PerfLedger{Live: recs}}
+	got := v.LiveSessions()
+	if len(got) != 1+LiveIdleMax || got[0].Status != "running" {
+		t.Fatalf("one running plus %d idle: %+v", LiveIdleMax, got)
+	}
+	for i, s := range got[1:] {
+		if s.Status != "idle" || s.InProgress || s.Ref != fmt.Sprintf("%016d", i) {
+			t.Fatalf("idle session %d: %+v", i, s)
+		}
+	}
+	v.Ledger.Live = recs[:0:0]
+	if len(v.LiveSessions()) != 0 {
+		t.Fatal("no history means no sessions")
+	}
+	// pruneLive keeps the idle history, never as running, and drops what is past 24 h.
+	l := PerfLedger{Live: []LiveRecord{{Running: true, LastAt: now.Add(-time.Hour)}, {Running: true, LastAt: now.Add(-25 * time.Hour)}}}
+	l.pruneLive(now)
+	if len(l.Live) != 1 || l.Live[0].Running {
+		t.Fatalf("%+v", l.Live)
 	}
 }

@@ -12,13 +12,15 @@ import { renderPrototypeEngine } from './prototype-engine.js';
 import { mountPrototypeDeck } from './prototype-deck.js';
 import { paintHud,wireHud } from './prototype-hud.js';
 import { mountPrototypeTape } from './prototype-tape.js';
-import { cockpitMembers,setMemberOrder,setHiddenMembers } from './members.js';
+import { cockpitMembers,setMemberOrder,setHiddenMembers,setSeenSubscriptions,forgetSeenSubscriptions } from './members.js';
+import { thrustState } from './thrust.js';
 import { mountPrototypeBase } from './prototype-base.js';
-import { cautionItems,lights,readWindows } from './caution.js';
+import { cautionItems,counted,lights,readWindows,type CautionItem } from './caution.js';
 import { createCautionMemory } from './caution-ack.js';
 import {currentWindow,withoutProjectNames} from './prototype-data-adapter.js';
 import {INITIAL_RANGE,nextCockpitRange,type CockpitRange} from './range.js';
 import {mountPluginHost,pluginHostOf,type PluginReports} from './plugin-host.js';
+import {newsClock,drawnNews,newsMark,renderedMarks} from './news-clock.js';
 const element=<K extends keyof HTMLElementTagNameMap>(tag:K,text?:string,className?:string):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(className)e.className=className;return e;};
 /** Controls focusable through their own tabindex that a pointer presses (B1): buttons, radios and sliders. */
 export const POINTER_UNFOCUSED='button,a[href],input,select,textarea,[tabindex],[role="button"],[role="radio"],[role="slider"]';
@@ -29,17 +31,28 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  let nativeShell:ShellState|null=null;
  // D459 (owner, 2026-11-26): the engine flames are the cockpit's own thrust, not subscription output (the bells'
  // subscription glow is a separate layer). While the host ignites (the launch burn after a key detach or a drag
- // tear-off, a put-back flight, the approach in the catch zone) = full; detached and parked = short; docked = ember.
+ // tear-off, a put-back flight, the approach in the catch zone) = full; docked = ember. D468 (owner, 2026-11-26): detached and
+ // parked = out (the flame fades away after the burn and stays out; thrust.ts), replacing D459's short flame.
  // The host owns every timing (the page runs no timers); under Reduce Motion it never ignites.
  let ignited=false;
- function syncThrust(){root.dataset.thrust=ignited?'full':(nativeShell?.attached??true)?'ember':'short';}
+ // data-fade marks an `out` that follows full thrust (the page was showing the burn): only that one fades; a page that opens detached is out at once.
+function syncThrust(){const prev=root.dataset.thrust,next=thrustState(ignited,nativeShell?.attached??true);root.dataset.fade=String(next==='out'&&(prev==='full'||root.dataset.fade==='true')&&document.documentElement.dataset.reduceMotion!=='true'&&!matchMedia('(prefers-reduced-motion: reduce)').matches);root.dataset.thrust=next;}
  syncThrust();
+ // The fade runs once per full->out transition, and only if motion is allowed at that moment (syncThrust). animationend ends the latch; any change of
+ // either motion setting ends it too, so it never outlives a suppressed animation (window shown again, motion restored, a shell re-sync).
+ const clearFade=()=>{root.dataset.fade='false';};
+ root.addEventListener('animationend',e=>{if((e as AnimationEvent).animationName==='cockpit-flame-out')clearFade();});
+ try{const osReduced=window.matchMedia('(prefers-reduced-motion: reduce)');if(osReduced.matches)clearFade();osReduced.addEventListener('change',clearFade);}catch{}
  // CKP-SHELL-50 / MENU-52: the range is the app's. A key or T asks for it and mirrors it at once, as a scope key does; the
  // host's shell echo is the same value, so nothing repaints twice.
  const requestRange=(range:CockpitRange):boolean=>{if(!active||disposed||!nativeShell)return false;action('rangeSelect',range);nativeShell={...nativeShell,range};engineRange?.();return true;};
  let engineRange:(()=>void)|null=null,applyScope:((scope:string)=>void)|null=null,refreshEngine:((now?:number)=>void)|null=null,localiseEngine:((value:Appearance['locale'],now:number)=>void)|null=null,quotaFocusIdentity:((element:HTMLElement)=>string|null)|null=null,lastData:WireCockpitData|null=null;
  let heldHistory:{history:NonNullable<WireCockpitData['history']>;at:number}|null=null;
- let lastRenderedAt=0;const retiredUnstableScopes=new Set<string>();
+ // macrev2-1289-1 (C6, §3.3): a look is the user's: the cockpit coming into view with the item on its page (the first paint
+ // while visible), or their own input (paging, the alert list, a hover's click or key). A routine refresh or tick that
+ // delivers news while the page is already open is never a look.
+ let openLook=true;
+ let lastRenderedAt=0,present=false;const minDeadline=(a:number|null,b:number|null)=>a===null?b:b===null?a:Math.min(a,b);const retiredUnstableScopes=new Set<string>();
  let hudSelected:string|null=null;const hudOptions=()=>({scope:nativeShell?.scope??'all',now:lastRenderedAt,selected:hudSelected,closed:nativeShell?.profile==='closed'});
  let selectedRedBelow=effectiveRedBelow(undefined);const redBelow=()=>selectedRedBelow;let showUsedPercent=false;const showUsed=()=>showUsedPercent;
  let stripSelected:string|null=null;
@@ -56,7 +69,11 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  const rangeShortcut=(event:KeyboardEvent)=>{if(!event.isTrusted||!active||disposed||!nativeShell||event.altKey||event.ctrlKey||event.metaKey||event.repeat||event.key.toLowerCase()!=='t')return;const target=event.target;if(target instanceof Element&&(target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])')))return;const next=nextCockpitRange(nativeShell.range??INITIAL_RANGE);event.preventDefault();if(requestRange(next)){deck.range(next);headerRange.set(next);}};
  window.addEventListener('keydown',rangeShortcut);
  const caution=root.querySelector<HTMLButtonElement>('[data-caution]')!;const cautions=createCautionMemory(reportAcked);const motionQuery=matchMedia('(prefers-reduced-motion: reduce)');const finishCaution=(e:AnimationEvent)=>{if(e.animationName==='cockpit-caution-blink')caution.classList.remove('flash');};const syncReduced=()=>document.body.classList.toggle('reduced',reduceMotion||motionQuery.matches);/* body.reduced is the carried prototype CSS's Reduce Motion switch: app setting or OS preference. */const motionChanged=()=>{syncReduced();if(motionQuery.matches){caution.classList.remove('flash');stop();}};caution.addEventListener('animationend',finishCaution);motionQuery.addEventListener('change',motionChanged);
- function syncCaution(data:WireCockpitData,now:number){const items=cautionItems(data,now,redBelow()),fresh=cautions.update(items,readWindows(data,now),active&&nativeShell?.profile==='open'&&!reduceMotion&&!motionQuery.matches);if(!items.some(lights))caution.classList.remove('flash');else if(fresh&&active&&nativeShell?.profile==='open'&&!reduceMotion&&!motionQuery.matches){caution.classList.remove('flash');void caution.offsetWidth;caution.classList.add('flash');}}
+ function syncCaution(data:WireCockpitData,now:number){const items=cautionItems(data,now,redBelow());lampTip(items);const fresh=cautions.update(items,readWindows(data,now),active&&nativeShell?.profile==='open'&&!reduceMotion&&!motionQuery.matches);if(!items.some(lights))caution.classList.remove('flash');else if(fresh&&active&&nativeShell?.profile==='open'&&!reduceMotion&&!motionQuery.matches){caution.classList.remove('flash');void caution.offsetWidth;caution.classList.add('flash');}}
+ // D474 §7.1: the lamp's tooltip is the worst quota condition's long sentence, then how to open the list and its count
+ // (amber and red, the reserve included); no count in the first line. Unlit: no tooltip.
+ function lampTip(items:readonly CautionItem[]){const worst=items.find(lights),n=items.filter(counted).length;
+  if(!worst){caution.removeAttribute('title');return;}caution.title=`${locale==='en'?worst.text.en:worst.text.zh}\n${ht(locale,'host.lampHint',{n})}`;}
  caution.onclick=e=>{if(!e.isTrusted||!active)return;caution.classList.remove('flash');const uncovered=plugins.dismissScreen();if(uncovered&&deck.alertsOpen())return;deck.showAlerts(deck.alertsOpen()?undefined:cautions.acknowledge());};
  const head=root.querySelector<HTMLElement>('.ck-head')!;head.style.pointerEvents='auto';
  const shutter=root.querySelector<HTMLButtonElement>('[data-shutter]')!;
@@ -180,7 +197,16 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
  // S18 (sampling 11-21, ADR 0005): the engine's floating tooltip is appended outside the table (the document body when
  // the page root is #cockpit itself); it goes with the table, synchronously, so no private text outlives a clear or a re-render.
  const dropEngineTips=()=>{for(const tip of root.ownerDocument.querySelectorAll('.eng-hint'))tip.remove();};
- const setEmpty=(key:'waiting'|'cleared'|'empty',keepDeck=false)=>{dropEngineTips();root.dataset.engineEmpty=String(key==='empty');headerRange.dim(key==='empty');plugins.bindEngine(null);plugins.clearPlacement();plugins.display(null,lastRenderedAt);base.clear();frame.hud.replaceChildren();frame.hud.hidden=true;hudSelected=null;markPorthole(null);caution.classList.remove('flash');refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;const alert=root.querySelector<HTMLElement>('.s6-alert')!;alert.classList.remove('lit','red','amber');alert.setAttribute('aria-label',ht(locale,'host.alertInactive'));applyScope=null;engineRange=null;const line=bilingual(element('p',ht(locale,'host.'+key),'ec-empty'),ht('en','host.'+key),ht('zh-CN','host.'+key));
+ // G3-201 (macrevb-1205-1, -4): the grace for the waiting/cleared line counts from the moment the page is actually shown. The page
+ // owns no timers (bundle audit), so the grace is a CSS animation delay that this attribute restarts: it is removed while hidden
+ // and set again, after a style flush, on every show and every new waiting/cleared line.
+ let pageShown=false;
+ const stopWait=()=>{delete root.dataset.waitShown;};
+ // The grace restarts on every show and every new waiting/cleared line while no display has been painted since the last show or clear
+ // (so a clear then a quick display paints no line); a clear on a page that already shows a display ('now') goes straight to the line, no animation.
+ let painted=false;
+ const armWait=(now=false)=>{stopWait();if(pageShown&&root.dataset.engineWait){void root.offsetWidth;root.dataset.waitShown=now?'now':'true';}};
+ const setEmpty=(key:'waiting'|'cleared'|'empty',keepDeck=false)=>{dropEngineTips();root.dataset.engineEmpty=String(key==='empty');root.dataset.engineWait=key==='empty'?'':key;const now=key==='cleared'&&painted;painted=key==='empty';armWait(now);headerRange.dim(key==='empty');plugins.bindEngine(null);plugins.clearPlacement();plugins.display(null,lastRenderedAt);base.clear();frame.hud.replaceChildren();frame.hud.hidden=true;hudSelected=null;markPorthole(null);caution.classList.remove('flash');/* macrevb-1290-10: the lamp's quota sentence goes with the clear, before the acknowledgement. */caution.removeAttribute('title');refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;const alert=root.querySelector<HTMLElement>('.s6-alert')!;alert.classList.remove('lit','red','amber');alert.setAttribute('aria-label',ht(locale,'host.alertInactive'));applyScope=null;engineRange=null;const line=bilingual(element('p',ht(locale,'host.'+key),'ec-empty'),ht('en','host.'+key),ht('zh-CN','host.'+key));
   // CKP-SHELL-39: with no subscription read yet the screen says so in one line and offers one way in, Settings > Subscriptions.
   if(key==='empty'){const open=element('button',ht(locale,'host.emptyOpen'),'ec-empty-open');bilingual(open,ht('en','host.emptyOpen'),ht('zh-CN','host.emptyOpen'));open.type='button';open.setAttribute('aria-label',ht(locale,'host.emptyOpen'));open.onclick=e=>{if(e.isTrusted)action('openSettingsSubscriptions');};const box=element('div',undefined,'ec-empty-box');box.append(line,open);frame.engine.replaceChildren(box);}
   else frame.engine.replaceChildren(line);frame.hud.replaceChildren();if(!keepDeck){deck.clear(key==='empty');tape.clear();}};
@@ -237,7 +263,18 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
   if(!target&&path&&key!=='data-al-id'){let e:Element|null=area;for(const i of path)e=e?.children.item(i)??null;if(e instanceof HTMLElement&&e.tagName===focused.tagName&&(key?e.getAttribute(key)===keyValue:e.className===focused.className))target=e;}
   if(target)restore(target);
  }
- function refreshDeadlines(now:number){if(!lastData||disposed)return;lastRenderedAt=now;preserveFocus(()=>{refreshEngine?.(now);deck.refresh(now);tape.refresh(now);syncCaution(lastData!,now);plugins.tick(now);});}
+ // D466 (macrevb-1290-1): the news clock records a look only for news whose mark is rendered on screen in this paint (a key
+ // dot on the shown page, a reserve +1, an alert line inside the overview budget or the open alert list). Called after
+ // every render and tick, and after the user's own clicks and keys (paging, the alert list), which repaint in place.
+ function noteNews(now:number,looked:boolean):boolean{
+  if(!lastData||disposed)return false;const marks=renderedMarks(root);
+  const recorded=newsClock.observe(drawnNews(lastData,now).filter(e=>marks.has(newsMark(e))),now,present,looked&&present);
+  if(present)openLook=false;
+  return recorded;
+ }
+ const noteAfterInput=()=>{if(noteNews(Math.max(lastRenderedAt,Date.now()),true))root.dispatchEvent(new CustomEvent('cockpit-deadline'));};
+ root.addEventListener('click',noteAfterInput);window.addEventListener('keyup',noteAfterInput);
+ function refreshDeadlines(now:number){if(!lastData||disposed)return;lastRenderedAt=now;preserveFocus(()=>{refreshEngine?.(now);deck.refresh(now);tape.refresh(now);syncCaution(lastData!,now);plugins.tick(now);});noteNews(now,openLook);}
  // Recovery contract: a render is transactional. If it throws, the last rendered data is painted again (or the page
  // returns to its waiting state when there was none) and the error goes back to the bridge, which refuses the display
  // and keeps the page. Whether that repaint succeeds or fails, the whole cockpit view is
@@ -300,17 +337,20 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
     // A routine refresh must not reset an open alert list: when the deck still has something to show (details, or list-only
     // alerts) it is kept and repainted from the new data; only a projection with nothing left clears it.
     const keep=!!data.details||cautionItems(data,now,redBelow()).length>0;
-    setEmpty('empty',keep);if(keep){deck.scope('all');paintRecords(data,lastRenderedAt);}return;}root.dataset.engineEmpty='false';headerRange.dim(false);frame.engine.append(engine.table);engine.fit();plugins.display(data,now);applyScope=engine.applyScope;engineRange=engine.setRange;refreshEngine=engine.refresh;localiseEngine=engine.setLocale;quotaFocusIdentity=engine.focusIdentity;deck.scope(nativeShell?.scope??'all');paintRecords(data,lastRenderedAt);paintHud(frame.hud,data,locale,hudOptions());syncCaution(data,now);help.refresh();
+    setEmpty('empty',keep);if(keep){deck.scope('all');paintRecords(data,lastRenderedAt);}return;}root.dataset.engineEmpty='false';root.dataset.engineWait='';painted=true;stopWait();headerRange.dim(false);frame.engine.append(engine.table);engine.fit();plugins.display(data,now);applyScope=engine.applyScope;engineRange=engine.setRange;refreshEngine=engine.refresh;localiseEngine=engine.setLocale;quotaFocusIdentity=engine.focusIdentity;deck.scope(nativeShell?.scope??'all');paintRecords(data,lastRenderedAt);paintHud(frame.hud,data,locale,hudOptions());syncCaution(data,now);help.refresh();
    if(before!==displayedState())pulse();
   },true);
+  // D466: every surface has read the clock; now record what this paint put on screen. Only the first paint after the
+  // cockpit came into view is a look (macrev2-1289-1); later refreshes count present time only.
+  noteNews(now,openLook);
  }
  setEmpty('waiting');
  return {
   restoreAcked(ids){cautions.restore(ids);},
   restorePins(ids){deck.restorePins(ids);},
   forgetAcked(){cautions.forget();},
-  configure(value,threshold,used=false,allModels=false,order=[],hidden=[]){setMemberOrder(order);setHiddenMembers(hidden);selectedRedBelow=threshold;showUsedPercent=used;deck.showAllModels(allModels);locale=value.locale;headerRange.locale(locale);showProjectNames=value.showProjectNames;reduceMotion=value.reduceMotion;syncReduced();document.documentElement.lang=locale;document.documentElement.dataset.theme=value.theme;document.documentElement.dataset.reduceMotion=String(value.reduceMotion);document.documentElement.dataset.reduceTransparency=String(value.reduceTransparency);frame.hud.classList.toggle('solid',value.reduceTransparency);deck.locale(locale);tape.locale(locale);frame.settings.setAttribute('aria-label',ht(locale,'host.settingsAria'));setEmpty('waiting');},
-  updateAppearance(value:LiveAppearance,now:number,threshold,used=false,allModels=false,order=[],hidden=[]){const orderChanged=setMemberOrder(order),hiddenChanged=setHiddenMembers(hidden);if(hiddenChanged&&nativeShell&&hidden.includes(nativeShell.scope))nativeShell={...nativeShell,scope:'all'};showUsedPercent=used;deck.showAllModels(allModels);const namesChanged=showProjectNames!==value.showProjectNames;showProjectNames=value.showProjectNames;selectedRedBelow=threshold;locale=value.locale;headerRange.locale(locale);reduceMotion=value.reduceMotion;syncReduced();document.documentElement.dataset.theme=value.theme;document.documentElement.dataset.reduceMotion=String(value.reduceMotion);document.documentElement.dataset.reduceTransparency=String(value.reduceTransparency);frame.hud.classList.toggle('solid',value.reduceTransparency);if(reduceMotion){stop();caution.classList.remove('flash');}if(lastData){lastRenderedAt=now;preserveFocus(()=>{localise(lastRenderedAt);localiseEngine?.(locale,lastRenderedAt);paintHud(frame.hud,lastData!,locale,hudOptions());if(namesChanged)paintRecords(lastData!,lastRenderedAt);syncCaution(lastData!,lastRenderedAt);});if(orderChanged||hiddenChanged)renderData(lastData,now);}else localise();},
+  configure(value,threshold,used=false,allModels=false,order=[],hidden=[]){setMemberOrder(order);setHiddenMembers(hidden);selectedRedBelow=threshold;showUsedPercent=used;deck.showAllModels(allModels);locale=value.locale;headerRange.locale(locale);showProjectNames=value.showProjectNames;if(reduceMotion!==value.reduceMotion)clearFade();reduceMotion=value.reduceMotion;syncReduced();document.documentElement.lang=locale;document.documentElement.dataset.theme=value.theme;document.documentElement.dataset.reduceMotion=String(value.reduceMotion);document.documentElement.dataset.reduceTransparency=String(value.reduceTransparency);frame.hud.classList.toggle('solid',value.reduceTransparency);deck.locale(locale);tape.locale(locale);frame.settings.setAttribute('aria-label',ht(locale,'host.settingsAria'));setEmpty('waiting');},
+  updateAppearance(value:LiveAppearance,now:number,threshold,used=false,allModels=false,order=[],hidden=[]){const orderChanged=setMemberOrder(order),hiddenChanged=setHiddenMembers(hidden);if(hiddenChanged&&nativeShell&&hidden.includes(nativeShell.scope))nativeShell={...nativeShell,scope:'all'};showUsedPercent=used;deck.showAllModels(allModels);const namesChanged=showProjectNames!==value.showProjectNames;showProjectNames=value.showProjectNames;selectedRedBelow=threshold;locale=value.locale;headerRange.locale(locale);if(reduceMotion!==value.reduceMotion)clearFade();reduceMotion=value.reduceMotion;syncReduced();document.documentElement.dataset.theme=value.theme;document.documentElement.dataset.reduceMotion=String(value.reduceMotion);document.documentElement.dataset.reduceTransparency=String(value.reduceTransparency);frame.hud.classList.toggle('solid',value.reduceTransparency);if(reduceMotion){stop();caution.classList.remove('flash');}if(lastData){lastRenderedAt=now;preserveFocus(()=>{localise(lastRenderedAt);localiseEngine?.(locale,lastRenderedAt);paintHud(frame.hud,lastData!,locale,hudOptions());if(namesChanged)paintRecords(lastData!,lastRenderedAt);syncCaution(lastData!,lastRenderedAt);});if(orderChanged||hiddenChanged)renderData(lastData,now);}else localise();},
   shell(value:ShellState){if(lastData&&value.scope!=='all'&&!cockpitMembers(lastData).some(m=>m.key===value.scope))value={...value,scope:'all'};if(retiredUnstableScopes.has(value.scope))value={...value,scope:'all'};const changed=(nativeShell?.scope??'all')!==value.scope,refreshChanged=(nativeShell?.refreshing??false)!==(value.refreshing??false);nativeShell=value;syncThrust();preserveFocus(()=>{const layout=cockpitLayout(890);document.documentElement.dataset.profile='full';root.dataset.layout='890';root.style.setProperty('--console-h',layout.console+'px');root.style.setProperty('--tape-h',layout.tapeH+'px');root.style.setProperty('--eng-h',layout.eng+'px');tape.layout(layout.tapeLines);shellControls();headerRange.set(value.range??INITIAL_RANGE);deck.range(value.range??INITIAL_RANGE);engineRange?.();if(lastData)paintHud(frame.hud,lastData,locale,hudOptions());if(changed){applyScope?.(value.scope);deck.scope(value.scope);}else if(refreshChanged)deck.refresh();});},
   ignite(on){ignited=on;if(on)root.dataset.ignite='true';else delete root.dataset.ignite;syncThrust();},
   // WP-22 (macrevb-1062-3): a rocket chosen or cleared in the enlarged field selects the same model on the HUD, the
@@ -318,14 +358,16 @@ shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.ke
   fieldClosed(){root.dispatchEvent(new CustomEvent('field-closed'));},
   selectModel(id){hudSelected=id;markPorthole(id);deck.selectModel(id);if(lastData)preserveFocus(()=>paintHud(frame.hud,lastData!,locale,hudOptions()));},
   render:renderData,
-  nextDeadline(){if(!lastData)return null;const own=nextDeadline(lastData,lastRenderedAt),plugin=plugins.nextDeadline();return own===null?plugin:plugin===null?own:Math.min(own,plugin);},
+  nextDeadline(){if(!lastData)return null;const own=minDeadline(nextDeadline(lastData,lastRenderedAt),newsClock.nextChange(drawnNews(lastData,lastRenderedAt),lastRenderedAt)),plugin=plugins.nextDeadline();return own===null?plugin:plugin===null?own:Math.min(own,plugin);},
   tick(now){refreshDeadlines(now);},
-  clear(){retiredUnstableScopes.clear();caution.classList.remove('flash');lastData=null;heldHistory=null;stop();setEmpty('cleared');if(nativeShell)nativeShell={...nativeShell,scope:'all'};delete root.dataset.scope;},
+  clear(){forgetSeenSubscriptions();retiredUnstableScopes.clear();caution.classList.remove('flash');lastData=null;heldHistory=null;stop();setEmpty('cleared');if(nativeShell)nativeShell={...nativeShell,scope:'all'};delete root.dataset.scope;},
   active(value,now){const was=active;active=value;plugins.setInteractive(value);root.dataset.active=String(value);if(!value)finishShutter();frame.settings.disabled=!value;shellControls();if(!value){deck.cancelPress();stop();caution.classList.remove('flash');help.hide();}else if(!was&&lastData){if(now!==undefined)lastRenderedAt=now;syncCaution(lastData,lastRenderedAt);}},
-  visible(value){plugins.setVisible(value);},
+  news(items){newsClock.host(items);if(lastData)refreshDeadlines(lastRenderedAt);},
+  seen(ids){if(setSeenSubscriptions(ids)&&lastData)renderData(lastData,lastRenderedAt);},
+  visible(value){plugins.setVisible(value);if(value!==pageShown){pageShown=value;painted=false;armWait();}if(present!==value)newsClock.present(value,lastRenderedAt);if(value&&!present)openLook=true;present=value;},
   plugins(raw){return plugins.applyHostState(raw);},
   pluginData(id,data){return plugins.deliver(id,data);},
   openPluginScreen(id){return plugins.openScreen(id,true);},
-  dispose(){if(disposed)return;disposed=true;shutterRun=null;plugins.dispose();base.dispose();unwireHud();document.removeEventListener('contextmenu',noMenu);root.removeEventListener('keydown',kbdNavOn,true);root.removeEventListener('pointerdown',kbdNavOff,true);root.removeEventListener('mousedown',kbdNavOff,true);window.removeEventListener('focus',kbdNavOff);window.removeEventListener('blur',kbdNavOff);document.removeEventListener('visibilitychange',kbdNavOff);root.removeEventListener('mousedown',pointerKeepsFocus,true);root.removeEventListener('focusin',pointerFocusStarts,true);window.removeEventListener('mouseup',pointerPressEnds,true);root.removeEventListener('focusout',pointerFocusEnds,true);pressed=null;window.removeEventListener('keydown',scopeShortcut);window.removeEventListener('keydown',rangeShortcut);caution.onclick=null;caution.removeEventListener('animationend',finishCaution);motionQuery.removeEventListener('change',motionChanged);applyScope=null;engineRange=null;refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;lastData=null;nativeShell=null;deck.dispose();help.dispose();stop();frame.settings.onclick=null;attach.onclick=null;shutter.onclick=null;shutter.onpointerdown=null;shutter.onpointermove=null;shutter.onpointerup=null;shutter.onpointercancel=null;shutter.onlostpointercapture=null;shutter.onkeydown=null;close.onclick=null;root.replaceChildren();root.removeAttribute('data-active');delete root.dataset.scope;},
+  dispose(){if(disposed)return;disposed=true;stopWait();forgetSeenSubscriptions();root.removeEventListener('click',noteAfterInput);window.removeEventListener('keyup',noteAfterInput);shutterRun=null;plugins.dispose();base.dispose();unwireHud();document.removeEventListener('contextmenu',noMenu);root.removeEventListener('keydown',kbdNavOn,true);root.removeEventListener('pointerdown',kbdNavOff,true);root.removeEventListener('mousedown',kbdNavOff,true);window.removeEventListener('focus',kbdNavOff);window.removeEventListener('blur',kbdNavOff);document.removeEventListener('visibilitychange',kbdNavOff);root.removeEventListener('mousedown',pointerKeepsFocus,true);root.removeEventListener('focusin',pointerFocusStarts,true);window.removeEventListener('mouseup',pointerPressEnds,true);root.removeEventListener('focusout',pointerFocusEnds,true);pressed=null;window.removeEventListener('keydown',scopeShortcut);window.removeEventListener('keydown',rangeShortcut);caution.onclick=null;caution.removeEventListener('animationend',finishCaution);motionQuery.removeEventListener('change',motionChanged);applyScope=null;engineRange=null;refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;lastData=null;nativeShell=null;deck.dispose();help.dispose();stop();frame.settings.onclick=null;attach.onclick=null;shutter.onclick=null;shutter.onpointerdown=null;shutter.onpointermove=null;shutter.onpointerup=null;shutter.onpointercancel=null;shutter.onlostpointercapture=null;shutter.onkeydown=null;close.onclick=null;root.replaceChildren();root.removeAttribute('data-active');delete root.dataset.scope;},
  };
 }
