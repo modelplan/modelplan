@@ -469,6 +469,22 @@ test('appearance, shell and tick view exceptions are refused without unloading t
   }
   assert.equal(f.calls.includes('dispose'),false);
 });
+// macrevc-1216-3: the expiry check runs after the context fence and never before a terminal unload.
+test('a failing expiry check neither blocks an unload nor changes the context-check result',()=>{
+  const f=failing();let throwing=false;
+  f.bridge.view.expire=()=>{if(throwing)throw Error('synthetic expiry render failure');};
+  assert.equal(f.bridge.receive(f.send('display',{data:capture()}),source),true);
+  throwing=true;
+  // A message for a stale context is refused as a stale context, whatever the expiry would do.
+  assert.equal(f.bridge.receive(f.send('shell',{...shell,generation:'9999'}),source),false);
+  assert.equal(f.bridge.lastReject,'recv.context');
+  // A same-context message that reaches the expiry is refused for it, and the page stays loaded.
+  assert.equal(f.bridge.receive(f.send('shell',{...shell}),source),false);
+  assert.equal(f.bridge.lastReject,'expire.view');assert.equal(f.bridge.disposed,false);
+  // The unload is terminal and does not wait on the expiry.
+  assert.equal(f.bridge.receive(f.send('unload'),source),true);
+  assert.equal(f.bridge.disposed,true);assert.equal(f.bridge.state,'unloaded');
+});
 test('the real Go cockpit capture, as the host sends it, validates and renders through the bridge',()=>{
   // The host decodes this capture into WireCockpitData and encodes it unchanged (BridgeTests in ModelPlanCockpitWeb
   // asserts the encoded display equals the capture); the page takes it, reset events included.
