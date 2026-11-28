@@ -33,7 +33,7 @@ import ModelPlanInstruments
             let before = try Data(contentsOf: url)
             let detail = application.subscriptionNowSnapshot(inputs: [input], scope: .subscription("sample"), at: now, calendar: Calendar(identifier: .gregorian))
             let row = try XCTUnwrap(detail.accounts.first?.rows.first { $0.id.hasSuffix(".window.q") })
-            XCTAssertEqual(row.level, threshold == 15 ? .amber : .critical)
+            XCTAssertEqual(row.level, threshold == 15 ? .healthy : .critical) // D474 decision 2: amber only for a run-out before reset
             XCTAssertEqual(detail.accounts.first?.summary.level, row.level)
             XCTAssertEqual(try application.dockReading(for: dockInput, at: now).status, threshold == 15 ? .warning : .critical)
             XCTAssertEqual(application.snapshot.preferences.redBelow, threshold)

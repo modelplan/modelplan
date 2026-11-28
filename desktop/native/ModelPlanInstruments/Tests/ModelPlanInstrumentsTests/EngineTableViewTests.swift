@@ -121,8 +121,10 @@ import XCTest
         let column = EngineColumn(id: "a", quotas: .init(windows: [quota], now: now), todayTokens: nil, todayGenerationTPS: nil)
         let p = EngineTablePresentation(columns: [column], requestedPage: 0, scope: .all, language: .chinese, now: now)
         XCTAssertEqual(p.columns[0]?.cells[0]?.amount, "0"); XCTAssertEqual(p.columns[0]?.cells[0]?.level, .critical)
-        XCTAssertEqual(p.columns[0]?.cells[0]?.noteTone, .publicReset)
-        XCTAssertTrue(p.columns[0]!.cells[0]!.notes[0].contains("等读数"))
+        // D466: a confirmed reset never takes the cell; the cell keeps its own forecast and no "已重置 · 等读数".
+        XCTAssertEqual(p.columns[0]?.cells[0]?.noteTone, .warning)
+        XCTAssertFalse(p.columns[0]!.cells[0]!.notes.joined().contains("已重置"))
+        XCTAssertFalse(p.columns[0]!.cells[0]!.notes.joined().contains("等读数"))
     }
 
     func testImageBudgetCountsResourcesAcrossNestedGroupsAndClips() async throws {

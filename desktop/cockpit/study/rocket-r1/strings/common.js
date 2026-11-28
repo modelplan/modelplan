@@ -17,8 +17,12 @@ register('alert', {
   // (ModelPlanSettings AlertSentence.swift) holds the same words; tests/shared/alert-sentences.json pins both.
   quota: ['alert', '{s} {w} {r}%', '{s} {w} {r}%'],
   usedUp: ['alert', '{s} {w} 已用完', '{s} {w} used up'],
-  out: ['alert', '约{t}用完', 'out ~{t}'],
+  // D474 §3.2 (CKP-ENG-26): 预估 is our forecast (约 only for ≈$). Long form: list line 1, card footer, lamp tooltip;
+  // short form (single-line: 总览, menu) keeps the reset too. The time is never cut; the name fades first (§6.2).
+  out: ['alert', '预估 {t} 用完', 'est. out in {t}'],
+  outShort: ['alert', '预估{t}', 'est. {t}'],
   resets: ['alert', '{t} 后重置', 'resets in {t}'],
+  resetsShort: ['alert', '{t}后重置', 'resets {t}'],
   unread: ['alert', '{s} 读不到', '{s} no reading'],
   unreadMany: ['alert', '{n} 个订阅读不到', {one: '{n} subscription has no reading', other: '{n} subscriptions have no reading'}],
   causeSignIn: ['alert', '未登录', 'not signed in'],

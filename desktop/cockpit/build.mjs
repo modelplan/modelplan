@@ -34,7 +34,7 @@ const studyModules=[
   'mfd-pages/alerts.js','mfd-pages/engine-fmt.js','mfd-pages/fmt.js','mfd-pages/frontier.js','mfd-pages/overview.js','mfd-pages/plans.js',
   'mfd-pages/page-range.js',
   'mfd-pages/public-helpers.js','mfd-pages/scope.js','mfd-pages/tune.js','mfd-pages/views.js','mfd-pages/where.js',
-  'project-attribution.js','session-line.js','short-label.js','strings/common.js','strings/engine.js','strings/faders.js',
+  'project-attribution.js','reserve-expiry.js','session-line.js','short-label.js','strings/common.js','strings/engine.js','strings/faders.js',
   'strings/mfd.js','strings/review49.js','strings/host.js','strings/plugins.js','window-time.js',
 ];
 for(const name of studyModules){

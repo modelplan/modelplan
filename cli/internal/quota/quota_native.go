@@ -180,7 +180,7 @@ func NativeDue(p Paths, now time.Time) bool {
 		}
 	}
 	for _, x := range on {
-		if legacyNativeDue(p.Cache, x.Provider, by[x.Provider], now) {
+		if legacyNativeDue(p.Cache, x.Provider, by[x.Provider], now) || x.Provider == "antigravity" && antigravityRetryDue(p) {
 			return true
 		}
 	}
@@ -331,7 +331,10 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 		}
 		var e codexbarEntry
 		n := nativeReaders[x.Provider]
-		if !n.budgetDue(p.Cache, now) || !legacyNativeDue(p.Cache, x.Provider, previous[x.Provider], now) {
+		// Antigravity "not running" is a quick re-check, and Settings Retry (a changed login generation) is
+		// due at once: neither waits behind the outer failure reservation (the reader keeps its own gates).
+		retry := x.Provider == "antigravity" && antigravityRetryDue(p)
+		if !retry && (!n.budgetDue(p.Cache, now) || !legacyNativeDue(p.Cache, x.Provider, previous[x.Provider], now)) {
 			if old, ok := previous[x.Provider]; ok {
 				// Migrate an older capture's deadline before cache-only status
 				// projection can change its generation or availability.
@@ -345,7 +348,11 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 			}
 			continue
 		}
-		if err := reserveReaderAttempt(p.Cache, x.Provider, now.Add(5*time.Minute)); err != nil {
+		reserve := 5 * time.Minute
+		if x.Provider == "antigravity" {
+			reserve = antigravityRecheck // the reader's own gates hold the other states for five minutes or more
+		}
+		if err := reserveReaderAttempt(p.Cache, x.Provider, now.Add(reserve)); err != nil {
 			if !diagnostic {
 				return err
 			}
@@ -434,6 +441,9 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 		next := now.Add(NativeEvery)
 		if e.Status != "ok" {
 			next = now.Add(nativeRetryAfter)
+			if x.Provider == "antigravity" && e.ErrorCode == "runtime_missing" {
+				next = now.Add(antigravityRecheck) // not running is not a failure
+			}
 		}
 		if err := n.finishBudget(p.Cache, next); err != nil {
 			return err

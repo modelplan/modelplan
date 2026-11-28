@@ -517,14 +517,14 @@ private actor G1RowsClient: EngineClient {
         XCTAssertNil(station.outer.unknownDash)
         XCTAssertNil(station.inner.unknownDash)
         let client = try XCTUnwrap(app.composition.client as? G1RowsClient)
-        for (five, week, outerStatus, innerStatus) in [(25.0, 72.0, DockQuotaStatus.critical, DockQuotaStatus.normal),
-                                                       (41.0, 25.0, .warning, .critical)] {  // remaining <= 50 is warning (DockInstrumentModel.evaluate)
+        for (five, week, outerStatus, innerStatus) in [(25.0, 72.0, DockQuotaStatus.normal, DockQuotaStatus.critical),
+                                                       (41.0, 25.0, .critical, .warning)] {  // remaining <= 50 is warning (DockInstrumentModel.evaluate)
             try await client.replaceRows(fixture(five: five, week: week))
             let reading = try XCTUnwrap(view.presentedReadingsForChecks["0123456789abcdef"])
             let outer = try XCTUnwrap(reading.outer), inner = try XCTUnwrap(reading.inner)
-            XCTAssertEqual(outer.windowID, "g1-five"); XCTAssertEqual(inner.windowID, "g1-week")
-            XCTAssertEqual(try XCTUnwrap(outer.fraction), five / 100, accuracy: 0.0001)
-            XCTAssertEqual(try XCTUnwrap(inner.fraction), week / 100, accuracy: 0.0001)
+            XCTAssertEqual(outer.windowID, "g1-week"); XCTAssertEqual(inner.windowID, "g1-five")
+            XCTAssertEqual(try XCTUnwrap(outer.fraction), week / 100, accuracy: 0.0001)
+            XCTAssertEqual(try XCTUnwrap(inner.fraction), five / 100, accuracy: 0.0001)
             XCTAssertEqual(outer.status, outerStatus); XCTAssertEqual(inner.status, innerStatus)
         }
         await app.composition.stop()
@@ -646,7 +646,8 @@ private actor G1RowsClient: EngineClient {
         let app = try await open(G1DisplayEnvironment(), profile: profile)
         defer { app.composition.dock.close() }
         let client = try XCTUnwrap(app.composition.client as? G1RowsClient), view = app.composition.dock.dockView
-        func remaining() throws -> Double { try XCTUnwrap(view.presentedReadingsForChecks["0123456789abcdef"]?.outer?.fraction) }
+        func remaining() throws -> Double { try XCTUnwrap(view.presentedReadingsForChecks["0123456789abcdef"]?.inner?.fraction) }  // D399: 5-hour is the inner ring
+        XCTAssertEqual(try XCTUnwrap(view.presentedReadingsForChecks["0123456789abcdef"]?.outer?.fraction), 0.72, accuracy: 0.0001, "D399: weekly stays on the outer ring")
         XCTAssertEqual(try remaining(), 0.41, accuracy: 0.0001)
         try await client.replaceRows(fixture(five: 41, resetStatus: "announced"))
         XCTAssertEqual(try remaining(), 0.41, accuracy: 0.0001)

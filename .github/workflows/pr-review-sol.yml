@@ -52,7 +52,7 @@ on:
         required: true
         type: string
       force:
-        description: Review even if another counting lane already reviewed this head (a lane that already has a verdict at the head never posts twice)
+        description: Review even if another counting lane already reviewed this head (a lane whose latest verdict at the head is a block may post a replacement; a merge is never posted over)
         type: boolean
         default: false
 permissions: {}
@@ -160,7 +160,7 @@ jobs:
         run: node scripts/pr-review/sol-call.mjs
 
       - name: Post the verdict (comment token only here)
-        if: steps.prep.outputs.review == 'true'
+        if: steps.prep.outputs.review == 'true' || steps.prep.outputs.oversize == 'true'
         env:
           GH_TOKEN: ${{ secrets.PR_REVIEW_COMMENT_TOKEN }}
           HEAD_SHA: ${{ steps.prep.outputs.head }}

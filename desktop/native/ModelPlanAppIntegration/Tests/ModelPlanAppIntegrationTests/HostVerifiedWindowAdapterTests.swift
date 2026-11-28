@@ -26,7 +26,7 @@ import ModelPlanSettings
         XCTAssertEqual(candidate.value.recomputeDeadline, deadline)
         let input = try XCTUnwrap(candidate.value.snapshot.inputs.first)
         let reading = try DockInstrumentProjection.evaluate(input, now: now)
-        XCTAssertEqual(reading.dataState, .stale); XCTAssertNil(reading.outer?.fraction); XCTAssertEqual(reading.inner?.fraction, 0.75)
+        XCTAssertEqual(reading.dataState, .stale); XCTAssertNil(reading.inner?.fraction, "the unverified 5-hour window stays unknown on the inner ring"); XCTAssertEqual(reading.outer?.fraction, 0.75, "D399: the restored weekly window is the outer ring")
         XCTAssertEqual(reading.readout, "75%")
         let card = try DockCardProjection.content(input: input, stateLabel: "Some readings are stale", at: now)
         XCTAssertEqual(card.rows.first { $0.id == "quota:session" }?.value, "--")

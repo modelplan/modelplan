@@ -19,7 +19,7 @@ export function decodeRgba(buffer){
 // ends at `lastRow` (default: the last such row). Inside it, a row whose central columns (the middle `core`, default
 // 60 %, which skips the rounded shoulders) are less than fully opaque for `share` (default 20 %) of that width is a
 // gap. Returns the failing rows as {y, share}.
-export function interiorGaps({width,height,rows},{firstRow,lastRow,share=.2,core=.6,solid=.5}={}){
+export function interiorGaps({width,height,rows},{firstRow,lastRow,share=.2,core=.6,solid=.9}={}){
  let left=width,right=-1;
  for(const row of rows)for(let x=0;x<width;x++)if(row[x*4+3]>=128){left=Math.min(left,x);right=Math.max(right,x);}
  if(right<0)return [{y:0,share:1}];
@@ -32,4 +32,17 @@ export function interiorGaps({width,height,rows},{firstRow,lastRow,share=.2,core
  const gaps=[];
  for(let y=top;y<=bottom;y++){const s=frac(rows[y],a=>a<255);if(s>=share)gaps.push({y,share:s});}
  return gaps;
+}
+
+// Outer extent [left,right] per row (alpha >= 128), or null for an empty row.
+export function extents({width,rows}){
+ return rows.map(row=>{let l=-1,r=-1;for(let x=0;x<width;x++)if(row[x*4+3]>=128){if(l<0)l=x;r=x;}return l<0?null:[l,r];});
+}
+// Outward steps of the outline between adjacent rows: the left edge moving out or the right edge moving out by more than
+// `max` device px, within rows [from,to]. The caller passes only the rows where the shape is not an approved curve.
+export function outwardSteps(ext,{from,to,max}){
+ const found=[];
+ for(let y=Math.max(from,1);y<=to;y++){const a=ext[y-1],b=ext[y];if(!a||!b)continue;
+  const left=a[0]-b[0],right=b[1]-a[1];if(left>max||right>max)found.push({y,left,right});}
+ return found;
 }

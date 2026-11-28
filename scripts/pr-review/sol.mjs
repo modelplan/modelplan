@@ -3,7 +3,7 @@
 // review from the interactive lanes into Actions. decideSol() picks whether one PR head gets a review, solPolicy() is
 // the coordinator's sol-consult.sh policy text, buildSolPrompt() the whole request, parseAnswer() checks the answer,
 // renderSolComment() writes the PR comment and agreement() compares a shadow verdict with the lane verdict.
-import { DEFAULT_GLM_TIERS, GPT_FALLBACK_MARKER, IMPORTANT, NORMAL, hasRename, needsCompile, eligibleLanes, gptFallbackVerdict, gptLabelled, isShadowLane, isTrusted, pathTier, prPaths, reviewClass, reviewerLane, stickyLanes, tierOverride, verdicts, REVIEW_LANES } from "../merge-gates/rules.mjs";
+import { DEFAULT_GLM_TIERS, GPT_FALLBACK_MARKER, IMPORTANT, NORMAL, hasRename, needsCompile, eligibleLanes, gptFallbackVerdict, gptLabelled, isShadowLane, isTrusted, ledgerPr, pairLane, prPaths, prReview, reviewerLane, stickyLanes, tierOverride, verdicts, REVIEW_LANES } from "../merge-gates/rules.mjs";
 import { verdictLines } from "./brief.mjs";
 import { GLM_MODEL } from "./providers.mjs";
 
@@ -39,7 +39,10 @@ export const REVIEW_TIERS = Object.freeze([0, 1, 2]);
 // D395 (owner 2026-11-24): on an IMPORTANT PR (rules.mjs reviewClass) only a GPT verdict counts, as before: this workflow's GPT
 // provider (ghsol) or a local Codex lane. On a NORMAL PR the GLM provider's verdict counts too.
 // The routing class of a PR from the REST pull request and files, as the gate computes it.
-export const prClass = (pr, files, tier) => reviewClass({ paths: prPaths(files), labels: pr?.labels, tier, fileCount: files.length, renamed: hasRename(files) }).cls;
+// D482: items (rules.mjs feed()) give the trusted REVIEW-TIER override; the body gives the R13 ledger line.
+// prRoute: { tier, cls } exactly as the gate computes them (rules.mjs prReview: an IMPORTANT PR is at least tier 1).
+export const prRoute = (pr, files, items = []) => prReview({ paths: prPaths(files), labels: pr?.labels, override: tierOverride(items), ledger: ledgerPr(pr), fileCount: files.length, renamed: hasRename(files) });
+export const prClass = (pr, files, items = []) => prRoute(pr, files, items).cls;
 // A fork or a stranger's PR (D395-4): reviewed only on the owner's dispatch, by GLM, as advice.
 export const outsidePr = (pr) => !isTrusted(pr?.user) || !pr?.head?.repo?.full_name || pr.head.repo.full_name !== pr.base?.repo?.full_name;
 // The paths themselves live in rules.mjs: the merge gate needs them too (a native PR cannot merge without mac-compile).
@@ -62,6 +65,18 @@ export const glmAdvisory = (cls, tier, glmTiers = DEFAULT_GLM_TIERS) => Number(t
 // non-GLM lane) means the head is done.
 const gptOwn = (lane) => [`(${lane})`];
 
+// D484-5: the lanes in `own` whose verdict at the head may be replaced by an explicit re-review (force): every own lane
+// that has a verdict there has a latest (comment order) `block`. Returns those lanes, or [] when none has a verdict or any
+// has a latest `merge` (a merge is never posted over). The gate takes the latest verdict per lane (rules.mjs verdicts).
+export const ownBlockedLanes = (atHead, own) => {
+  const latest = new Map();
+  for (const v of atHead) if (own.includes(v.lane)) latest.set(v.lane, v);
+  return [...latest.values()].every((v) => v.verdict === "block") ? [...latest.keys()] : [];
+};
+// The provider whose verdict is posted under a lane, and the blocker IDs a block lists (top level or quoted).
+const laneProvider = (lane) => (/glm/i.test(lane) ? "glm" : "openai");
+export const blockerIds = (body) => [...new Set(String(body).replace(/\r/g, "").split("\n").map((l) => /^\s*(?:>\s?)?\s*(?:\d+[.)]\s*|[-*]\s*)?\**BLOCKER\b\W+([A-Za-z0-9-]+)/i.exec(l)?.[1]).filter(Boolean))];
+
 // pr: REST pull request; files: REST PR files; items: rules.mjs feed(); lane: SOL_LANE or SOL_SHADOW_LANE;
 // triggerSha: the head the triggering ci run or mac-compile run was for ("" for a dispatch);
 // checks: { ci: ci.yml passed at the head, compile: a trusted mac-compile success status is on the head };
@@ -83,9 +98,8 @@ export function decideSol({ pr, files, items, lane, triggerSha = "", checks = { 
   if (!SHA.test(head)) return skip("head is not a full sha");
   if (triggerSha && triggerSha.toLowerCase() !== head) return skip("the trigger was for an older head");
   const paths = prPaths(files);
-  const tier = tierOverride(items) ?? pathTier(paths);
+  const { tier, cls } = prRoute(pr, files, items);   // D482: the gate's own tier and class (R13 floor, IMPORTANT at least tier 1)
   if (!REVIEW_TIERS.includes(tier)) return skip(`tier ${tier} is unknown`);
-  const cls = prClass(pr, files, tier);
   // Owner D374 (11-21): a ready PR is reviewed once ci.yml passes at the head, native or not. The mac-compile success
   // no longer gates the review; the merge gate (rules.mjs evaluatePr) still requires it for a native head before merge.
   // `compile` is reported only (the review sees the mac-compile status among the CI lines).
@@ -97,16 +111,18 @@ export function decideSol({ pr, files, items, lane, triggerSha = "", checks = { 
   // D395: on a NORMAL PR no assignment holds the GLM reviewer back (a Codex lane that took an earlier head during a GLM outage
   // keeps nothing); a workflow assignment (ghsol or ghglm) is the provider pair, never one provider (D396-1).
   // An outside PR (owner dispatch, advice only) ignores any assignment too: nothing it posts can count (D395-4).
-  const sticky = cls === NORMAL || outside ? null : reviewerLane(items, gpt);
   const eligible = eligibleLanes(tier, glmTiers, cls);
+  const sticky = pairLane(cls === NORMAL || outside ? null : reviewerLane(items, gpt), eligible, cls);   // D482: ghglm -> ghsol where GLM may not decide
   // The run's own lanes: its Sol lane, and its GLM lane only while (ghglm) may decide this tier (SOL-8: a GLM verdict
   // left over from a wider REVIEW_GLM_TIERS is advice and does not settle the head).
   // A labelled PR: a GLM verdict settles the head only when it is the marked fallback verdict (GPT out of quota, which counts).
   const fb = gpt && gptFallbackVerdict(items, head) !== null;
   const own = gpt && tier !== 0 ? [...gptOwn(lane), ...(fb ? [`(${postLane(lane, "glm")})`] : [])] : ownLanes(lane, tier, glmTiers, cls);   // tier 0: the advisory GLM review settles it
   const settles = (v) => (eligible.includes(v.lane) && !(gpt && !fb && v.lane === `(${GLM_LANE})`)) || v.lane === "(unnamed)";
-  // Once per lane per head, forced or not: force only lifts the "another counting lane already reviewed" skip below.
-  if (atHead.some((v) => own.includes(v.lane))) return skip("this lane already reviewed this head");
+  // Once per lane per head. Force lifts the "another counting lane already reviewed" skip below, and (D484-5) lets a lane
+  // replace its own latest `block` at the head with a new verdict; a `merge` at the head is never posted over.
+  const redo = force ? ownBlockedLanes(atHead, own) : [];
+  if (atHead.some((v) => own.includes(v.lane)) && !redo.length) return skip("this lane already reviewed this head");
   const ownCounting = [`(${SOL_LANE})`, `(${GLM_LANE})`];
   if (lane === SOL_LANE && tier !== 0 && !outside) {
     // Counting mode spends no tokens when another lane owns or already settled this head.
@@ -122,6 +138,12 @@ export function decideSol({ pr, files, items, lane, triggerSha = "", checks = { 
   // Where GLM may not decide it is still offered as the advisory quota fallback, once per head, and only after GPT.
   const advisoryGlm = !outside && glmAdvisory(cls, tier, glmTiers);
   if (tier === 0 || outside || eligible.includes(`(${GLM_LANE})`) || (advisoryGlm && !atHead.some((v) => v.lane === `(${GLM_LANE})`))) providers.push("glm");
+  // D484-5: the replacement is posted by the provider of the lane whose block it replaces, never by the other one (a merge
+  // from another lane would leave the block in force and block the next re-review); no quota fallback to the other provider.
+  if (redo.length) {
+    const want = new Set(redo.map(laneProvider));
+    for (let i = providers.length - 1; i >= 0; i--) if (!want.has(providers[i])) providers.splice(i, 1);
+  }
   if (!providers.length) return skip(`no provider can review tier ${tier}`);
   const earlier = all.filter((v) => v.sha !== head && GPT_LANES.has(v.lane));
   // R19: the record of the latest earlier GPT verdict comment that has one is the cumulative per-PR record. The delta
@@ -136,7 +158,17 @@ export function decideSol({ pr, files, items, lane, triggerSha = "", checks = { 
     if (r) record = { sha: official[i].sha, lane: official[i].lane, text: r };
   }
   const since = record ? record.sha : official.length ? official[official.length - 1].sha : null;
-  return { review: true, head, tier, compile, since, earlier: earlier.slice(-MAX_EARLIER), record, providers, gpt, cls, glmAdvisory: advisoryGlm && providers.includes("glm"), gptFirst: gpt || (advisoryGlm && providers.includes("glm")) };
+  // D484-5: the block being replaced is carried into the brief (its findings and Record) and its blocker IDs must each get a
+  // disposition in the replacement's Record before a merge (parseAnswer). The scope (`since`) stays that of the earlier heads.
+  let replace = null;
+  if (redo.length) {
+    const prior = redo.map((l) => atHead.filter((v) => v.lane === l).at(-1));
+    const ids = [...new Set(prior.flatMap((v) => blockerIds(v.body)))];
+    replace = { lanes: redo, ids };
+    earlier.push(...prior);
+    for (const v of prior) { const r = extractRecord(v.body); if (r) record = { sha: v.sha, lane: v.lane, text: r }; }
+  }
+  return { review: true, head, tier, compile, since, replace, earlier: earlier.slice(-MAX_EARLIER), record, providers, gpt, cls, glmAdvisory: advisoryGlm && providers.includes("glm"), gptFirst: gpt || (advisoryGlm && providers.includes("glm")) };
 }
 
 // The R19 record block: the line "Record: <sha>" and the lines after it up to the first blank line (at most 15 lines),
@@ -161,7 +193,10 @@ export function solPolicy(base, sha) {
   return `Consult policy (sol-consult.sh, rules R18-R20 of rules/gate-rules.md; the wrapper adds it, do not skip it).
 - Scope: the delta since ${base || "the first commit"} up to ${sha} (git diff ${base || "<root>"}..${sha} in the checkout). Unchanged code is reopened only for a demonstrated material defect or an invalidated assumption, and then say why it was missed before.
 - Block only for a violated stated requirement, or a concrete reachable failure with material impact. Each blocker states its trigger, its consequence and an acceptance test. Everything else is a non-blocking line starting with 'FOLLOW-UP:'.
-- Material (D364) = an outcome the owner or a user sees as wrong: wrong merge or a PR blocked for good, lost or deleted data or work, security/privacy/credential, user-visible failure. Wrong alert text, wording or an extra event is a FOLLOW-UP. Reachable = a real input can produce it; untrusted input always counts, a format our own trusted tooling never emits does not, unless the PR is what starts emitting it. After the second repair round, a new finding in the repair delta blocks only if at least as severe as the one being repaired; a security, privacy, credential or data-loss finding always blocks.
+- Material (D364) = an outcome the owner or a user sees as wrong: wrong merge or a PR blocked for good, lost or deleted data or work, security/privacy/credential, user-visible failure. Wrong alert text, wording or an extra event is a FOLLOW-UP. Reachable = a real input can produce it; untrusted input always counts, a format our own trusted tooling never emits does not, unless the PR is what starts emitting it. A fail-closed outcome that comes with an alert (the PR waits and an event is raised) is a FOLLOW-UP, not 'blocked for good'; a wrong landing, a leak or data loss still blocks.
+- First pass (D426): list ALL blockers at once, most severe first. Ordinary blockers are capped at 5; anything beyond the fifth goes under FOLLOW-UP. A protected finding (security, privacy, credential or data loss) is never capped or demoted: each one stays a blocker even below fifth place.
+- From round 2 (R20, consults included, D426): a NEW blocker counts only if the delta introduced it AND it is at least as severe as what it repairs, or it is security, privacy, credential or data loss. Everything else is FOLLOW-UP.
+- Concise output (D426): findings, then the Record block, then VERDICT. Do not restate the diff.
 - Say closed/open for every earlier finding you were given. After two failed repairs of one finding, propose a reproducer and an acceptance condition instead of another patch (R20).
 - Before the verdict write a compact Record block of at most 15 lines starting 'Record: <reviewed SHA>': each criterion as 'criterion -> disposition + evidence pointer', the open finding IDs and their closure tests. For a delta, list only the dispositions that changed plus one line 'unchanged: all other criteria as in the record at <earlier SHA>' (R19).
 - The very last line of your answer is exactly 'VERDICT: merge' or 'VERDICT: block'; nothing follows it.`;
@@ -175,22 +210,76 @@ const MAX_EARLIER_CHARS = 6000;
 // Generated, reproducible files whose diff is left out of the review request (the request budget is characters and a
 // bundle diff alone can be larger than all of it). Each entry names the CI check that proves the committed file matches
 // its sources: ci.yml job `codex`, steps "The Node 22/24 bundle and its notices are committed as built"
-// (`npm run build` in codex/, then `git diff --exit-code`). Keep this list explicit; never match by pattern.
+// (`npm run build` in codex/, then `git diff --exit-code`). Keep this list explicit; the pattern rules below it (D428) are
+// the only other way a file is left out.
 export const GENERATED_DIFF_OMITTED = Object.freeze({
   "codex/server.bundle.mjs": "`npm run build` in codex/ and checked by the ci.yml `codex` job (committed-as-built steps)",
 });
 
-// Replaces the per-file section of each listed generated file in a `git diff` text with a one-line note. Every other
-// section is kept byte for byte.
-export function omitGeneratedDiffs(diff, listed = GENERATED_DIFF_OMITTED) {
+// Paths whose diff is left out of the budget by rule (D428): binary baselines, generated wire code and capture files.
+// The review reads the source they are built from; the diff of a regenerated file only costs characters. Explicit, tested
+// patterns (never a user-supplied list): a change in this list is a change to what the reviewer sees.
+export const BINARY_DIFF_RE = /\.(png|jpe?g|gif|webp|ico|icns|pdf|zip|gz|tgz|woff2?|ttf|otf|mp4|mov|wasm)$/i;
+export const GENERATED_DIFF_RE = /(^|\/)(wire\.ts|Generated\.swift|[A-Za-z0-9_]+\.generated\.swift)$|^schema\/app-cli\/captures\/|(^|\/)(RegressionBaselines|cockpit-baselines|__snapshots__)\//;
+export const diffOmitReason = (path, listed = GENERATED_DIFF_OMITTED) =>
+  Object.hasOwn(listed, path) ? `generated file; reproducible with ${listed[path]}`
+    : BINARY_DIFF_RE.test(path) ? "binary file"
+    : GENERATED_DIFF_RE.test(path) ? "generated or capture file"
+    : null;
+
+// Replaces the per-file section of each omitted file in a `git diff` text with a one-line note. Omitted: the explicit
+// generated list, binary and generated paths (diffOmitReason), and `same` paths (the PR's change to them is already what
+// main has, so they are no part of this PR's own delta). Every other section is kept byte for byte. With `report`, the
+// omitted paths are pushed there as "path (reason)".
+export function omitGeneratedDiffs(diff, listed = GENERATED_DIFF_OMITTED, { same = new Set(), report = null } = {}) {
   if (!diff) return diff;
   const parts = String(diff).split(/^(?=diff --git )/m);
   return parts.map((part) => {
     const m = /^diff --git a\/(\S+) b\/(\S+)/.exec(part);
-    if (!m || m[1] !== m[2] || !Object.hasOwn(listed, m[2])) return part;
+    if (!m || m[1] !== m[2]) return part;
+    const why = same.has(m[2]) ? "already identical on main" : diffOmitReason(m[2], listed);
+    if (!why) return part;
     const lines = part.split("\n").filter((l) => /^[+-]/.test(l) && !/^(\+\+\+|---) /.test(l)).length;
-    return `${m[2]}: generated file, ${lines} lines changed, omitted from review; reproducible with ${listed[m[2]]}\n`;
+    report?.push(`${m[2]} (${why})`);
+    return Object.hasOwn(listed, m[2]) ? `${m[2]}: generated file, ${lines} lines changed, omitted from review; reproducible with ${listed[m[2]]}\n` : `${m[2]}: ${why}, ${lines} lines changed, omitted from review\n`;
   }).join("");
+}
+
+// The PR's own change since an earlier reviewed head (D428). `git diff since head` is wrong once the branch merged main after
+// `since`: it then holds every change main took meanwhile (#1205: an 18 KB PR was reviewed as 2.7 MB). With a merge in
+// since..head, the delta is the PR's own diff at the head (merge base..head) cut to the file sections that differ from the
+// PR's own diff at `since` (its merge base..since); without one the plain range is exact. `git` runs a git command and returns
+// its text; `main` is the ref of main. Returns the unfiltered diff text (omitGeneratedDiffs is the caller's next step).
+export function prDelta(git, { since, head, main }) {
+  const merges = Number(git("rev-list", "--merges", "--count", `${since}..${head}`).trim());
+  if (!merges) return git("diff", "--no-color", "--no-ext-diff", since, head);
+  const own = (tip) => git("diff", "--no-color", "--no-ext-diff", git("merge-base", main, tip).trim(), tip);
+  const sections = (d) => new Map(String(d).split(/^(?=diff --git )/m).filter((x) => x.startsWith("diff --git ")).map((x) => [/^diff --git a\/(\S+) b\/(\S+)/.exec(x)?.[2] ?? x.split("\n")[0], x]));
+  const before = sections(own(since));
+  const after = sections(own(head));
+  // hunk positions move when main changed lines above them, so compare the changed lines only
+  const lines = (x) => x.split("\n").filter((l) => /^[+-]/.test(l)).join("\n");
+  const changed = [...after].filter(([path, x]) => !before.has(path) || lines(before.get(path)) !== lines(x)).map(([, x]) => x);
+  // A change the PR had at `since` and no longer has (a repair removed the file or reverted the edit) must stay visible: the
+  // reviewer would otherwise judge a repair that dropped reviewed code without seeing any hunk for it (macrevb-1245-4).
+  const gone = [...before].filter(([path]) => !after.has(path)).map(([path, x]) =>
+    `diff --git a/${path} b/${path}\n# REMOVED since the reviewed head: the PR no longer changes this file. Its change at the reviewed head was (commented out, no longer part of the PR):\n${x.split("\n").slice(1).map((l) => `# ${l}`).join("\n")}\n`);
+  return [...changed, ...gone].join("");
+}
+
+// Oversize (D428): even the PR's own delta, without the omitted files, is over the request budget. The run posts this
+// advisory note once per head (no VERDICT) and the coordinator hands the head to an interactive Codex lane: its first line
+// is the event, always exactly "review oversize, interactive lane needed @ <sha> (<lane>)".
+export const OVERSIZE_EVENT = "review oversize, interactive lane needed";
+export const OVERSIZE_RE = /^review oversize, interactive lane needed @ ([0-9a-f]{40}) \(gh[a-z]+\)$/;
+// Only the trusted account (the bot token and the owner) counts: an untrusted comment in this format never suppresses the real note.
+export const oversizeNoted = (items, head) => items.some((x) => isTrusted(x.user) && OVERSIZE_RE.exec(String(x.body).split("\n")[0].replace(/\r$/, ""))?.[1] === head);
+export function renderOversizeNote({ head, lane, chars, budget, omitted = [], runUrl = "" }) {
+  const body = [`${OVERSIZE_EVENT} @ ${head} (${lane})`, "",
+    `_Advisory, no verdict. The patches of this PR's own delta are ${chars} characters, over the ${budget} budget of the workflow reviewer, so this head is routed to an interactive Codex review lane._`,
+    ...(omitted.length ? ["", `<sub>Already left out of that size, not reviewed as diff: ${omitted.slice(0, 12).join(", ")}${omitted.length > 12 ? `, and ${omitted.length - 12} more` : ""}.${runUrl ? ` [run](${runUrl})` : ""}</sub>`] : runUrl ? ["", `<sub>[run](${runUrl})</sub>`] : [])].map(tidy).join("\n");
+  if (body.split("\n").some((l) => MARKER.test(l))) throw new Error("oversize note has a gate marker");
+  return body;
 }
 
 
@@ -220,6 +309,7 @@ export function buildSolPrompt({ pr, d, lane, stat, diff, delta = "", contents =
     fence(clip(`${pr.title ?? ""}\n\n${pr.body ?? ""}`, MAX_BODY_CHARS)),
   ];
   if (checks.length) brief.push("", "## CI at this head (data: check runs and commit statuses; you cannot run tests, so rely on these)", fence(checks.join("\n")));
+  if (d.replace) brief.push("", `## Same-head replacement (D484-5)`, `- This is a forced re-review of the same head ${d.head}: you replace your own earlier block (below). ${d.replace.ids.length ? `For every earlier blocker (${d.replace.ids.join(", ")}) write one Record line '<id> -> closed|fixed|withdrawn: <reason>'; a merge whose Record lacks such a line for one (a bare mention, 'open', no reason) is rejected.` : "Account for every earlier finding in the Record."}`);
   if (d.record) brief.push("", `## Prior record (R19, data): ${d.record.lane} at ${d.record.sha}`, fence(d.record.text));
   if (d.earlier?.length) {
     brief.push("", "## Earlier verdict comments (data, newest last)");
@@ -273,7 +363,7 @@ export function validatorProblems(body) {
 // The model's answer, canonicalised as sol-consult.sh does (trailing whitespace dropped). Not ok unless the last line is
 // exactly "VERDICT: merge|block" (marker-looking lines before it are defused), an unquoted "Record: <sha>" block for this head
 // precedes it, and a block names at least one labelled blocker (what the coordinator's validator will demand of the comment).
-export function parseAnswer(text, head) {
+export function parseAnswer(text, head, priorIds = []) {
   const body = String(text ?? "").replace(/\r/g, "").replace(/\s+$/, "");
   const ls = body.split("\n");
   const m = /^VERDICT: (merge|block)$/.exec(ls[ls.length - 1] ?? "");
@@ -285,6 +375,12 @@ export function parseAnswer(text, head) {
   if (!rm) return { ok: false, why: "the answer has no top-level Record block (R19)" };
   if (!head.startsWith(rm[1].toLowerCase())) return { ok: false, why: "the Record names another commit" };
   const record = extractRecord(rest);
+  // D484-5: a merge that replaces a block at the same head must give every blocker of that block an explicit disposition line in its Record: `<id> -> closed|fixed|withdrawn: <reason>` (one line per ID, any case, `->`, `=>` or the arrow character; a bare mention, `open` or no reason is rejected).
+  if (m[1] === "merge") {
+    const lines = String(record ?? "").split("\n");
+    const missing = priorIds.filter((id) => !lines.some((l) => new RegExp(`^\\s*(?:[-*]\\s*)?\\**${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\**\\s*(?:->|=>|\u2192)\\s*(?:closed|fixed|withdrawn)\\s*:\\s*\\S.{2,}`, "i").test(l)));
+    if (missing.length) return { ok: false, why: `the Record gives no disposition for the replaced blocker ${missing.join(", ")}` };
+  }
   const problems = validatorProblems(`${rest}\n\nVERDICT: ${m[1]} @ ${head} (ghsol)`);
   if (problems.length) return { ok: false, why: `the answer would fail the verdict format: ${problems[0]}` };
   return { ok: true, verdict: m[1], body: rest, record };
@@ -322,6 +418,7 @@ export function renderSolComment({ answer, head, lane, mode, base, tier, meta = 
   out.push(clipKeepingRecord(tidy(answer.body)), "");
   if (agree) out.push(`<sub>${tidy(agree)}</sub>`, "");
   const tokens = meta.usage ? ` · tokens in ${meta.usage.input} (cached ${meta.usage.cached}) out ${meta.usage.output}` : "";
+  if (meta.omittedDiffs?.length) out.push(`<sub>Not reviewed as diff (excluded from the size budget): ${meta.omittedDiffs.slice(0, 12).join(", ")}${meta.omittedDiffs.length > 12 ? `, and ${meta.omittedDiffs.length - 12} more` : ""}.</sub>`, "");
   out.push(`<sub>workflow ${glm ? "GLM" : "Sol"} reviewer · ${meta.model ?? "?"} ${meta.effort ?? "?"} · ${meta.seconds ?? "?"} s${tokens}${meta.runUrl ? ` · [run](${meta.runUrl})` : ""}</sub>`, "");
   if (out.some((l) => MARKER.test(l))) throw new Error("rendered comment has a gate marker before the verdict line");
   // macrev2-1254: no counting marker is ever written: a GLM fallback answer is advisory on an IMPORTANT PR (gptFallback is ignored).
@@ -345,10 +442,10 @@ export function postProblem({ pr, items, head, lane, posted = lane, force = fals
   if (String(pr.head?.sha ?? "").toLowerCase() !== head) return `head moved to ${pr.head?.sha ?? "?"} after the review of ${head}`;
   // The tier is read again from the fresh feed and files (a trusted REVIEW-TIER while the model ran changes which lanes
   // may decide); the prepared tier is only the fallback when the caller has no file list.
-  const tier = files ? tierOverride(items) ?? pathTier(prPaths(files)) : Number(preparedTier);
+  const tier = files ? prRoute(pr, files, items).tier : Number(preparedTier);
   if (!REVIEW_TIERS.includes(tier)) return `tier ${tier} is unknown`;
   // D395: the class is read again too; without a file list it is IMPORTANT (fail closed: GLM decides nothing).
-  const cls = files ? prClass(pr, files, tier) : IMPORTANT;
+  const cls = files ? prClass(pr, files, items) : IMPORTANT;
   const gpt = wantsGpt(pr);
   // Tier 0 and an outside PR (D395 advisory review): only the GLM verdict goes out, once per head, and only on the owner's dispatch
   // for an outside PR; nothing else is checked (the gate counts no verdict there).
@@ -358,11 +455,16 @@ export function postProblem({ pr, items, head, lane, posted = lane, force = fals
   const atHead = verdictLines(items).filter((v) => v.sha === head);
   const fb = gpt && gptFallbackVerdict(items, head) !== null;
   const own = [...(gpt && tier !== 0 ? [...gptOwn(lane), ...(fb ? [`(${postLane(lane, "glm")})`] : [])] : ownLanes(lane, tier, glmTiers, cls)), ...(posted ? [`(${posted})`] : [])];
-  if (atHead.some((v) => own.includes(v.lane))) return `(${posted ?? lane}) already has a verdict at ${head}`;
+  if (atHead.some((v) => own.includes(v.lane))) {
+    const redo = force ? ownBlockedLanes(atHead, own) : [];
+    if (!redo.length) return `(${posted ?? lane}) already has a verdict at ${head}`;
+    // D484-5: the replacement goes out under the lane whose block it replaces; another lane's merge would strand that block.
+    if (posted && !redo.includes(`(${posted})`)) return `(${posted}) would not replace the block of ${redo.join(", ")} at ${head}`;
+  }
   if (lane === SOL_LANE && !advisory) {
     const eligible = eligibleLanes(Number(tier), glmTiers, cls);
     // NORMAL: no assignment holds the workflow back; otherwise a workflow assignment accepts either provider (D396-1).
-    const assigned = cls === NORMAL ? null : reviewerLane(items, gpt);
+    const assigned = pairLane(cls === NORMAL ? null : reviewerLane(items, gpt), eligible, cls);   // D482: ghglm -> ghsol where GLM may not decide
     const sticky = assigned && eligible.includes(assigned) ? assigned : null;
     const pinned = stickyLanes(sticky, eligible);
     if (assigned && !sticky) return `the assigned reviewer ${assigned} cannot review tier ${tier}`;
