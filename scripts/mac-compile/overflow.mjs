@@ -15,6 +15,8 @@ export const POLL_MS = 30 * 1000;
 // the owner pool, or the watcher itself is late).
 export const WATCH_MS = 15 * 60 * 1000;
 export const OWNER_LABEL = "modelplan-compile";
+// How many recent mac-compile runs the once-per-head lookup reads (about two days of runs at the 11-27 rate).
+export const RUNS_SCAN = 500;
 const QUEUED = new Set(["queued", "waiting", "pending", "requested"]);
 const SHA = /^[0-9a-f]{40}$/;
 
@@ -95,7 +97,8 @@ async function main(env) {
   const pr = await prFor(gh, head);
   const statuses = (await gh.get(`/commits/${head.sha}/status`)).statuses ?? [];
   const titles = new Set([`mac-compile ${head.sha}`, `mac-compile PR #${pr?.number} @ ${head.sha}`]);
-  const runs = (await gh.get("/actions/workflows/mac-compile.yml/runs?per_page=100")).workflow_runs ?? [];
+  // Earlier attempts for the head may be older than the latest page: read up to RUNS_SCAN runs (macrev2-1234-3).
+  const runs = await gh.all("/actions/workflows/mac-compile.yml/runs", "workflow_runs", RUNS_SCAN);
   const others = [];
   for (const r of runs.filter((x) => String(x.id) !== String(runId) && titles.has(x.display_title)))
     others.push({ run: r, jobs: (await gh.get(`/actions/runs/${r.id}/jobs?per_page=100`)).jobs ?? [] });

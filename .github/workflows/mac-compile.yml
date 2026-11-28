@@ -19,8 +19,8 @@
 # workflow_run). `compile-hosted` runs the same steps on a GitHub-hosted macos-15 VM (pool=hosted: a cold build, no
 # seed, no cache), dispatched by mac-compile-overflow.yml when an owner-pool compile job of a PR run has waited over
 # 5 minutes for a runner, once per head. Both pools post the same "mac-compile" status from `report`, and the run title
-# is the same, so the gate and pr-review-sol.yml bind either run to the head alike. A failure never replaces a success
-# already posted at the head (success wins: either pool compiled the same tree), and a cancelled run posts nothing.
+# is the same, so the gate and pr-review-sol.yml bind either run to the head alike. Success wins per head: a failure
+# never replaces or races a success from the other pool (see `report`), and a cancelled run posts nothing.
 name: mac-compile
 # The title names what was compiled; pr-review-sol.yml binds a mac-compile success to a head through it.
 run-name: "${{ inputs.pr && (inputs.sha && format('mac-compile PR #{0} @ {1}', inputs.pr, inputs.sha) || format('mac-compile PR #{0}', inputs.pr)) || github.event.workflow_run.head_sha && format('mac-compile {0}', github.event.workflow_run.head_sha) || '' }}"
@@ -138,8 +138,9 @@ jobs:
     needs: plan
     if: ${{ needs.plan.outputs.run == 'true' && needs.plan.outputs.pool == 'owner' && github.repository == 'modelplan/modelplan' && github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.pull_requests[0].number) || (github.event_name == 'workflow_dispatch' && github.actor_id == '11829005')) }}
     runs-on: [self-hosted, macOS, ARM64, modelplan-compile]
-    # #1220: a hung compile step held the single owner queue for 60 minutes; seeded runs finish well inside 25.
-    timeout-minutes: 25
+    # #1220: a hung compile step held the single owner queue for 60 minutes. The cap sits above the longest real
+    # successful owner compile (#1289: 49 min 31 s, 11-28), so a valid build is never cut off; a hang ends at 70.
+    timeout-minutes: 70
     permissions:
       contents: read
     steps:
@@ -188,7 +189,7 @@ jobs:
     runs-on: macos-15
     # A cold build on a 3-core hosted VM: ModelPlanAppIntegration alone built cold in 12.7 min on the owner Macs (11-15),
     # roughly twice that here, plus its tests and any other touched package. A hung hosted job blocks no owner runner
-    # and costs nothing (public repository), so the cap is generous; the 25-minute owner cap stays for the shared queue.
+    # and costs nothing (public repository), so the cap is generous.
     timeout-minutes: 75
     permissions:
       contents: read
@@ -233,12 +234,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     permissions:
+      actions: read
       statuses: write
     steps:
       - env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           SHA: ${{ needs.plan.outputs.sha }}
+          PR: ${{ needs.plan.outputs.pr }}
+          RUN_ID: ${{ github.run_id }}
           POOL: ${{ needs.plan.outputs.pool }}
           RESULT: ${{ needs.plan.outputs.pool == 'hosted' && needs.compile-hosted.result || needs.compile.result }}
           URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -249,10 +253,16 @@ jobs:
             skipped) state=success; desc="no Swift change under desktop/native";;
             *) state=failure; desc="COMPILE fail @ ${SHA:0:8} ($RESULT, $POOL)";;
           esac
-          # D486 success wins: the other pool may already have compiled this head. A success stays (the same tree compiled
-          # once is enough, and the gate and pr-review-sol.yml already bound it); this run then posts nothing. A failed
-          # read posts as before (latest wins), so a real failure is never silently dropped.
-          cur=$(gh api "repos/$REPO/commits/$SHA/status" -q '[.statuses[] | select(.context == "mac-compile")][0].state // ""' 2>/dev/null) || cur=unread
-          if [ "$cur" = success ]; then echo "mac-compile: already success at ${SHA:0:8}; this $POOL run ($state) posts nothing"; exit 0; fi
+          # D486 success wins per head, across the two pools (both may compile the same head at once). A success always
+          # posts. A failure posts only when, right before posting, the head has no mac-compile success and no OTHER
+          # mac-compile run for this head is unfinished or succeeded: an unfinished one decides (its report runs this same
+          # check), a succeeded one already posted. So a failure never lands after, or races, the other pool's success.
+          # A failed read posts the failure (logged): a real failure is never silently dropped.
+          if [ "$state" = failure ]; then
+            cur=$(gh api "repos/$REPO/commits/$SHA/status" -q '[.statuses[] | select(.context == "mac-compile")][0].state // ""' 2>/dev/null) || cur=unread
+            if [ "$cur" = success ]; then echo "mac-compile: already success at ${SHA:0:8}; this $POOL failure posts nothing"; exit 0; fi
+            others=$(gh api "repos/$REPO/actions/workflows/mac-compile.yml/runs?per_page=100" -q ".workflow_runs[] | select(.id != $RUN_ID and (.display_title == \"mac-compile $SHA\" or .display_title == \"mac-compile PR #$PR @ $SHA\")) | select(.status != \"completed\" or .conclusion == \"success\") | .id" 2>/dev/null) || { others=; echo "::warning::could not list the other mac-compile runs; posting the failure"; }
+            if [ -n "$others" ]; then echo "mac-compile: another run for ${SHA:0:8} is unfinished or passed ($(echo $others)); this $POOL failure posts nothing"; exit 0; fi
+          fi
           gh api "repos/$REPO/statuses/$SHA" -f state="$state" -f context=mac-compile -f description="$desc" -f target_url="$URL" >/dev/null
           echo "mac-compile: $state ($desc)"

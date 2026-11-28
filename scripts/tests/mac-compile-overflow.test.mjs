@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
-import { OVERFLOW_MS, overflowPlan, titleHead, watchStep } from "../mac-compile/overflow.mjs";
+import { OVERFLOW_MS, RUNS_SCAN, overflowPlan, titleHead, watchStep } from "../mac-compile/overflow.mjs";
 import { isWorkflowFile, workflowProblems } from "../workflow-policy.mjs";
 
 const H = "a".repeat(40), H2 = "b".repeat(40);
@@ -62,6 +62,12 @@ test("overflowPlan: once per head, for the PR's current head, never over a succe
   assert.equal(plan({ pr: pr({ base: { ref: "release", repo: { full_name: "modelplan/modelplan" } } }) }), false);
   assert.equal(plan({ pr: pr({ user: { login: "x", id: 1 } }) }), false);
   assert.equal(plan({ pr: pr({ head: { sha: H, repo: { full_name: "fork/modelplan" } } }) }), false);
+});
+
+test("once per head reads past the latest page of runs (macrev2-1234-3)", () => {
+  assert.ok(RUNS_SCAN >= 300, "about two days of mac-compile runs");
+  const src = readFileSync(new URL("../mac-compile/overflow.mjs", import.meta.url), "utf8");
+  assert.match(src, /gh\.all\("\/actions\/workflows\/mac-compile\.yml\/runs", "workflow_runs", RUNS_SCAN\)/);
 });
 
 test("overflow workflow: follows mac-compile requests, main's scripts only, owner token only in the watch step, hosted", () => {

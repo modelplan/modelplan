@@ -310,8 +310,9 @@ token, no secrets, no persisted credentials), and a separate hosted job posts th
 
 - **Owner pool (default).** The `compile` job runs on the owner's compile Macs (label `modelplan-compile`, runner group
   admitting only `mac-compile.yml@refs/heads/main`), with the per-runner read-only build seed. Every `workflow_run`
-  (from `mac-compile trigger`) and every dispatch without `pool` uses it. Job cap 25 minutes (#1220: a hung compile
-  held the single queue for an hour; seeded runs finish well inside 25).
+  (from `mac-compile trigger`) and every dispatch without `pool` uses it. Job cap 70 minutes: above the longest real
+  successful owner compile (#1289, 49 min 31 s on 11-28), so a valid build is never cut off, while a hang (#1220 held
+  the single queue for an hour) still ends.
 - **Hosted pool (`pool=hosted`).** The `compile-hosted` job runs the same steps on GitHub-hosted `macos-15`: a cold
   build, no seed read or written, cap 75 minutes (a cold `ModelPlanAppIntegration` build alone took 12.7 minutes on the
   owner Macs; a 3-core hosted VM is about twice as slow, and a hung hosted job blocks no owner runner). Public repository,
@@ -325,12 +326,14 @@ token, no secrets, no persisted credentials), and a separate hosted job posts th
   the PR moved on. It cancels nothing and gives up after 15 minutes. GUI tests stay on the owner runners.
 - **Which result counts: success wins per head.** Both pools post the same `mac-compile` context, and the run title is
   the same (`mac-compile PR #N @ <sha>` for a dispatch, `mac-compile <sha>` for a workflow_run), so the gate binds either
-  run to the head. The report job reads the head's current `mac-compile` status first: a success already there stays and
-  this run posts nothing (the same tree compiled once is enough, and the first success is the one the gate and review
-  already bound to its run; a later failure from the other pool is environment, not code). A success replaces an earlier
-  failure; a failure replaces only a failure or nothing. A cancelled run (a newer head, a manual cancel) posts nothing;
-  a job past its time cap is a failure. If the status read itself fails the run posts as before (latest wins), so a real
-  failure is never dropped.
+  run to the head. Both pools may compile one head at the same time, so the report job decides at post time:
+  - a success always posts;
+  - a failure posts only when the head has no `mac-compile` success and no other mac-compile run for that head is
+    unfinished (it decides; its report makes the same check) or succeeded (it already posted). A failure therefore never
+    lands after, or races, the other pool's success. If both pools fail at the same moment and each sees the other
+    unfinished, neither posts; the sweep then finds no status and no running run and dispatches a fresh compile;
+  - a cancelled run (a newer head, a manual cancel) posts nothing; a job past its time cap is a failure;
+  - if a read fails, the failure posts (logged), so a real failure is never dropped.
 
 ## Migration
 
