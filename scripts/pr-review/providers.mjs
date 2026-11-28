@@ -19,14 +19,31 @@ export const isQuotaFailure = ({ status, code, message } = {}) => isQuotaCode(co
 
 const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
 
-// One JSON request with retries for network errors, 5xx and 429. A quota code ends it at once; a 429 that survives
-// every retry (about two minutes with the default waits) is a sustained 429 and counts as quota.
-async function requestJson(fetchImpl, url, init, { retries = 5, waitMs = 8000, label }) {
+// D492: each request (headers and body) waits at most REQUEST_TIMEOUT_MS. A timeout or network error is retried once;
+// the second one throws kind "timeout", which reviewInOrder treats like quota (the other provider may answer, else the
+// head gets the review-waiting note). Before, 6 attempts x 180 s plus the back-off held a run for 20 minutes.
+export const REQUEST_TIMEOUT_MS = 360000;
+export const NETWORK_RETRIES = 1;
+// The bounded policy is the GLM provider's (bounded: true): a network error, timeout or body failure may happen at most
+// twice (the second is kind "timeout"); 429/5xx keep the shared 6-attempt budget. Others keep the old one: 180 s per
+// attempt, up to 5 retries with growing back-off, a final network failure of kind "other".
+// One JSON request with retries for 5xx and 429 and for network errors. A quota code ends it at once; a 429 that survives
+// every retry (about two minutes with the default waits) is a sustained 429 and counts as quota. A body that is cut
+// off or aborted after the headers is a network error like a failed connect; only unparsable JSON becomes null.
+async function requestJson(fetchImpl, url, init, { retries = 5, waitMs = 8000, label, timeoutMs, bounded = false }) {
+  const tmo = timeoutMs ?? (bounded ? REQUEST_TIMEOUT_MS : 180000);
+  let netFails = 0;   // the bounded policy allows a network failure at most twice; every request still counts in the one shared budget
   for (let attempt = 0; ; attempt++) {
-    let r;
-    try { r = await fetchImpl(url, { ...init, signal: AbortSignal.timeout(180000) }); }
-    catch (e) { if (attempt < retries) { await sleep(waitMs * (attempt + 1)); continue; } throw new ProviderError("other", `${label}: network error (${e.name})`); }
-    const j = await r.json().catch(() => null);
+    let r, j;
+    try {
+      r = await fetchImpl(url, { ...init, signal: AbortSignal.timeout(tmo) });
+      j = await r.json().catch((e) => { if (e instanceof SyntaxError) return null; throw e; });
+    } catch (e) {
+      netFails++;
+      if (attempt < retries && (!bounded || netFails <= NETWORK_RETRIES)) { await sleep(waitMs * (attempt + 1)); continue; }
+      if (bounded) throw new ProviderError("timeout", `${label}: network error (${e.name}); ${label === "glm" ? "GLM" : label} timed out twice`);
+      throw new ProviderError("other", `${label}: network error (${e.name})`);
+    }
     const code = j?.error?.code ?? j?.error?.type ?? "";
     if (r.ok) return j;
     if (isQuotaFailure({ status: r.status, code, message: j?.error?.message })) throw new ProviderError("quota", `${label}: HTTP ${r.status} ${code}`);
@@ -38,10 +55,10 @@ async function requestJson(fetchImpl, url, init, { retries = 5, waitMs = 8000, l
   }
 }
 
-export function openaiProvider({ key, model, effort, url = "https://api.openai.com/v1/responses", fetchImpl = fetch, pollMs = 15000, deadlineMs = 1800000, waitMs }) {
+export function openaiProvider({ key, model, effort, url = "https://api.openai.com/v1/responses", fetchImpl = fetch, pollMs = 15000, deadlineMs = 1800000, waitMs, timeoutMs }) {
   if (!key) throw new ProviderError("config", "OPENAI_API_KEY is not set");
   const init = (method, body) => ({ method, headers: { authorization: `Bearer ${key}`, "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
-  const opts = { label: "openai", ...(waitMs !== undefined ? { waitMs } : {}) };
+  const opts = { label: "openai", ...(waitMs !== undefined ? { waitMs } : {}), ...(timeoutMs !== undefined ? { timeoutMs } : {}) };
   return {
     name: "openai",
     model,
@@ -88,14 +105,14 @@ export function attributeModel(requested, reported) {
   if (rep.toLowerCase() === String(requested).toLowerCase()) return { model: rep };
   return { model: rep, note: `${requested} requested, answered by ${rep}` };
 }
-export function glmProvider({ key, baseUrl, model = GLM_MODEL, fallbackModel = GLM_FALLBACK_MODEL, fetchImpl = fetch, waitMs }) {
+export function glmProvider({ key, baseUrl, model = GLM_MODEL, fallbackModel = GLM_FALLBACK_MODEL, fetchImpl = fetch, waitMs, timeoutMs }) {
   if (!key || !baseUrl) throw new ProviderError("config", "GLM_API_KEY or GLM_BASE_URL is not set");
   if (/flash/i.test(model)) throw new ProviderError("config", "the GLM fallback uses the full model, not flash");
   const url = `${String(baseUrl).replace(/\/+$/, "")}/chat/completions`;
   const call = (m, input) => requestJson(fetchImpl, url, {
     method: "POST", headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
     body: JSON.stringify({ model: m, messages: [{ role: "user", content: input }], stream: false, max_tokens: 32000 }),
-  }, { label: "glm", ...(waitMs !== undefined ? { waitMs } : {}) });
+  }, { label: "glm", bounded: true, ...(waitMs !== undefined ? { waitMs } : {}), ...(timeoutMs !== undefined ? { timeoutMs } : {}) });
   return {
     name: "glm",
     model,
@@ -137,7 +154,7 @@ export function providerOrder({ mode, now = new Date(), allowed = ["openai", "gl
 export const fallbackEnabled = (v) => String(v ?? "").trim().toLowerCase() !== "off";
 
 // order: provider names; build(name): the provider (built lazily, so missing credentials of an unused provider do not
-// matter). Tries them in order; only a quota error moves on. Resolves to { provider, model, text, usage, why } or, when
+// matter). Tries them in order; only a quota error or a second timeout (D492) moves on. Resolves to { provider, model, text, usage, why } or, when
 // every provider tried was out of quota, { provider: "waiting", who, why }.
 export async function reviewInOrder({ input, order, build }) {
   const out = [];
@@ -148,7 +165,7 @@ export async function reviewInOrder({ input, order, build }) {
       // why: the quota errors that moved the run on; note: a refusal or a model mismatch, kept apart so the post says which.
       return { provider: p.name, model: p.model, ...(out.length ? { why: out.join("; ") } : {}), ...(note ? { note } : {}), ...r };
     } catch (e) {
-      if (!(e instanceof ProviderError) || e.kind !== "quota") throw e;
+      if (!(e instanceof ProviderError) || (e.kind !== "quota" && e.kind !== "timeout")) throw e;
       out.push(e.message);
     }
   }

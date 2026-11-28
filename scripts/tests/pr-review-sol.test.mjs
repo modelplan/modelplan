@@ -457,6 +457,76 @@ test("routing: gpt-first, glm-first and schedule (GPT in the Zhipu peak); the fa
   assert.deepEqual(calls, ["openai"]);
 });
 
+test("D492: a hanging GLM request is bounded, retried once, then the other provider answers (or the head waits); no real 6-minute wait", async () => {
+  const hang = (counter) => (url, init) => { counter.n++; return new Promise((_, no) => init.signal.addEventListener("abort", () => no(init.signal.reason))); };
+  assert.equal(P.REQUEST_TIMEOUT_MS, 360000, "each GLM request waits at most 6 minutes");
+  const c = { n: 0 };
+  const t0 = Date.now();
+  await assert.rejects(P.glmProvider({ key: "k", baseUrl: "https://g/v4", fetchImpl: hang(c), waitMs: 0, timeoutMs: 20 }).review("x"), (e) => e.kind === "timeout" && /GLM timed out twice/.test(e.message));
+  assert.equal(c.n, 2, "one attempt plus exactly one retry, not six");
+  assert.ok(Date.now() - t0 < 5000);
+  // a timeout on the first try, an answer on the retry
+  let n = 0;
+  const flaky = (url, init) => (++n === 1 ? hang({ n: 0 })(url, init) : Promise.resolve({ ok: true, status: 200, json: async () => ({ model: "GLM-5.4", choices: [{ message: { content: "ok" } }], usage: {} }) }));
+  assert.equal((await P.glmProvider({ key: "k", baseUrl: "https://g/v4", fetchImpl: flaky, waitMs: 0, timeoutMs: 20 }).review("x")).text, "ok");
+  // a stalled body counts too
+  const stall = (url, init) => Promise.resolve({ ok: true, status: 200, json: () => new Promise((_, no) => init.signal.addEventListener("abort", () => no(init.signal.reason))) });
+  await assert.rejects(P.glmProvider({ key: "k", baseUrl: "https://g/v4", fetchImpl: stall, waitMs: 0, timeoutMs: 20 }).review("x"), (e) => e.kind === "timeout");
+  // second timeout: the other provider answers
+  const glmHang = () => P.glmProvider({ key: "k", baseUrl: "https://g/v4", fetchImpl: hang({ n: 0 }), waitMs: 0, timeoutMs: 20 });
+  const gptOk = { name: "openai", model: "m", review: async () => ({ text: "gpt", usage: { input: 1, cached: 0, output: 1 } }) };
+  const r = await P.reviewInOrder({ input: "x", order: ["glm", "openai"], build: (nm) => (nm === "glm" ? glmHang() : gptOk) });
+  assert.equal(r.provider, "openai");
+  assert.match(r.why, /GLM timed out twice/);
+  // nothing else can answer (fallback off or not allowed): the existing waiting path, with the reason
+  const w = await P.reviewInOrder({ input: "x", order: ["glm"], build: glmHang });
+  assert.deepEqual([w.provider, w.who], ["waiting", ["glm"]]);
+  assert.match(w.why, /GLM timed out twice/);
+  // an IMPORTANT PR: the fallback answer stays advisory (D432)
+  assert.match(S.renderWaitNote({ head: "a".repeat(40), lane: S.SOL_LANE, tier: 2, who: ["glm"], why: w.why, runUrl: "u" }), /Advisory, no verdict/);
+  // the whole GLM attempt is far below the 20 minutes of the old loop
+  assert.ok(6 * 60000 * 2 + 8000 < 20 * 60000);
+});
+
+test("D492 round 1: a body cut off after 200 headers retries once, then times out (GLM); OpenAI keeps its old 5-retry policy", async () => {
+  let hits = 0;
+  const srv = createServer((req, res) => { hits++; res.writeHead(200, { "content-type": "application/json", "content-length": "500" }); res.write('{"choices":['); setTimeout(() => res.destroy(), 20); });
+  await new Promise((ok) => srv.listen(0, "127.0.0.1", ok));
+  try {
+    const base = `http://127.0.0.1:${srv.address().port}`;
+    await assert.rejects(P.glmProvider({ key: "k", baseUrl: base, waitMs: 0, timeoutMs: 5000 }).review("x"), (e) => e.kind === "timeout" && /timed out twice/.test(e.message));
+    assert.equal(hits, 2, "one attempt plus one retry, no empty answer");
+    const w = await P.reviewInOrder({ input: "x", order: ["glm"], build: () => P.glmProvider({ key: "k", baseUrl: base, waitMs: 0, timeoutMs: 5000 }) });
+    assert.equal(w.provider, "waiting");
+  } finally { srv.close(); }
+  // OpenAI: two disconnects, then success, still succeeds (old policy, not the GLM bound)
+  let n = 0;
+  const f = async () => { if (++n <= 2) throw new TypeError("fetch failed"); return { ok: true, status: 200, json: async () => ({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: "gpt" }] }], usage: {} }) }; };
+  const r = await P.openaiProvider({ key: "k", model: "m", effort: "medium", fetchImpl: f, pollMs: 1, waitMs: 0 }).review("x");
+  assert.equal(r.text, "gpt");
+  assert.equal(n, 3);
+  // OpenAI exhausting its retries is still kind "other" (does not move on)
+  await assert.rejects(P.openaiProvider({ key: "k", model: "m", effort: "medium", fetchImpl: async () => { throw new TypeError("fetch failed"); }, pollMs: 1, waitMs: 0 }).review("x"), (e) => e.kind === "other");
+});
+
+test("D492 round 2: one shared attempt budget: OpenAI 5x503 then a disconnect is six requests; GLM 503 then timeout is two", async () => {
+  const res = (status) => ({ ok: status < 300, status, json: async () => ({ error: { code: "server_error" } }) });
+  let n = 0;
+  const f = async () => { n++; if (n <= 5) return res(503); if (n === 6) throw new TypeError("fetch failed"); return res(200); };
+  await assert.rejects(P.openaiProvider({ key: "k", model: "m", effort: "medium", fetchImpl: f, pollMs: 1, waitMs: 0 }).review("x"), (e) => e.kind === "other" && /network error/.test(e.message));
+  assert.equal(n, 6, "the old single budget of 6 attempts, any mix");
+  let g = 0;
+  const hangs = (url, init) => new Promise((_, no) => init.signal.addEventListener("abort", () => no(init.signal.reason)));
+  const gf = (url, init) => (++g === 1 ? Promise.resolve(res(503)) : hangs(url, init));
+  await assert.rejects(P.glmProvider({ key: "k", baseUrl: "https://g/v4", fetchImpl: gf, waitMs: 0, timeoutMs: 20 }).review("x"), (e) => e.kind === "timeout");
+  assert.equal(g, 3, "503 does not use up the two network failures: 503, hang, hang");
+  // GLM rate limits at peak: five 503s then success still succeeds (the old shared 6-attempt budget)
+  let h = 0;
+  const gok = async () => (++h <= 5 ? res(503) : { ok: true, status: 200, json: async () => ({ model: "GLM-5.4", choices: [{ message: { content: "ok" } }], usage: {} }) });
+  assert.equal((await P.glmProvider({ key: "k", baseUrl: "https://g/v4", fetchImpl: gok, waitMs: 0 }).review("x")).text, "ok");
+  assert.equal(h, 6);
+});
+
 test("providers: quota detection (codes, billing limit, sustained 429) and the GLM chat endpoint", async () => {
   const reply = (status, body) => ({ ok: status < 300, status, json: async () => body });
   const seq = (...rs) => { const calls = []; return { calls, f: async (url, init) => { calls.push({ url, init }); return rs.length > 1 ? rs.shift() : rs[0]; } }; };

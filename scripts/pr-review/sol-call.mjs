@@ -13,6 +13,7 @@ import { fallbackEnabled, glmProvider, openaiProvider, providerOrder, reviewInOr
 const env = process.env;
 const dir = join(env.RUNNER_TEMP, "pr-review-sol");
 const fail = (why) => { console.error(`pr-review-sol: no review: ${why}`); process.exit(1); };
+const timeoutMs = process.env.SOL_REQUEST_MS !== undefined ? Number(process.env.SOL_REQUEST_MS) : undefined;
 const num = (v, d) => (Number(v) > 0 ? Number(v) : d);
 const start = Date.now();
 const input = readFileSync(join(dir, "request.md"), "utf8");
@@ -21,8 +22,8 @@ const waitMs = env.SOL_RETRY_MS !== undefined ? Number(env.SOL_RETRY_MS) : undef
 const allowed = String(env.PROVIDERS ?? "openai").split(",").filter(Boolean);
 const order = providerOrder({ mode: env.PROVIDER_MODE, now: env.SOL_NOW ? new Date(env.SOL_NOW) : new Date(), allowed, fallback: fallbackEnabled(env.GLM_FALLBACK) });
 const build = (name) => name === "glm"
-  ? glmProvider({ key: env.GLM_API_KEY, baseUrl: env.GLM_BASE_URL, waitMs })
-  : openaiProvider({ key: env.OPENAI_API_KEY, model: env.MODEL, effort: env.EFFORT, url: env.SOL_API_URL || undefined, pollMs: num(env.SOL_POLL_MS, 15000), deadlineMs: num(env.SOL_TIMEOUT, 1800) * 1000, waitMs });
+  ? glmProvider({ key: env.GLM_API_KEY, baseUrl: env.GLM_BASE_URL, waitMs, timeoutMs })
+  : openaiProvider({ key: env.OPENAI_API_KEY, model: env.MODEL, effort: env.EFFORT, url: env.SOL_API_URL || undefined, pollMs: num(env.SOL_POLL_MS, 15000), deadlineMs: num(env.SOL_TIMEOUT, 1800) * 1000, waitMs, timeoutMs });
 let r;
 try { r = await reviewInOrder({ input, order, build }); } catch (e) { fail(e.message); }
 // A dropped answer (no final VERDICT, no Record, a block without a blocker) is retried once with the reason appended.
@@ -43,7 +44,7 @@ writeFileSync(join(dir, "seconds"), String(Math.round((Date.now() - start) / 100
 writeFileSync(join(dir, "why"), r.why ?? "");
 if (r.provider === "waiting") {
   writeFileSync(join(dir, "who"), r.who.join(","));
-  console.log(`pr-review-sol: every provider is out of quota (${r.why}); the head waits`);
+  console.log(`pr-review-sol: every provider is out of quota or timed out (${r.why}); the head waits`);
   process.exit(0);
 }
 if (!r.text.trim()) fail(`empty answer from ${r.provider}`);
