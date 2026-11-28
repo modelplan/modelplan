@@ -13,6 +13,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1] / "walkthrough"
 sys.path.insert(0, str(ROOT))
 import walkthrough as w  # noqa: E402
+import dogfood_seed as d  # noqa: E402
 
 
 def ring(name, y):
@@ -179,6 +180,113 @@ class Seed(unittest.TestCase):
         env = w.child_environment(Path("profile"))
         self.assertEqual(set(env), {"HOME", "CFFIXED_USER_HOME", "TMPDIR", "PATH", "LANG"})
         self.assertEqual(env["HOME"], env["CFFIXED_USER_HOME"])
+
+
+class DogfoodSeed(unittest.TestCase):
+    """seed-dogfood.json (owner build 6, 2026-11-27): realistic data, a step subset in zh-Hans and en."""
+    NOW = datetime.datetime(2026, 11, 27, 9, 0, tzinfo=datetime.timezone.utc)
+    SEED = json.loads((ROOT / "seed-dogfood.json").read_text(encoding="utf-8"))
+    STEPS = json.loads((ROOT / "steps.json").read_text(encoding="utf-8"))["steps"]
+    STRINGS = ROOT.parents[2] / "cockpit/study/rocket-r1/strings"
+
+    def test_realistic_shape(self):
+        codex = w.codex_reading(self.SEED, self.NOW, {"storeEpoch": "e", "generation": 3})
+        self.assertEqual(codex["plan"], "prolite")  # Pro 100
+        self.assertEqual(codex["credits"]["count"], len(codex["credits"]["items"]))
+        self.assertTrue(codex["credits"]["identityObserved"] and all(re.fullmatch("[0-9a-f]{64}", i["id"]) for i in codex["credits"]["items"]))
+        self.assertEqual(codex["usageCredits"]["balance"], 1865)
+        self.assertEqual({x["resetMode"] for x in codex["windows"]}, {"fixed"})
+        quota = w.declared_quota(self.SEED, self.NOW)
+        self.assertEqual({x["kind"] for x in quota["windows"]}, {"five_hour", "weekly", "monthly"})
+        self.assertEqual(quota["resetCards"][0]["expiresAt"], "2026-11-28T15:00:00Z")
+        models = {s["model"] for s in self.SEED["sessions"]} | {m["model"] for m in self.SEED["history"]["models"]}
+        self.assertGreaterEqual(len(models - {"codex-auto-review"}), 4)
+        self.assertIn("codex-auto-review", models)
+
+    def test_old_seed_shape_is_unchanged(self):
+        seed = json.loads((ROOT / "seed.json").read_text(encoding="utf-8"))
+        self.assertNotIn("resetCards", w.declared_quota(seed, self.NOW))
+        self.assertNotIn("credits", w.codex_reading(seed, self.NOW, {"storeEpoch": "e", "generation": 1}))
+        self.assertEqual([s["id"] for s in d.select_steps(self.STEPS, seed, "en")], [s["id"] for s in self.STEPS if not s.get("profiles")])
+
+    def test_step_subset_keeps_its_requirements_and_order(self):
+        chosen = d.select_steps(self.STEPS, self.SEED, "zh-Hans")
+        ids = [s["id"] for s in chosen]
+        self.assertEqual(set(ids), set(self.SEED["walk"]["only"]))
+        for index, step in enumerate(chosen):
+            self.assertTrue(set(step.get("requires", [])) <= set(ids[:index]), step["id"])
+        self.assertLess(ids.index("d-freshen"), ids.index("cockpit-open"))
+
+    def test_zh_targets_are_the_cockpit_strings(self):
+        pairs = set()
+        for f in self.STRINGS.glob("*.js"):
+            pairs.update(re.findall(r"\[\s*'[a-z]+'\s*,\s*'([^']*)'\s*,\s*'([^']*)'\s*\]", f.read_text(encoding="utf-8")))
+        zh_of = {}
+        for zh, en in pairs:
+            zh_of.setdefault(en, set()).add(zh)
+        for english, chinese in self.SEED["walk"]["targets"]["zh-Hans"].items():
+            kind_en, text_en = english.split(":", 1)
+            kind_zh, text_zh = chinese.split(":", 1)
+            if "Shortcut key" in text_en or kind_en == "value" or kind_zh != kind_en:
+                continue  # templates and native alerts: covered below
+            with self.subTest(english=english):
+                self.assertIn(text_zh.rstrip(" ·"), zh_of.get(text_en.rstrip(" ·"), set()) | {z for e, zs in zh_of.items() if e.startswith(text_en.rstrip(" ·")) for z in zs})
+        self.assertIn(("快捷键 {digit}", "Shortcut key {digit}"), pairs)
+
+    def test_retarget_reaches_actions_and_checks(self):
+        chosen = {s["id"]: s for s in d.select_steps(self.STEPS, self.SEED, "zh-Hans")}
+        text = json.dumps(chosen["j-tab-second"], ensure_ascii=False)
+        self.assertIn("label~: · 快捷键 1", text)
+        self.assertNotIn("Shortcut key", text)
+        self.assertIn("label:总览", text)
+
+    def test_times_and_sessions(self):
+        self.assertEqual(d.resolve_times({"a": ["@now-2m", "@now+1d", "x"]}, self.NOW), {"a": ["2026-11-27T08:58:00Z", "2026-11-28T09:00:00Z", "x"]})
+        with tempfile.TemporaryDirectory() as home:
+            live = d.write_sessions(home, self.SEED, self.NOW, live_only=True)
+            self.assertEqual(len(live), sum(1 for s in self.SEED["sessions"] if s.get("live")))
+            every = d.write_sessions(home, self.SEED, self.NOW)
+            self.assertGreater(len(every), 60)  # sessions plus about four sessions a day for 30 days
+            lines = [json.loads(l) for l in live[0].read_text(encoding="utf-8").splitlines()]
+            self.assertEqual(lines[0]["type"], "session_meta")
+            self.assertTrue(lines[0]["payload"]["cwd"].startswith(home))
+            self.assertTrue(all(re.search(r"/\.codex/sessions/\d{4}/\d\d/\d\d/rollout-.*\.jsonl$", str(p)) for p in every))
+            d.write_files(home, self.SEED["files"], self.NOW)
+            kiro = Path(home) / ".local/bin/kiro-cli"
+            self.assertTrue(os.access(kiro, os.X_OK))
+            state = json.loads((Path(home) / "Library/Caches/modelplan/observed/antigravity-v1.json").read_text())
+            self.assertEqual(state["nextAt"], "2026-11-27T09:30:00Z")
+            with self.assertRaises(ValueError):
+                d.write_files(home, [{"path": "../x", "text": ""}], self.NOW)
+
+    def test_reset_events_readdress_the_publication_or_change_nothing(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as cache:
+            cache = Path(cache)
+            client = json.dumps({"schemaVersion": 1, "kind": "client", "data": {"resets": []}}, separators=(",", ":")).encode()
+            h = hashlib.sha256(client).hexdigest()
+            manifest = {"schemaVersion": 1, "comparisonVersion": "c", "methods": {"index": "i"}, "components": {"client": {"schemaVersion": 1, "hash": h, "bytes": len(client)}}}
+            pid = d.identity(manifest)
+            manifest["publicationId"] = pid
+            (cache / "objects").mkdir()
+            (cache / "objects" / (h + ".json")).write_bytes(client)
+            (cache / "releases" / pid).mkdir(parents=True)
+            (cache / "releases" / pid / "manifest.json").write_text(json.dumps(manifest))
+            (cache / "state.json").write_text(json.dumps({"publicationId": pid, "componentHash": h}))
+            result = d.add_reset_events(cache, self.SEED["resetEvents"], self.NOW)
+            self.assertTrue(result["patched"], result)
+            state = json.loads((cache / "state.json").read_text())
+            new = json.loads((cache / "releases" / state["publicationId"] / "manifest.json").read_text())
+            self.assertEqual(d.identity(new), state["publicationId"])
+            body = (cache / "objects" / (state["componentHash"] + ".json")).read_bytes()
+            self.assertEqual(hashlib.sha256(body).hexdigest(), new["components"]["client"]["hash"])
+            self.assertEqual(len(json.loads(body)["data"]["resets"]), 2)
+            self.assertEqual(hashlib.sha256((cache / "releases" / state["publicationId"] / "manifest.json").read_bytes()).hexdigest(), state["manifestHash"])
+            # a manifest whose identity this code cannot reproduce is left alone
+            (cache / "releases" / state["publicationId"] / "manifest.json").write_text(json.dumps(dict(new, comparisonVersion="other")))
+            before = (cache / "state.json").read_text()
+            self.assertFalse(d.add_reset_events(cache, self.SEED["resetEvents"], self.NOW)["patched"])
+            self.assertEqual((cache / "state.json").read_text(), before)
 
 
 class Script(unittest.TestCase):

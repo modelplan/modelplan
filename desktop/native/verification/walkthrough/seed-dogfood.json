@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "note": "Dogfood seed: invented readings shaped like an owner's first-use profile (owner build 6, 2026-11-27): Codex Pro 100 with a banked reset and points, a GLM Max plan with 5h/weekly/monthly windows and reset chances, Claude/Kiro/Antigravity in error or unsupported states, long project paths, five models plus a Codex Auto Review session, a 30-day history and reset news. No account, credential or owner data. Times are '@now±Nm/h/d' or minutes from the walk's start.",
+  "walk": {
+    "profile": "dogfood",
+    "skipFreshProfile": true,
+    "brightDesktop": true,
+    "only": [
+      "first-run-window", "first-run-done", "widget-found", "widget-rest", "popup-card", "d-card-second", "card-third-ring",
+      "card-pointer-away", "d-freshen", "cockpit-open", "shutter-closed", "porthole-open", "faders", "j-tab-second", "j-tab-all",
+      "j-page-subscription", "j-page-effort", "j-page-breakdown", "j-alert-open", "d-mfd-calendar", "d-mfd-resources",
+      "cockpit-toggle-close", "cockpit-reopen", "cockpit-detach", "cockpit-put-back", "cockpit-close", "air-1440x900",
+      "air-1470x956", "display-restored"
+    ],
+    "targets": {
+      "en": {
+        "label:Codex · Shortcut key 1": "label~: · Shortcut key 1"
+      },
+      "zh-Hans": {
+        "label:Codex · Shortcut key 1": "label~: · 快捷键 1",
+        "label:All · Shortcut key 0": "label:全部 · 快捷键 0",
+        "label:Overview": "label:总览",
+        "label:Plans": "label:订阅",
+        "label:Models": "label:模型",
+        "label:Breakdown": "label:去向",
+        "label:Porthole shutter": "label:舷窗快门",
+        "label:Detach": "label:分离",
+        "label:Put back": "label:放回",
+        "label:Close": "label:关闭",
+        "label^:Alert": "label^:告警",
+        "value:Cockpit unavailable": "value:驾驶舱暂不可用",
+        "label^:Calendar · ": "label^:日历 · ",
+        "label^:Calendar": "label^:日历",
+        "label^:Resources · ": "label^:资源占用 · ",
+        "label^:Resource": "label^:资源"
+      }
+    }
+  },
+  "consent": {
+    "allow": ["codex.local_history", "claude.account_usage.saved_login", "kiro.runtime_usage", "antigravity.runtime_usage"]
+  },
+  "declared": [
+    {
+      "planId": "zhipu-global-max",
+      "windows": [
+        {"kind": "five_hour", "remainingPercent": 99, "resetMinutes": 233, "resetMode": "fixed"},
+        {"kind": "weekly", "remainingPercent": 22, "resetMinutes": 4740, "resetMode": "fixed"},
+        {"kind": "monthly", "remainingPercent": 100, "resetMinutes": 23040, "resetMode": "fixed"}
+      ],
+      "resetCards": [
+        {"kind": "five_hour", "count": 2, "expiresMinutes": 1800}
+      ]
+    }
+  ],
+  "codex": {
+    "plan": "prolite",
+    "subscriptionRef": "b6b6d0c0ffee1127",
+    "windows": [
+      {"kind": "five_hour", "windowMinutes": 300, "remainingPercent": 15, "resetMinutes": 128, "resetMode": "fixed"},
+      {"kind": "weekly", "windowMinutes": 10080, "remainingPercent": 59, "resetMinutes": 6960, "resetMode": "fixed"}
+    ],
+    "credits": {"count": 1, "expiresMinutes": 42000},
+    "usageCredits": 1865
+  },
+  "sessions": [
+    {"live": true, "minutesAgo": 1, "model": "gpt-6.2-sol", "effort": "medium", "cwd": "~", "turns": 6, "inputTokens": 1100000, "cachedTokens": 700000, "outputTokens": 42000},
+    {"live": true, "minutesAgo": 2, "model": "gpt-6.1-sol", "effort": "medium", "cwd": "~/Documents/Codex/2026-11-27/why-does-the-zcode-reading-disappear-and-then-come-back-by-itself", "turns": 9, "inputTokens": 2900000, "cachedTokens": 2100000, "outputTokens": 88000},
+    {"live": true, "minutesAgo": 2, "model": "gpt-6.2-astra", "effort": "high", "cwd": "~/.codex/worktrees/7f3c9a2e-41b8-4d6f-9c0e-2b5a8e1d4f63/modelplans.ai", "turns": 4, "inputTokens": 640000, "cachedTokens": 400000, "outputTokens": 31000},
+    {"live": true, "minutesAgo": 3, "model": "gpt-6.1-terra", "effort": "low", "cwd": "~/Documents/Codex/2026-11-26/new-chat", "turns": 3, "inputTokens": 210000, "cachedTokens": 90000, "outputTokens": 9000},
+    {"live": true, "minutesAgo": 1, "model": "codex-auto-review", "effort": "low", "cwd": "~/work/modelplans.ai", "turns": 2, "inputTokens": 180000, "cachedTokens": 60000, "outputTokens": 6000},
+    {"live": false, "minutesAgo": 95, "model": "gpt-6-luna", "effort": "high", "cwd": "~/work/modelplan-public-client-with-a-rather-long-repository-name", "turns": 5, "inputTokens": 400000, "cachedTokens": 150000, "outputTokens": 20000}
+  ],
+  "history": {
+    "days": 30,
+    "cwds": ["~/work/modelplans.ai", "~", "~/Documents/Codex/2026-11-20/fix-the-calendar-chip", "~/.codex/worktrees/0b1e7d44-9a3f-4c2b-8e5d-3f6a9c7b2e10/modelplans.ai"],
+    "models": [
+      {"model": "gpt-6.2-sol", "effort": "medium", "inputTokens": 2400000, "outputTokens": 60000},
+      {"model": "gpt-6.1-sol", "effort": "medium", "inputTokens": 1800000, "outputTokens": 45000},
+      {"model": "gpt-6.2-astra", "effort": "high", "inputTokens": 900000, "outputTokens": 30000},
+      {"model": "gpt-6-luna", "effort": "high", "inputTokens": 300000, "outputTokens": 9000}
+    ]
+  },
+  "resetEvents": [
+    {"id": "dogfood-announced-credit", "provider": "openai", "eventType": "reset_credit_issued", "status": "upstream-announced", "publishedAt": "@now-3h", "schedule": {"precision": "window", "from": "@now+1h", "through": "@now+26h"}, "url": "https://aihot.news/codex-extra-reset"},
+    {"id": "dogfood-confirmed-credit", "provider": "openai", "eventType": "reset_credit_issued", "status": "upstream-confirmed", "publishedAt": "@now-40m"}
+  ],
+  "files": [
+    {"path": ".claude/settings.json", "json": {"apiKeyHelper": "~/bin/claude-key-helper"}},
+    {"path": ".local/bin/kiro-cli", "mode": "755", "text": "#!/bin/sh\n# Dogfood seed: a Kiro CLI whose usage answer cannot be parsed (ReaderRowFix: parse_error).\nwhile IFS= read -r line; do printf '%s\\n' '{not json'; done\n"},
+    {"path": "Library/Caches/modelplan/observed/antigravity-v1.json", "json": {"schemaVersion": 1, "attemptAt": "@now-2m", "nextAt": "@now+30m", "failures": 0, "availability": "not_supported_yet"}}
+  ]
+}

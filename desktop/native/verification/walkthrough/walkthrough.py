@@ -22,6 +22,7 @@ import tempfile
 import time
 import zlib
 
+import dogfood_seed
 from silhouette_gaps import check_window
 
 APP_EXECUTABLE = "ModelPlan"
@@ -260,6 +261,8 @@ class Walkthrough:
         self.after_step = {}  # step id -> callable run once that step has been walked
         self.frames_mirrored = False
         self.mirror_evidence = {}
+        self.launch_args = ()  # e.g. -AppleLanguages (zh-Hans) for a zh-Hans walk
+        self.home = None
         self.crops = {}
         self.measures = {}
         self.expected_card = None
@@ -410,6 +413,10 @@ class Walkthrough:
             self.measures["brightDesktop"] = done.returncode == 0
         except (OSError, subprocess.SubprocessError):
             self.measures["brightDesktop"] = False
+
+    def op_freshenSessions(self, _):
+        """Rewrite the seed's live sessions so they end now: the live strip only counts sessions active in the last 5 minutes."""
+        self.measures["liveSessions"] = len(dogfood_seed.write_sessions(self.home, self.seed, datetime.datetime.now(datetime.timezone.utc), live_only=True))
 
     def op_park(self, _):
         self.host.helper("move", *self.point(PARK))
@@ -817,11 +824,15 @@ def stamp(moment):
 
 
 def declared_quota(seed, now):
+    """local.json: one five-hour window per plan, or (dogfood seed) a plan's own 'windows' list and 'resetCards'."""
     plans = seed["declared"]
-    return {"schemaVersion": 1, "plans": [{"planId": p["planId"]} for p in plans],
-            "windows": [{"planId": p["planId"], "kind": "five_hour", "remainingPercent": p["remainingPercent"], "resetMode": "rolling",
-                         "observedAt": stamp(now - datetime.timedelta(seconds=15)),
-                         "resetAt": stamp(now + datetime.timedelta(minutes=p["resetMinutes"]))} for p in plans]}
+    observed = stamp(now - datetime.timedelta(seconds=15))
+    quota = {"schemaVersion": 1, "plans": [{"planId": p["planId"]} for p in plans],
+             "windows": [w for p in plans for w in dogfood_seed.declared_windows(p, now, observed)]}
+    cards = dogfood_seed.declared_reset_cards(plans, now)
+    if cards:
+        quota["resetCards"] = cards
+    return quota
 
 
 def codex_reading(seed, now, consent):
@@ -832,7 +843,8 @@ def codex_reading(seed, now, consent):
             "admission": {"storeEpoch": consent["storeEpoch"], "generation": consent["generation"], "scope": "codex.runtime_usage"},
             "windows": [{"kind": w["kind"], "windowMinutes": w["windowMinutes"], "usedPercent": 100 - w["remainingPercent"],
                          "observedAt": observed, "resetsAt": stamp(now + datetime.timedelta(minutes=w["resetMinutes"])),
-                         "resetMode": "rolling", "limit": "main"} for w in codex["windows"]]}
+                         "resetMode": w.get("resetMode", "rolling"), "limit": "main"} for w in codex["windows"]],
+            **dogfood_seed.codex_extras(codex, now, observed)}
 
 
 def child_environment(home):
@@ -857,7 +869,7 @@ def seed_profile(host, cli, home, seed, now):
     consent_call(host, cli, env, ["grant"], {
         "requestId": "00000000-0000-4000-8000-000000000001", "expectStoreEpoch": before["storeEpoch"],
         "expectGeneration": before["generation"], "consentTextVersion": before["consentTextVersion"],
-        "allow": ["codex.runtime_usage"], "deny": []})
+        "allow": ["codex.runtime_usage"] + list(seed.get("consent", {}).get("allow", [])), "deny": []})
     after = consent_call(host, cli, env, [])
     config = home / ".config/modelplan"
     config.mkdir(parents=True, exist_ok=True)
@@ -865,6 +877,9 @@ def seed_profile(host, cli, home, seed, now):
     observed = home / "Library/Caches/modelplan/observed"
     observed.mkdir(parents=True, exist_ok=True)
     (observed / "codex-account.json").write_text(json.dumps(codex_reading(seed, now, after)), encoding="utf-8")
+    # Dogfood seed (seed-dogfood.json): tool files, Codex sessions and a 30-day history (imported after the sync).
+    dogfood_seed.write_files(home, seed.get("files", []), now)
+    dogfood_seed.write_sessions(home, seed, now)
     return env
 
 
@@ -930,7 +945,7 @@ def await_reading(host, walkthrough, since, process=None, seconds=45):
 def launch_app(host, walkthrough, exe, env, log, wait_reading=True):
     """Start the app and time the first status item and, unless a first run comes first, the first reading on the widget."""
     started = host.now()
-    process = host.launch([str(exe)], env, log)
+    process = host.launch([str(exe)] + list(walkthrough.launch_args), env, log)
     walkthrough.pid = process.pid
     first_window = first_reading = None
     deadline = started + 45
@@ -1158,18 +1173,34 @@ def run(args, host):
     problems = check_bundle(info, args.source_sha)
     if problems:
         raise SystemExit("; ".join(problems))
-    steps = json.loads(Path(args.steps).read_text(encoding="utf-8"))["steps"]
     seed = json.loads(Path(args.seed).read_text(encoding="utf-8"))
+    walk_config = seed.get("walk", {})
+    steps = dogfood_seed.select_steps(json.loads(Path(args.steps).read_text(encoding="utf-8"))["steps"], seed, args.language)
     facts = set_display(host)
     frame = facts["screens"][0]["frame"]
     cli, exe = app / "Contents/Helpers/modelplan", app / "Contents/MacOS" / info["CFBundleExecutable"]
     walkthrough = Walkthrough(host, app, out, steps, seed, (frame[2], frame[3]))
     walkthrough.facts = facts
-    fresh = fresh_profile_probe(host, walkthrough, exe, cli, Path(str(home) + "-fresh"), seed, out)
+    walkthrough.home = home
+    if args.language != "en":
+        walkthrough.launch_args = ("-AppleLanguages", "(%s)" % args.language)
+    fresh = ({"check": "publication-fresh-profile", "status": "info", "detail": {"skipped": "walk.skipFreshProfile"}}
+             if walk_config.get("skipFreshProfile") else fresh_profile_probe(host, walkthrough, exe, cli, Path(str(home) + "-fresh"), seed, out))
     # Public data only. Without it the cockpit has no faders, no HUD and no enlarged view.
     env = seed_profile(host, cli, home, seed, datetime.datetime.now(datetime.timezone.utc))
     synced = host.run([str(cli), "sync"], env, timeout=130)
     checks = [fresh, outcome("publication-sync", synced.returncode == 0, {"exit": synced.returncode})]
+    if seed.get("history"):
+        # The seeded 30-day history goes in the way the first run imports it (info: the pictures show the outcome).
+        imported = host.run([str(cli), "history", "--import", "--first-run", "--json", "--offline"], env, timeout=180)
+        checks.append({"check": "dogfood-history-import", "status": "info",
+                       "detail": {"exit": imported.returncode, "stderr": imported.stderr[-300:]}})
+    if seed.get("resetEvents"):
+        # Announced and confirmed reset news on top of the real public data (info: a changed publication format skips it).
+        detail = dogfood_seed.add_reset_events(home / "Library/Caches/modelplan", seed["resetEvents"], datetime.datetime.now(datetime.timezone.utc))
+        checks.append({"check": "dogfood-reset-events", "status": "info", "detail": detail})
+    if walk_config.get("brightDesktop"):
+        walkthrough.op_brightDesktop({})  # the whole walk on a light desktop, like the owner's
     try:
         checks.extend(walk_app(host, walkthrough, exe, cli, env, out))
     except Exception as error:  # Still write the manifest: the pictures so far are the evidence.
@@ -1179,7 +1210,7 @@ def run(args, host):
     keep_crash_reports(Path.home(), crashes, out)
     # The session user name stays out of a public artifact even when it is only "runner".
     host_facts = {k: v for k, v in facts.items() if k != "sessionUser"}
-    manifest = {"schemaVersion": 1, "profile": "synthetic", "sourceSHA": info.get("ModelPlanPublicSource"),
+    manifest = {"schemaVersion": 1, "profile": walk_config.get("profile", "synthetic"), "language": args.language, "sourceSHA": info.get("ModelPlanPublicSource"),
                 "artifact": args.artifact, "host": host_facts, "steps": walkthrough.results, "checks": checks}
     (out / "manifest.json").write_text(json.dumps(manifest, indent=1, sort_keys=True), encoding="utf-8")
     (out / "SUMMARY.md").write_text(summary(manifest), encoding="utf-8")
@@ -1228,7 +1259,7 @@ def walk_app(host, walkthrough, exe, cli, env, out):
 
 
 def summary(manifest):
-    lines = ["# Test build walkthrough", "", "Source `%s`, synthetic profile." % manifest["sourceSHA"], "",
+    lines = ["# Test build walkthrough", "", "Source `%s`, %s profile, %s." % (manifest["sourceSHA"], manifest.get("profile", "synthetic"), manifest.get("language", "en")), "",
              "| Step | Status | Reason |", "|---|---|---|"]
     lines += ["| %s | %s | %s |" % (r["step"], r["status"], (r.get("reason") or "").replace("|", "/")) for r in manifest["steps"]]
     lines += ["", "| Check | Status | Detail |", "|---|---|---|"]
@@ -1242,6 +1273,7 @@ def main():
         parser.add_argument("--" + flag, required=True)
     parser.add_argument("--source-sha")
     parser.add_argument("--artifact")
+    parser.add_argument("--language", default="en", choices=("en", "zh-Hans"))
     args = parser.parse_args()
     sys.exit(run(args, Host(args.helper)))
 

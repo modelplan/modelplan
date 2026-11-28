@@ -943,6 +943,40 @@
       ]
     },
     {
+      "id": "d-card-second",
+      "profiles": [
+        "dogfood"
+      ],
+      "title": "Card of the second ring (dogfood)",
+      "expected": "With a card open, a click on the second ring (ZCode / GLM Max in the dogfood seed) shows its card: every window named (5h, weekly, MCP/monthly), reset chances, no reader error.",
+      "prototype": "dock study prototype, card",
+      "requires": [
+        "popup-card"
+      ],
+      "actions": [
+        {
+          "op": "clickRing",
+          "index": 1
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        }
+      ],
+      "shot": {
+        "crop": "window-of:ax^:dock.card.",
+        "window": "window-of:ax^:dock.card."
+      },
+      "checks": [
+        {
+          "exists": "ax^:dock.card."
+        },
+        {
+          "cardNamed": true
+        }
+      ]
+    },
+    {
       "id": "card-third-ring",
       "title": "Card of the third ring",
       "expected": "With a card open, a click on the third ring shows the third ring's own card (G3-14).",
@@ -1050,6 +1084,25 @@
           "absent": "ax^:dock.card."
         }
       ]
+    },
+    {
+      "id": "d-freshen",
+      "profiles": [
+        "dogfood"
+      ],
+      "title": "Live sessions end now (dogfood)",
+      "expected": "The seed's live Codex sessions are rewritten to end now, so the cockpit's live session cards show them (live = active in the last 5 minutes).",
+      "actions": [
+        {
+          "op": "freshenSessions"
+        },
+        {
+          "op": "wait",
+          "seconds": 3
+        }
+      ],
+      "shot": {},
+      "checks": []
     },
     {
       "id": "cockpit-open",
@@ -1775,6 +1828,92 @@
         }
       ],
       "requirement": "D75 feature journeys"
+    },
+    {
+      "id": "d-mfd-calendar",
+      "profiles": [
+        "dogfood"
+      ],
+      "title": "Calendar big screen (dogfood)",
+      "expected": "The calendar key opens the calendar on the big screen (D466): resets of Codex and ZCode, announced and confirmed reset news, peak hours; nothing clipped.",
+      "prototype": "confirm 2026-11-27 calendar-system",
+      "requires": [
+        "cockpit-open"
+      ],
+      "actions": [
+        {
+          "op": "park"
+        },
+        {
+          "op": "clickFirst",
+          "targets": [
+            "label^:Calendar · ",
+            "label^:Calendar"
+          ]
+        },
+        {
+          "op": "wait",
+          "seconds": 2
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 0.5
+        }
+      ],
+      "shot": {
+        "crop": "label:ModelPlan Cockpit"
+      },
+      "checks": [
+        {
+          "exists": "label:ModelPlan Cockpit"
+        }
+      ]
+    },
+    {
+      "id": "d-mfd-resources",
+      "profiles": [
+        "dogfood"
+      ],
+      "title": "Resources big screen (dogfood)",
+      "expected": "The Resources key opens the resources screen; the radar column and screen fill their space and cut nothing (D465).",
+      "prototype": "confirm 2026-11-27 radar-fit",
+      "requires": [
+        "cockpit-open"
+      ],
+      "actions": [
+        {
+          "op": "park"
+        },
+        {
+          "op": "clickFirst",
+          "targets": [
+            "label^:Resources · ",
+            "label^:Resource"
+          ]
+        },
+        {
+          "op": "wait",
+          "seconds": 2
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 0.5
+        }
+      ],
+      "shot": {
+        "crop": "label:ModelPlan Cockpit"
+      },
+      "checks": [
+        {
+          "exists": "label:ModelPlan Cockpit"
+        }
+      ]
     },
     {
       "id": "cockpit-toggle-close",
