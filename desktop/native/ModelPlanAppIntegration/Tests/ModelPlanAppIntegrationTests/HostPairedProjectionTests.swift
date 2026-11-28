@@ -736,8 +736,9 @@ actor EntrySyntheticClient: EngineClient {
             let name = try XCTUnwrap(field(dock.card, id: "row.reserve.label"))
             let value = try XCTUnwrap(field(dock.card, id: "row.reserve.value"))
             try assertVisible(name, text: title)
+            // The row's own "Reserve" label is not repeated in its value (owner 2026-11-28).
             // The line wraps inside its column when long, so check the text and that it is on the card, not its one-line width.
-            XCTAssertEqual(value.stringValue, language == .english ? "Resets 1 · Reserve 19,614" : "重置次数 1 · 储备 19,614")
+            XCTAssertEqual(value.stringValue, language == .english ? "Resets 1 · 19,614" : "重置次数 1 · 19,614")
             XCTAssertFalse(value.isHiddenOrHasHiddenAncestor)
             XCTAssertTrue(dock.card.bounds.contains(dock.card.convert(value.bounds, from: value)), "the reserve text is not clipped by the card")
             XCTAssertLessThanOrEqual(dock.card.convert(name.bounds, from: name).maxX,
