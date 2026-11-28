@@ -84,6 +84,16 @@ test("tier: path rules, test-only rule, override and gate self-protection", () =
   assert.equal(R.pathTier([R.TIER_TABLE]), 2, "the tier table decides which scenarios need evidence");
   assert.equal(R.pathTier(["docs/a.md", R.TIER_TABLE]), 2);
   assert.equal(R.pathTier([".github/workflows/release.yml"]), 2);
+  // D491 (owner 2026-11-28): cockpit web, the engine store and the cockpit bridge are ordinary code; seams and credentials stay tier 2.
+  for (const p of ["desktop/native/ModelPlanCockpitWeb/Sources/ModelPlanCockpitWeb/CockpitWindowController.swift",
+    "desktop/native/ModelPlanEngineStore/Sources/ModelPlanEngineStore/Store.swift", "desktop/cockpit/src/bridge/host.ts"]) assert.equal(R.pathTier([p]), 1, p);
+  for (const p of ["desktop/native/ModelPlanEngineClient/Sources/ModelPlanEngineClient/Client.swift", "cli/internal/readers/transport.go",
+    "cli/internal/quota/x.go", "cli/internal/connections/c.go", "schema/app-cli/a.json", "cli/internal/swiftwire/w.go", "clients/swift/a.swift"]) assert.equal(R.pathTier([p]), 2, p);
+  // a renamed file contributes its old path (prPaths): the old path under schema/app-cli keeps tier 2, an ordinary rename is tier 1
+  assert.equal(R.pathTier(R.prPaths([{ filename: "docs/moved.json", previous_filename: "schema/app-cli/a.json", status: "renamed" }])), 2);
+  assert.equal(R.pathTier(R.prPaths([{ filename: "desktop/cockpit/src/bridge/b.ts", previous_filename: "desktop/cockpit/src/bridge/a.ts", status: "renamed" }])), 1);
+  // a long list is not tier 2 by itself (the evaluator pages the full REST list)
+  assert.equal(R.pathTier(Array.from({ length: 150 }, (_, k) => `cli/internal/render/f${k}.go`)), 1);
   assert.deepEqual(R.prPaths([file("docs/new.md", { previous_filename: "cli/old.go" })]), ["docs/new.md", "cli/old.go"]);
   const items = R.feed([comment("REVIEW-TIER: 2"), comment("note\nREVIEW-TIER: 0"), comment("REVIEW-TIER: 0", { login: "x", id: 3 })], [review("REVIEW-TIER: 1")]);
   assert.equal(R.tierOverride(items), 2, "override must start the comment; reviews and strangers do not count");
