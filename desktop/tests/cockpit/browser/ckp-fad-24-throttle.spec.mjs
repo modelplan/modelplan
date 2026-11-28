@@ -91,7 +91,7 @@ test('G3-92 a Max-only model shows no ghost: keys, drag and label clicks all lan
 
 // D419/D433 (measured on the direction 06 prototype): this fixture has one bank, so the lever tier runs to the column bottom and the
 // travel is .7353 of the tier plus 16 px (u = (travel - 16)/97): tall tier .501 x 257 px.
-const TALL_U=.7353*.501*257/97;
+const TALL_U=.7353*.5*257/97;   // D485: the lever tier starts at half the column (was .499)
 for(const [tier,height,u] of [['tall',890,TALL_U]])
  test(`CKP-FAD-24 the baked throttle is drawn per theme at the travel's scale (${tier})`,async({page})=>{
   const {send,receive}=await openThrottles(page,{tier,height});

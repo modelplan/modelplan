@@ -1,0 +1,1 @@
+An expired running-session count or Today total now clears even when the first rebuild after it fails, and the cockpit's held usage history stops showing at its ten-minute limit without waiting for a new reply.

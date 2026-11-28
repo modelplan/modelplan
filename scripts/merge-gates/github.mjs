@@ -26,5 +26,11 @@ export function client({ token, repo, api = "https://api.github.com" }) {
   }
   const post = async (path, body) => (await req("POST", path, body)).json;
   const patch = async (path, body) => (await req("PATCH", path, body)).json;
-  return { get, all, post, patch };
+  // GraphQL (D488 reads the merge queue); a response with errors throws, like a failed REST call.
+  async function graphql(query, variables = {}) {
+    const json = (await req("POST", `${api}/graphql`, { query, variables })).json;
+    if (json?.errors?.length) throw new Error(`graphql: ${JSON.stringify(json.errors).slice(0, 200)}`);
+    return json?.data;
+  }
+  return { get, all, post, patch, graphql };
 }
