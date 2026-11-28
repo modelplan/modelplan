@@ -11,6 +11,12 @@ final class ReaderCauseTableTests: XCTestCase {
             ("not_found", "codex", "Codex", "Can't find the Codex command", "找不到 Codex 命令", "Check connected tools in Settings", "在设置检查已连接工具", .openSettings),
             ("timeout", nil, nil, "The reading timed out; it will retry on its own", "读取超时，稍后自动重试", "No action needed; it retries on its own", "无需操作，会自动重试", .guidance),
             ("rpc_error", "codex", "Codex", "Codex's background service returned an error", "Codex 后台服务出错", "It retries on its own; reopen the tool if it keeps failing", "会自动重试；若持续失败请重新打开该工具", .guidance),
+            // Owner bad case 2026-11-28: each class of a Codex read failure names itself.
+            ("schema_changed", "codex", "Codex", "The Codex CLI is too old; please update it", "Codex 命令行过旧，请更新", "Update the Codex CLI", "更新 Codex 命令行", .guidance),
+            ("http_5xx", "codex", "Codex", "The provider service is unavailable; it will retry on its own", "服务商暂时不可用，稍后自动重试", "No action needed; it retries on its own", "无需操作，会自动重试", .guidance),
+            ("http_429", nil, nil, "The provider is receiving too many requests; it will retry on its own", "服务商请求过于频繁，稍后自动重试", "No action needed; it retries on its own", "无需操作，会自动重试", .guidance),
+            ("login_expired", "codex", "Codex", "The sign-in has expired", "登录已过期", "Open Codex and sign in again", "打开 Codex 并重新登录", .guidance),
+            ("not_signed_in", "codex", "Codex", "Not signed in", "未登录", "Open Codex and sign in", "打开 Codex 并登录", .guidance),
             ("closed", nil, nil, "The tool's background service closed unexpectedly", "工具后台服务意外退出", "It retries on its own; reopen the tool if it keeps failing", "会自动重试；若持续失败请重新打开该工具", .guidance),
             ("keychain_unset", "claude", "Claude Code", "Keychain access needed", "需要允许读取钥匙串", "Allow Keychain reading in Settings", "在设置允许读取钥匙串", .openSettings),
             ("key_missing", "zai", "GLM", "No GLM key found on this Mac", "本机没有找到 GLM 密钥", "Sign in to ZCode, or add a key in Settings", "在 ZCode 里登录，或在设置里添加密钥", .openSettings),

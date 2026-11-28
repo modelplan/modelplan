@@ -18,13 +18,13 @@ while IFS= read -r line; do
 done
 `
 	cases := []struct{ name, config, want string }{
-		{"no config", "", "rpc_error"},
-		{"openai provider", "model_provider = \"openai\"\n", "rpc_error"},
+		{"no config", "", "not_signed_in"},
+		{"openai provider", "model_provider = \"openai\"\n", "not_signed_in"},
 		{"bedrock", "model_provider = \"amazon-bedrock\"\n", "codex_custom_provider"},
 		{"custom provider", "model = \"m\"\nmodel_provider = \"corp\"\n\n[model_providers.corp]\nname = \"Corp gateway\"\nbase_url = \"https://gateway.example.invalid/v1\"\n", "codex_custom_provider"},
-		{"custom provider with ChatGPT login", "model_provider = \"proxy\"\n[model_providers.proxy]\nrequires_openai_auth = true\n", "rpc_error"},
-		{"provider only inside a profile table", "[profiles.work]\nmodel_provider = \"corp\"\n", "rpc_error"},
-		{"malformed", "model_provider = [\n", "rpc_error"},
+		{"custom provider with ChatGPT login", "model_provider = \"proxy\"\n[model_providers.proxy]\nrequires_openai_auth = true\n", "not_signed_in"},
+		{"provider only inside a profile table", "[profiles.work]\nmodel_provider = \"corp\"\n", "not_signed_in"},
+		{"malformed", "model_provider = [\n", "not_signed_in"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

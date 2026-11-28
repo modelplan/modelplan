@@ -42,7 +42,7 @@ func TestG336FirstReadFailuresRetrySoonThenBackOff(t *testing.T) {
 	}
 }
 
-// A Mac that has a reading keeps the ordinary wait: the first-read limits are for the first read.
+// A Mac that has a reading leaves the first-read limits: they are for the first read.
 func TestG336FailureAfterAReadingKeepsTheOrdinaryWait(t *testing.T) {
 	isolateHome(t)
 	cache := t.TempDir()
@@ -52,8 +52,10 @@ func TestG336FailureAfterAReadingKeepsTheOrdinaryWait(t *testing.T) {
 	if err := RefreshCodexAccount(context.Background(), cache, failingCodex(t), acctNow); err == nil {
 		t.Fatal("a failing Codex reported success")
 	}
-	if AccountDue(cache, acctNow.Add(29*time.Minute)) || !AccountDue(cache, acctNow.Add(accountRetryAfter)) {
-		t.Fatal("a failure after a reading no longer waits the ordinary half hour")
+	// A closed pipe is transient: the first retry is five minutes away (owner bad case 2026-11-28),
+	// never the first-read 20 seconds.
+	if AccountDue(cache, acctNow.Add(transientRetries[0]-time.Second)) || !AccountDue(cache, acctNow.Add(transientRetries[0])) {
+		t.Fatal("a failure after a reading no longer waits the transient back-off")
 	}
 }
 

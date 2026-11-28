@@ -7,6 +7,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/toolcli"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -33,6 +34,10 @@ type ReaderDiagnostic struct {
 	Cause string `json:"cause,omitempty"`
 	// Failures: Codex's recent failures, oldest first (fixed codes and times only).
 	Failures []DiagnosticFailure `json:"failures,omitempty"`
+	// CodexCLI: the Codex CLI the newest read ran, "<source> <path> <version>": source is override,
+	// app (the desktop app's own CLI), homebrew, npm or other; the path is home-relative (~/) or a
+	// system install path (codexbin.go). Codex only.
+	CodexCLI string `json:"codexCli,omitempty"`
 }
 
 // DiagnosticFailure is one entry of the Codex failure ring.
@@ -185,8 +190,40 @@ func codexDiagnostic(p Paths, policy consent.State, detected bool, now time.Time
 			row.Failures = append(row.Failures, DiagnosticFailure{Code: ReaderErrorCode(f.Code), At: f.At.UTC().Format(time.RFC3339), StreakSeconds: f.StreakSeconds})
 		}
 		row.State = codexAccountState(s, now)
+		row.CodexCLI = codexCLIDiagnostic(s.CLI)
 	}
 	return row
+}
+
+var codexCLIDiagnosticPattern = regexp.MustCompile(`^(override|app|homebrew|npm|other) (other|~/[A-Za-z0-9._@+/-]{1,200}|/[A-Za-z0-9._@+/-]{1,200})( [0-9]{1,6}\.[0-9]{1,6}\.[0-9]{1,6}(-[0-9A-Za-z.]{1,32})?)?$`)
+
+// codexCLIDiagnostic re-checks the cached CLI note before printing it: "<source> <path> [version]",
+// where only a source word, a display path from codexDisplayPath and a version number pass.
+func codexCLIDiagnostic(c *codexCLI) string {
+	if c == nil {
+		return ""
+	}
+	if c.Path != "other" && !strings.HasPrefix(c.Path, "~/") {
+		system := false
+		for _, dir := range codexSystemDirs {
+			system = system || strings.HasPrefix(c.Path, dir)
+		}
+		if !system {
+			return ""
+		}
+	}
+	source := c.Source
+	if source == "" {
+		source = "other"
+	}
+	out := source + " " + c.Path
+	if c.Version != "" {
+		out += " " + c.Version
+	}
+	if strings.Contains(out, "..") || !codexCLIDiagnosticPattern.MatchString(out) {
+		return ""
+	}
+	return out
 }
 
 // ReaderDiagnostics uses only production admission, presence metadata and

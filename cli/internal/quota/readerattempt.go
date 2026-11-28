@@ -46,6 +46,13 @@ func reserveReaderAttempt(cache, provider string, next time.Time) error {
 	if previous.After(next) {
 		next = previous
 	}
+	return setReaderAttempt(cache, provider, next)
+}
+
+// setReaderAttempt writes the reservation as given, even earlier than the present one. Only a
+// read the user asked for uses it directly, after it has read (Codex manual refresh): its own
+// result, not an older failure's back-off, decides the next automatic read. Caller holds the lock.
+func setReaderAttempt(cache, provider string, next time.Time) error {
 	path := readerAttemptPath(cache, provider)
 	if os.MkdirAll(filepath.Dir(path), 0700) != nil {
 		return errors.New("reader budget unavailable")

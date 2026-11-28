@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
@@ -50,10 +51,28 @@ func doctorReaders(stdout, stderr io.Writer, c common, refresh bool) int {
 			cause = "  cause=" + r.Cause
 		}
 		fmt.Fprintf(stdout, "%s  detected=%s  consent=%s  admitted=%s  state=%s%s  windows=%d  last=%s  beta=%t\n", r.Provider, r.Detected, r.Consent, r.Admitted, r.State, cause, r.Windows, r.Last, r.Beta)
+		if r.CodexCLI != "" {
+			fmt.Fprintf(stdout, "  %s cli  %s\n", r.Provider, codexCLILine(r.CodexCLI, c.lang))
+		}
 		for _, f := range r.Failures {
 			fmt.Fprintf(stdout, "  %s failure  code=%s  at=%s  streak=%ds\n", r.Provider, f.Code, f.At, f.StreakSeconds)
 		}
 	}
 	fmt.Fprintln(stdout, message)
 	return 0
+}
+
+// codexCLILine names the source of the Codex CLI in the reader's language (owner decision D487).
+func codexCLILine(note, lang string) string {
+	source, rest, _ := strings.Cut(note, " ")
+	en := map[string]string{"override": "set path", "app": "desktop app", "homebrew": "Homebrew", "npm": "npm", "other": "other"}
+	zh := map[string]string{"override": "指定路径", "app": "桌面应用内置", "homebrew": "Homebrew", "npm": "npm", "other": "其他"}
+	names := en
+	if lang == "zh" {
+		names = zh
+	}
+	if name, ok := names[source]; ok {
+		return name + "  " + rest
+	}
+	return note
 }

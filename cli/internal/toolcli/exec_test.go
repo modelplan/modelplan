@@ -157,3 +157,38 @@ func TestNoExecSiteBypassesToolcli(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Owner decision D487 (2026-11-28): the desktop apps' own Codex CLI, at exactly its place, may run;
+// any other program in those bundles, a lookalike path or a link that leaves the bundle may not.
+func TestCodexAppCLIIsTheOneBundleException(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	for _, inner := range []string{"ChatGPT.app/Contents/Resources/codex", "ChatGPT.app/Contents/Resources/codex-cli/bin/codex", "Codex.app/Contents/Resources/codex"} {
+		parts := strings.SplitN(inner, "/", 2)
+		bin := fakeAppTool(t, filepath.Join(home, "Applications"), parts[0], parts[1])
+		if _, err := Command(context.Background(), bin, "--version"); err != nil {
+			t.Fatalf("Command(%s) refused: %v", bin, err)
+		}
+		if _, err := CommandContext(context.Background(), bin, "app-server"); err != nil {
+			t.Fatalf("CommandContext(%s) refused: %v", bin, err)
+		}
+	}
+	apps := filepath.Join(home, "Applications")
+	other := fakeAppTool(t, apps, "ChatGPT.app", "Contents/Resources/helper")
+	dotted := apps + "/ChatGPT.app/Contents/../Contents/Resources/codex" // spelled unclean on purpose
+	outside := filepath.Join(t.TempDir(), "codex")
+	putExecutable(t, outside, "#!/bin/sh\nexit 0\n")
+	escape := filepath.Join(apps, "Codex.app", "Contents", "Resources", "codex")
+	if err := os.Remove(escape); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, escape); err != nil {
+		t.Fatal(err)
+	}
+	elsewhere := fakeAppTool(t, t.TempDir(), "ChatGPT.app", "Contents/Resources/codex")
+	for _, p := range []string{other, dotted, escape, elsewhere} {
+		if _, err := Command(context.Background(), p, "app-server"); !errors.Is(err, ErrInsideAppBundle) {
+			t.Fatalf("Command(%s) err = %v, want refusal", p, err)
+		}
+	}
+}

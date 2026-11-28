@@ -63,10 +63,47 @@ func otherBundle(p string) bool {
 	return root != "" && root != ownBundle()
 }
 
+// CodexAppPaths are the signed Codex CLIs the ChatGPT and Codex desktop apps carry, in CodexBar's
+// order (a26ca57b5 Sources/CodexBarCore/PathEnvironment.swift:185-197): the user's Applications
+// folder first, then the system one. Owner decision D487 (2026-11-28): these exact files are the one
+// exception to the bundle rule below, because the desktop app keeps its CLI current while an npm or
+// Homebrew copy does not update itself.
+func CodexAppPaths(home string) []string {
+	var out []string
+	for _, apps := range []string{filepath.Join(home, "Applications"), "/Applications"} {
+		if apps == "Applications" {
+			continue // no home folder
+		}
+		out = append(out,
+			filepath.Join(apps, "ChatGPT.app", "Contents", "Resources", "codex"),
+			filepath.Join(apps, "ChatGPT.app", "Contents", "Resources", "codex-cli", "bin", "codex"),
+			filepath.Join(apps, "Codex.app", "Contents", "Resources", "codex"))
+	}
+	return out
+}
+
+// codexAppAllowed: p is, as spelled, exactly one of CodexAppPaths, and the file it names stays
+// inside that same bundle. Nothing else inside another app is ever run.
+func codexAppAllowed(p string) bool {
+	if p == "" || !filepath.IsAbs(p) || filepath.Clean(p) != p {
+		return false
+	}
+	home, _ := os.UserHomeDir()
+	for _, allowed := range CodexAppPaths(home) {
+		if p != allowed {
+			continue
+		}
+		real, err := filepath.EvalSymlinks(p)
+		return err == nil && bundleRoot(real) == bundleRoot(p)
+	}
+	return false
+}
+
 // InsideOtherApp reports a path that is, as spelled or after following symlinks, inside an
-// application bundle other than ModelPlan's own. Such a program is never executed.
+// application bundle other than ModelPlan's own. Such a program is never executed, except the
+// desktop apps' own Codex CLI at its exact place (CodexAppPaths, owner decision D487).
 func InsideOtherApp(p string) bool {
-	if p == "" {
+	if p == "" || codexAppAllowed(p) {
 		return false
 	}
 	if otherBundle(p) {

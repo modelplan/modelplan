@@ -98,24 +98,26 @@ func TestG3158RateLimitDecodeErrorBodyIsAReading(t *testing.T) {
 	}
 }
 
-// An error without a usable body stays rpc_error; a malformed 5h window gives no reading (as in
-// CodexBar: a partial body never stands in for the session window).
+// An error without a usable body stays an error; a malformed 5h window gives no reading (as in
+// CodexBar: a partial body never stands in for the session window). Owner bad case 2026-11-28:
+// the error names its class: a server error, or a Codex CLI too old to decode the plan.
 func TestG3158RateLimitErrorWithoutAUsableBodyStaysAnError(t *testing.T) {
-	for name, message := range map[string]string{
-		"no_body":    "failed to fetch codex rate limits: request failed: 500",
-		"no_windows": g3158DecodeErrorMessage(`{"plan_type":"prolite","rate_limit":{"allowed":true}}`),
-		"bad_primary": g3158DecodeErrorMessage(`{"plan_type":"prolite","rate_limit":{"primary_window":{"used_percent":"oops","limit_window_seconds":18000,"reset_at":1},
- "secondary_window":{"used_percent":19,"limit_window_seconds":604800,"reset_at":1792649570}}}`),
-		"truncated": g3158DecodeErrorMessage(`{"plan_type":"prolite","rate_limit":{"primary_window":{"used_percent":4`),
+	for name, c := range map[string]struct{ message, want string }{
+		"no_body":    {"failed to fetch codex rate limits: request failed: 500", "http_5xx"},
+		"no_windows": {g3158DecodeErrorMessage(`{"plan_type":"prolite","rate_limit":{"allowed":true}}`), "schema_changed"},
+		"bad_primary": {g3158DecodeErrorMessage(`{"plan_type":"prolite","rate_limit":{"primary_window":{"used_percent":"oops","limit_window_seconds":18000,"reset_at":1},
+ "secondary_window":{"used_percent":19,"limit_window_seconds":604800,"reset_at":1792649570}}}`), "schema_changed"},
+		"truncated": {g3158DecodeErrorMessage(`{"plan_type":"prolite","rate_limit":{"primary_window":{"used_percent":4`), "schema_changed"},
 	} {
+		message := c.message
 		t.Run(name, func(t *testing.T) {
 			isolateHome(t)
 			cache := t.TempDir()
 			if err := RefreshCodexAccount(context.Background(), cache, rpcErrorCodex(t, message), acctNow); err == nil {
 				t.Fatal("an unusable error body counted as a reading")
 			}
-			if s := loadAccount(cache); s == nil || s.Status == "ok" || s.ErrorCode != "rpc_error" {
-				t.Fatalf("snapshot %+v", s)
+			if s := loadAccount(cache); s == nil || s.Status == "ok" || s.ErrorCode != c.want {
+				t.Fatalf("snapshot %+v, want %s", s, c.want)
 			}
 		})
 	}
@@ -136,11 +138,12 @@ func TestG3158UnrepresentableResetKeepsLastGoodAndAllowsLaterRefresh(t *testing.
 		t.Fatalf("seed: %v", err)
 	}
 	now := acctNow.Add(AccountEvery)
-	if err := read(body("99", `"reset_at":253402300800`), now); errorCode(err) != "rpc_error" {
+	// A decode error whose body cannot be used names an outdated Codex CLI (owner bad case 2026-11-28).
+	if err := read(body("99", `"reset_at":253402300800`), now); errorCode(err) != "schema_changed" {
 		t.Fatalf("malformed reset error = %q", errorCode(err))
 	}
 	failed := loadAccount(cache)
-	if failed == nil || failed.ErrorCode != "rpc_error" || failed.Good == nil ||
+	if failed == nil || failed.ErrorCode != "schema_changed" || failed.Good == nil ||
 		len(failed.Good.Windows) < 1 || failed.Good.Windows[0].UsedPercent == nil ||
 		*failed.Good.Windows[0].UsedPercent != 30 {
 		t.Fatal("malformed reset did not preserve the last good reading")

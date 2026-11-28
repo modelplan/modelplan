@@ -181,6 +181,9 @@ func TestDoctorReadersIdentifiersNeverReachAnyField(t *testing.T) {
 					if _, ok := row["failures"]; ok {
 						want++
 					}
+					if _, ok := row["codexCli"]; ok {
+						want++
+					}
 					if len(row) != want {
 						t.Fatal("new output field needs privacy review", row)
 					}
@@ -215,6 +218,11 @@ func TestDoctorReadersIdentifiersNeverReachAnyField(t *testing.T) {
 							// A fixed reader code or empty; never text.
 							if !regexp.MustCompile(`^(|file_missing|file_unreadable|parse_error|schema_changed|http_401|http_403|http_429|http_5xx|network|timeout|runtime_missing|unsupported_login|not_found|rpc_error|closed|no_key|region_refused|codex_custom_provider|team_unsupported|no_plan|other)$`).MatchString(value.(string)) {
 								t.Fatal("unreviewed cause", row)
+							}
+						case "codexCli":
+							// The Codex CLI a read ran: a home-relative or system path and a version only.
+							if row["provider"] != "codex" || !regexp.MustCompile(`^(override|app|homebrew|npm|other) (other|~/[A-Za-z0-9._@+/-]+|/(Applications|opt/homebrew|usr/local|usr/bin|bin|opt/local|nix)/[A-Za-z0-9._@+/-]+)( [0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?)?$`).MatchString(value.(string)) {
+								t.Fatal("unreviewed codex cli note", row)
 							}
 						case "failures":
 							// Codex's recent failures: a fixed code, a UTC time and a streak length; nothing else.

@@ -819,8 +819,11 @@ actor EntrySyntheticClient: EngineClient {
         XCTAssertEqual(text(nil, "$14,207.86", "money", true), "Balance $14,207.86")
         XCTAssertEqual(text("↺1", "14,207.86", "money", false), "重置次数 1 · 余额 14,207.86")
         XCTAssertEqual(text(nil, "¥14,207.86", "money", false), "余额 ¥14,207.86")
-        // An unclassified unit makes no claim about what it is.
-        XCTAssertEqual(text(nil, "19,614", "", true), "Reserve 19,614"); XCTAssertEqual(text(nil, "19,614", "", false), "储备 19,614")
+        // An unclassified unit makes no claim about what it is, and the row's own "Reserve" label is not
+        // repeated in its text (owner bad case 2026-11-28: "储备   储备 1,865").
+        XCTAssertEqual(text(nil, "19,614", "", true), "19,614"); XCTAssertEqual(text(nil, "19,614", "", false), "19,614")
+        XCTAssertEqual(DockContentRow.reserveText(resets: "↺1", credits: "19,614", creditsLabel: "储备", english: false), "重置次数 1 · 19,614")
+        XCTAssertEqual(DockContentRow.reserveText(resets: nil, credits: "7", creditsLabel: "Tokens", english: true), "Tokens 7")
         // A reset line with no count.
         XCTAssertEqual(text("↺", nil, "", true), "Resets --")
     }

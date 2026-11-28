@@ -36,8 +36,8 @@ func TestFailedRefreshKeepsTheLastGoodWindowsStale(t *testing.T) {
 	if s.Status != "error" || s.Good == nil || len(s.Good.Windows) != 2 || s.ErrorCode == "" {
 		t.Fatalf("snapshot %+v", s)
 	}
-	if AccountDue(cache, at.Add(29*time.Minute)) || !AccountDue(cache, at.Add(accountRetryAfter)) {
-		t.Fatal("the failure no longer schedules the ordinary retry")
+	if AccountDue(cache, at.Add(transientRetries[0]-time.Second)) || !AccountDue(cache, at.Add(transientRetries[0])) {
+		t.Fatal("the failure no longer schedules the transient retry")
 	}
 	r := Report{}
 	applyAccount(&r, cache, at.Add(time.Minute))
